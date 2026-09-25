@@ -189,6 +189,111 @@ async function toggleCamera(forceAction = null) {
     }
 }
 
+// Quản lý Webcam Trình Duyệt (HTML5 getUserMedia)
+let browserCamStream = null;
+let browserCamInterval = null;
+let isStreamingBrowserCam = false;
+
+async function toggleBrowserWebcam() {
+    const btn = document.getElementById("btn-browser-cam");
+    if (isStreamingBrowserCam) {
+        stopBrowserWebcam();
+        return;
+    }
+
+    try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Trình duyệt không hỗ trợ hoặc đang chặn quyền truy cập Camera. Hãy đảm bảo bạn truy cập qua link HTTPS hoặc localhost và đã bấm 'Cho phép (Allow)'.");
+            return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: "user"
+            },
+            audio: false
+        });
+
+        browserCamStream = stream;
+        const video = document.getElementById("client-webcam-video");
+        if (video) {
+            video.srcObject = stream;
+            await video.play();
+        }
+
+        isStreamingBrowserCam = true;
+        if (btn) {
+            btn.textContent = "⏹ Tắt Webcam Trình Duyệt";
+            btn.classList.add("active-toggle");
+            btn.classList.remove("btn-primary");
+            btn.classList.add("btn-danger-outline");
+        }
+
+        // Tự động kết nối lại luồng stream hiển thị
+        const liveImg = document.getElementById("live-stream-img");
+        if (liveImg) {
+            liveImg.src = "/api/stream/live?t=" + Date.now();
+        }
+        const offlineOverlay = document.getElementById("cam-offline-overlay");
+        if (offlineOverlay) offlineOverlay.classList.add("hidden");
+
+        // Bắt đầu vòng lặp gửi khung hình lên máy chủ GPU
+        const canvas = document.getElementById("client-webcam-canvas");
+        const ctx = canvas.getContext("2d");
+        let isUploading = false;
+
+        browserCamInterval = setInterval(() => {
+            if (!isStreamingBrowserCam || isUploading) return;
+            if (!video || video.readyState < 2) return;
+
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(async (blob) => {
+                if (!blob || !isStreamingBrowserCam) return;
+                isUploading = true;
+                try {
+                    const formData = new FormData();
+                    formData.append("file", blob, "webcam.jpg");
+                    await fetch("/api/camera/client_frame", {
+                        method: "POST",
+                        body: formData
+                    });
+                } catch (e) {
+                    // Bỏ qua lỗi rớt frame mạng tạm thời
+                } finally {
+                    isUploading = false;
+                }
+            }, "image/jpeg", 0.72);
+        }, 66); // ~15 FPS ổn định
+
+    } catch (err) {
+        console.error("Lỗi mở webcam trình duyệt:", err);
+        alert("Không thể mở camera thiết bị: " + (err.message || "Bị từ chối quyền truy cập"));
+        stopBrowserWebcam();
+    }
+}
+
+function stopBrowserWebcam() {
+    isStreamingBrowserCam = false;
+    if (browserCamInterval) {
+        clearInterval(browserCamInterval);
+        browserCamInterval = null;
+    }
+    if (browserCamStream) {
+        browserCamStream.getTracks().forEach(track => track.stop());
+        browserCamStream = null;
+    }
+    const btn = document.getElementById("btn-browser-cam");
+    if (btn) {
+        btn.textContent = "🌐 Bật Webcam Trình Duyệt";
+        btn.classList.remove("active-toggle");
+        btn.classList.remove("btn-danger-outline");
+        btn.classList.add("btn-primary");
+    }
+}
+
+
 // ==============================================================================
 // CAMERA ENHANCER CONTROLS
 // ==============================================================================

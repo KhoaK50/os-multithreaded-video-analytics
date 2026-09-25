@@ -63,11 +63,16 @@
 
                     <div class="stream-viewport-container">
                         <img id="live-stream-img" src="/api/stream/live" alt="Cyber Surveillance Stream" />
+                        <video id="client-webcam-video" playsinline autoplay muted style="display:none;"></video>
+                        <canvas id="client-webcam-canvas" width="640" height="480" style="display:none;"></canvas>
                         <div id="cam-offline-overlay" class="cam-offline hidden">
                             <div class="offline-box">
                                 <span class="offline-icon">📷</span>
-                                <p>Camera đang tạm dừng</p>
-                                <button class="btn btn-primary" onclick="toggleCamera('start')">Khởi động lại Camera</button>
+                                <p id="cam-offline-title">Chưa kết nối luồng camera vật lý</p>
+                                <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+                                    <button class="btn btn-primary" onclick="toggleBrowserWebcam()">🌐 Bật Webcam Trình Duyệt</button>
+                                    <button class="btn btn-outline" onclick="toggleCamera('start')">Thử lại Camera Máy Chủ</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -75,7 +80,10 @@
                     <!-- Live Camera Action Bar directly below video -->
                     <div class="stream-control-bar">
                         <div class="control-group-left">
-                            <button class="btn btn-sm btn-primary" id="btn-manual-snap" onclick="captureManualSnapshot()" title="Chụp lại khung hình ngay lập tức và lưu vào nhật ký">
+                            <button class="btn btn-sm btn-primary" id="btn-browser-cam" onclick="toggleBrowserWebcam()" title="Sử dụng webcam của laptop/điện thoại này để gửi khung hình lên GPU Google Colab phân tích">
+                                🌐 Bật Webcam Trình Duyệt
+                            </button>
+                            <button class="btn btn-sm btn-outline" id="btn-manual-snap" onclick="captureManualSnapshot()" title="Chụp lại khung hình ngay lập tức và lưu vào nhật ký">
                                 📸 Chụp Snapshot
                             </button>
                             <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-mirror" onclick="toggleCameraEnhancer('mirror')" title="Lật gương để chiều cử động tay tự nhiên">

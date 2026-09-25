@@ -42,7 +42,8 @@ import cv2
 import numpy as np
 import psutil
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse, JSONResponse, Response
+
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -266,6 +267,19 @@ class LiveCameraPipeline:
             self.cap.release()
         self.latest_hud_frame = None
         print("[+] Live Camera Pipeline da giai phong camera an toan.")
+
+    def ingest_client_frame(self, raw_frame):
+        """
+        Tiếp nhận khung hình trực tiếp từ Webcam trình duyệt của người dùng (Client Browser).
+        Cho phép Live Camera hoạt động mượt mà ngay cả khi máy chủ chạy trên Cloud (Google Colab).
+        """
+        if not self.running:
+            self.start()
+        frame = self.enhancer.enhance(raw_frame)
+        with self.frame_lock:
+            self.latest_raw_frame = frame
+            self.frame_count += 1
+
 
     def _gemini_worker(self):
         """
@@ -908,6 +922,31 @@ def stream_live():
         frame_generator(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Loại bỏ thông báo lỗi 404 vô hại trên console trình duyệt."""
+    return Response(status_code=204)
+
+
+@app.post("/api/camera/client_frame")
+async def ingest_client_frame_endpoint(file: UploadFile = File(...)):
+    """
+    Nhận khung hình từ webcam của trình duyệt client (HTML5 getUserMedia),
+    đẩy vào luồng LiveCameraPipeline để phân tích bằng GPU.
+    """
+    try:
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if frame is not None and frame.size > 0:
+            LIVE_CAMERA.ingest_client_frame(frame)
+            return JSONResponse({"status": "ok", "fps": LIVE_CAMERA.current_fps})
+        return JSONResponse({"status": "error", "message": "Corrupted frame"}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
 
 
 @app.post("/api/camera/toggle")
