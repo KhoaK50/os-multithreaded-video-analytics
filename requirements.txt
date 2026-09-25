@@ -14,6 +14,8 @@ pillow>=10.0.0
 numpy>=1.24.0
 ultralytics>=8.0.0
 yt-dlp>=2024.0.0
+imageio-ffmpeg>=0.4.9
+
 
 # --- [TRỌNG TÂM HỆ ĐIỀU HÀNH: ĐO TẢI TÀI NGUYÊN HỆ THỐNG] ---
 psutil>=5.9.0

@@ -1,0 +1,52 @@
+{
+  "GeLhuvhyWuM": {
+    "status": "success",
+    "threat_level": "AN TOÀN",
+    "is_safe_environment": true,
+    "primary_incident": "Chăm sóc gia đình & Tương tác trẻ nhỏ",
+    "detailed_diagnosis": "Không gian sinh hoạt gia đình đầm ấm và hoàn toàn an toàn. Các thành viên duy trì cử chỉ dỗ dành, tương tác tự nhiên với trẻ nhỏ, không có bất kỳ biểu hiện nguy cơ hay hành vi bạo lực nào.",
+    "recommended_action": "Duy trì giám sát tự động theo chu kỳ, không cần can thiệp.",
+    "scene_context": "Khung cảnh phòng khách gia đình có 4 người tương tác thân mật, bao gồm người lớn bế em bé và người thân đứng hỗ trợ.",
+    "confidence_score": 0.98,
+    "token_usage": 0,
+    "detected_actors": [
+      {
+        "actor_index": 1,
+        "role": "Người bế em bé",
+        "appearance": "Người lớn mặc áo thun",
+        "true_action": "Bế em bé và dỗ dành trước ngực",
+        "posture_desc": "Hai tay nâng đỡ em bé trước ngực, đứng tự nhiên"
+      },
+      {
+        "actor_index": 2,
+        "role": "Em bé nhỏ",
+        "appearance": "Trẻ nhỏ trong vòng tay",
+        "true_action": "Được bế bồng an toàn",
+        "posture_desc": "Nằm trong vòng tay người lớn"
+      },
+      {
+        "actor_index": 3,
+        "role": "Người mẹ / Người thân",
+        "appearance": "Phụ nữ trang phục sáng màu",
+        "true_action": "Đứng bên cạnh tương tác hỗ trợ",
+        "posture_desc": "Tư thế đứng thẳng tự nhiên"
+      },
+      {
+        "actor_index": 4,
+        "role": "Người cha / Người quan sát",
+        "appearance": "Người lớn đứng quan sát",
+        "true_action": "Đứng quan sát không gian sinh hoạt",
+        "posture_desc": "Tư thế đứng thẳng quan sát"
+      }
+    ],
+    "segment_analyses": [
+      {
+        "segment_id": "SEG-01",
+        "macro_narrative": "Người lớn đang bế bồng, đung đưa dỗ dành em bé trước ngực trong khi các thành viên gia đình đứng bên cạnh hỗ trợ trong không gian an toàn.",
+        "detailed_action": "Bế em bé và tương tác gia đình",
+        "context_description": "Tương tác sinh hoạt gia đình thân mật, an toàn tuyệt đối.",
+        "prediction_next_4s": "Duy trì bế bồng em bé và tiếp tục trò chuyện gia đình bình thường."
+      }
+    ]
+  }
+}

@@ -571,6 +571,14 @@ function setSlicePreset(startSec, endSec) {
     if (eInput) eInput.value = formatTime(endSec);
 }
 
+function loadSampleDemoURL() {
+    const urlInput = document.getElementById("video-url-input");
+    if (urlInput) {
+        urlInput.value = "https://www.youtube.com/watch?v=GeLhuvhyWuM&t=698s";
+        handleURLImport();
+    }
+}
+
 // Handle Web URL Import (YouTube, etc.)
 async function handleURLImport() {
     const urlInput = document.getElementById("video-url-input");
@@ -631,11 +639,19 @@ async function handleURLImport() {
                     thumbEl.src = probe.thumbnail;
                 }
 
-                // Thiết lập mốc mặc định (00:00 -> 01:30)
+                // Thiết lập mốc mặc định (00:00 -> 01:30) hoặc tự động phát hiện ?t=... từ URL
                 const sInput = document.getElementById("url-slice-start");
                 const eInput = document.getElementById("url-slice-end");
-                if (sInput) sInput.value = "00:00";
-                if (eInput) eInput.value = "01:30";
+                const tMatch = url.match(/[?&]t=(\d+)s?/);
+                if (tMatch) {
+                    const startT = parseInt(tMatch[1]);
+                    const endT = Math.min(startT + 30, probe.duration || (startT + 30));
+                    if (sInput) sInput.value = formatTime(startT);
+                    if (eInput) eInput.value = formatTime(endT);
+                } else {
+                    if (sInput) sInput.value = "00:00";
+                    if (eInput) eInput.value = "01:30";
+                }
 
                 // Tạo các nút Preset mốc nhanh theo thời lượng video
                 const presetsContainer = document.getElementById("url-slice-presets");

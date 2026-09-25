@@ -39,6 +39,25 @@ def format_time(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def get_ffmpeg_bin() -> str:
+    """
+    Trả về đường dẫn binary FFmpeg:
+    1. Kiểm tra ffmpeg trên PATH hệ thống.
+    2. Fallback sang binary ffmpeg từ package imageio_ffmpeg.
+    Đảm bảo 100% các máy thành viên không cần cài đặt thủ công.
+    """
+    import shutil
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+
 
 
 def probe_web_video(url: str) -> Dict[str, Any]:
@@ -199,7 +218,7 @@ def download_web_video(
             if os.path.exists(fb_full_path) and os.path.getsize(fb_full_path) > 1000:
                 fb_slice_path = os.path.join(output_dir, f"web_{clean_id}{suffix}.mp4")
                 cmd_cut = [
-                    "ffmpeg", "-y",
+                    get_ffmpeg_bin(), "-y",
                     "-ss", str(s_start),
                     "-to", str(s_end),
                     "-i", fb_full_path,
@@ -883,7 +902,7 @@ class VideoAnnotatorEngine:
         try:
             if has_orig_audio:
                 cmd = [
-                    "ffmpeg", "-y",
+                    get_ffmpeg_bin(), "-y",
                     "-i", raw_temp_path,
                     "-ss", str(start_time),
                     "-to", str(end_time if end_time else start_time + clip_duration),
@@ -898,7 +917,7 @@ class VideoAnnotatorEngine:
                 ]
             else:
                 cmd = [
-                    "ffmpeg", "-y",
+                    get_ffmpeg_bin(), "-y",
                     "-i", raw_temp_path,
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
                     "-pix_fmt", "yuv420p",
@@ -936,7 +955,8 @@ class VideoAnnotatorEngine:
             "fps": input_fps,
             "width": orig_w,
             "height": orig_h,
-            "audio_status": "Có âm thanh gốc" if has_orig_audio else "Không có âm thanh (Video CCTV câm - Hãy tập trung 100% vào ngôn ngữ cơ thể, cử chỉ bàn tay, hướng mắt)"
+            "audio_status": "Có âm thanh gốc" if has_orig_audio else "Không có âm thanh (Video CCTV câm - Hãy tập trung 100% vào ngôn ngữ cơ thể, cử chỉ bàn tay, hướng mắt)",
+            "video_source": input_path
         }
 
         # Lưu ảnh snapshot Keyframes cho từng phân đoạn timeline
