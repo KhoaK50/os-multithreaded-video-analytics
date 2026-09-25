@@ -348,6 +348,21 @@ async function fetchCameraLogs() {
         const data = await res.json();
         const logs = data.logs || [];
 
+        // Cập nhật huy hiệu trạng thái AI (Cloud vs 429 Quota Exceeded vs Heuristic Cục bộ)
+        const quotaBadge = document.getElementById("gemini-quota-badge");
+        if (quotaBadge && data.gemini_status) {
+            if (data.gemini_status === "quota_exceeded") {
+                quotaBadge.textContent = "● 429 Quota Exceeded (AI Tự Hành Cục Bộ)";
+                quotaBadge.className = "badge badge-warn mono";
+            } else if (data.gemini_status === "heuristic_offline") {
+                quotaBadge.textContent = "● AI Tự Hành Offline (0 Token)";
+                quotaBadge.className = "badge badge-safe mono";
+            } else {
+                quotaBadge.textContent = "● 13 RPM Free Quota";
+                quotaBadge.className = "badge badge-safe mono";
+            }
+        }
+
         // So sánh tránh render lại làm nhấp nháy UI
         if (logs.length === cachedLogs.length && JSON.stringify(logs) === JSON.stringify(cachedLogs)) {
             return;

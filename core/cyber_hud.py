@@ -42,7 +42,22 @@ class CyberHUDRenderer:
         self.font_caption = self._load_font(["segoeui.ttf", "arial.ttf"], 11)
 
     def _load_font(self, font_names, size, bold=False):
-        for name in font_names:
+        # Hỗ trợ đa nền tảng Windows và Linux Ubuntu (Google Colab) cho tiếng Việt Unicode
+        candidates = list(font_names)
+        if bold:
+            candidates.extend([
+                "DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                "FreeSansBold.ttf", "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
+            ])
+        else:
+            candidates.extend([
+                "DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "FreeSans.ttf", "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+            ])
+
+        for name in candidates:
             try:
                 return ImageFont.truetype(name, size)
             except Exception:
@@ -302,11 +317,14 @@ class CyberHUDRenderer:
         ram_val = metrics.get("ram_percent", 0.0)
         self._draw_metric_bar(draw, pad_x + 12, y + 58, "RAM Usage:", f"{ram_val:.0f}%", ram_val / 100.0)
 
-        # Đo vẽ GPU RTX 5060 VRAM
+        # Đo vẽ GPU VRAM
         vram_used = metrics.get("gpu_vram_used", 0.0)
         vram_total = metrics.get("gpu_vram_total", 8.0)
         vram_ratio = min(1.0, max(0.0, vram_used / max(1.0, vram_total)))
-        self._draw_metric_bar(draw, pad_x + 12, y + 84, "GPU VRAM (RTX 5060):", f"{vram_used:.1f}/{vram_total:.1f} GB", vram_ratio)
+        gpu_name = metrics.get("gpu_name")
+        if not gpu_name:
+            gpu_name = "Tesla T4" if vram_total > 12.0 else "RTX 5060"
+        self._draw_metric_bar(draw, pad_x + 12, y + 84, f"GPU VRAM ({gpu_name}):", f"{vram_used:.1f}/{vram_total:.1f} GB", vram_ratio)
 
         # Thông số luồng & Hàng đợi
         buf_size = metrics.get("queue_size", 0)

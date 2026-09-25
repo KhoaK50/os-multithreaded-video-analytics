@@ -130,11 +130,13 @@ class LiveCameraPipeline:
         # Cloud AI: Google Gemini Multimodal Vision (Chu kỳ 4s điều phối Free Quota)
         self.gemini_client = None
         self.gemini_model = getattr(CONFIG, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        self.gemini_status = "heuristic_offline"
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:
             try:
                 from google import genai
                 self.gemini_client = genai.Client(api_key=api_key)
+                self.gemini_status = "active"
                 print(f"[+] Khoi tao Gemini Client ({self.gemini_model}) cho chu ky 4s thanh cong!")
             except Exception as e_init:
                 print(f"[!] Khong the khoi tao Gemini Client: {e_init}")
@@ -281,6 +283,161 @@ class LiveCameraPipeline:
             self.frame_count += 1
 
 
+    @staticmethod
+    def _synthesize_heuristic_action(posture_text: str, bio: dict) -> dict:
+        """
+        Bộ Hội chẩn Hành vi Tự hành Cục bộ (Autonomous Heuristic Arbiter):
+        Tạo phân tích ngữ cảnh chuẩn học thuật, tự nhiên và phong phú khi Gemini API
+        hết hạn mức (429 Quota Exceeded) hoặc chưa cấu hình API Key.
+        """
+        import random
+        angle = bio.get("angle", 90.0)
+        is_danger = bio.get("is_danger", False)
+        is_warning = bio.get("is_warning", False)
+
+        TEMPLATES = {
+            "Chống cằm / Đỡ má suy nghĩ": {
+                "descriptions": [
+                    "Đối tượng đặt một tay nâng đỡ vùng cằm hoặc má, phần thân hơi nghiêng về phía trước, ánh mắt hướng tập trung quan sát màn hình làm việc.",
+                    "Tư thế tì cằm lên mu bàn tay trong trạng thái trầm ngâm, nhịp vận động tĩnh lặng, thể hiện sự tập trung cao độ vào việc phân tích hoặc đọc tài liệu.",
+                    "Ghi nhận tư thế đỡ cằm bằng tay thuận, đầu hơi nghiêng sang một bên, giữ nhịp thở đều và tương tác thị giác liên tục với màn hình."
+                ],
+                "predictions": [
+                    "Duy trì trạng thái tư duy tập trung hoặc chuẩn bị đưa tay về bàn phím để tiếp tục thao tác.",
+                    "Chuyển đổi trạng thái sau khi giải quyết xong tác vụ tư duy, hạ tay xuống bàn làm việc.",
+                    "Duy trì vị trí ngồi nghiên cứu tài liệu trong các chu kỳ tiếp theo."
+                ],
+                "severity": "safe"
+            },
+            "Giơ tay phát biểu / Vẫy tay": {
+                "descriptions": [
+                    "Cánh tay giơ cao ngang hoặc vượt tầm đầu, lòng bàn tay hướng về phía trước tạo cử chỉ ra hiệu, vẫy tay hoặc chuẩn bị phát biểu ý kiến.",
+                    "Đối tượng thực hiện cử chỉ nâng cánh tay về phía camera để tương tác, cử động dứt khoát và rõ nét trong không gian theo dõi.",
+                    "Ghi nhận tín hiệu giao tiếp cử chỉ tay giơ cao, góc khớp vai mở rộng, thể hiện hành động kết nối hoặc xin quyền phát biểu."
+                ],
+                "predictions": [
+                    "Hạ tay xuống sau khi hoàn thành cử chỉ ra hiệu và quay lại tư thế làm việc bình thường.",
+                    "Tiếp tục duy trì cử chỉ giao tiếp hoặc trao đổi thông tin với người đối diện.",
+                    "Chuyển sang tương tác trực tiếp với thiết bị làm việc."
+                ],
+                "severity": "safe"
+            },
+            "Khoanh tay trước ngực": {
+                "descriptions": [
+                    "Hai tay đan chéo đặt ngang trước ngực, lưng tựa vào ghế, ánh mắt quan sát tổng thể không gian làm việc trong trạng thái thụ động.",
+                    "Tư thế khoanh tay thư giãn, trọng tâm cơ thể ổn định, không có thao tác bàn phím hoặc chuột trong chu kỳ quan sát."
+                ],
+                "predictions": [
+                    "Đang theo dõi nội dung trình chiếu hoặc lắng nghe trao đổi, sẽ sớm mở tay để thao tác thiết bị.",
+                    "Duy trì tư thế quan sát trong vài chu kỳ tiếp theo."
+                ],
+                "severity": "safe"
+            },
+            "Cúi đầu tập trung / Xem tài liệu": {
+                "descriptions": [
+                    "Đầu cúi thấp về phía mặt bàn, góc cổ gập tập trung nhìn tài liệu giấy hoặc thiết bị di động phụ trợ bên cạnh.",
+                    "Ghi nhận góc nghiêng đầu gập sâu xuống dưới, cơ thể hướng về mặt bàn để ghi chép hoặc tra cứu tài liệu chuyên môn."
+                ],
+                "predictions": [
+                    "Ngẩng đầu quan sát lại màn hình chính sau khi kiểm tra xong nội dung tài liệu.",
+                    "Tiếp tục đối chiếu thông tin giữa tài liệu bàn làm việc và màn hình máy tính."
+                ],
+                "severity": "warning" if angle < 60 else "safe"
+            },
+            "Ngả lưng thư giãn": {
+                "descriptions": [
+                    "Thân người tựa sâu vào lưng ghế, cơ bắp thả lỏng sau khoảng thời gian thao tác liên tục trước máy tính.",
+                    "Ghi nhận tư thế ngả lưng ra sau ghế làm việc, tốc độ chuyển động chậm lại, giải tỏa áp lực cột sống."
+                ],
+                "predictions": [
+                    "Nghỉ ngơi ngắn trong vài chục giây trước khi trở lại tư thế công thái học chuẩn.",
+                    "Vận động nhẹ phần vai cổ để tiếp tục ca làm việc."
+                ],
+                "severity": "safe"
+            },
+            "Đưa hai tay lên đầu / Căng thẳng": {
+                "descriptions": [
+                    "Hai bàn tay đưa lên giữ vùng đầu hoặc thái dương, biểu hiện sự mệt mỏi, áp lực hoặc căng thẳng tinh thần khi xử lý tác vụ phức tạp.",
+                    "Cử chỉ ôm đầu hoặc xoa bóp thái dương, nhịp vận động bất an, có dấu hiệu quá tải công việc."
+                ],
+                "predictions": [
+                    "Cần tạm dừng công việc ngắn hạn, hít thở sâu để giảm áp lực cho mắt và hệ thần kinh.",
+                    "Nên đứng dậy vận động nhẹ để phục hồi trạng thái thể lực."
+                ],
+                "severity": "warning"
+            },
+            "Té ngã / Gục xuống bàn": {
+                "descriptions": [
+                    f"Góc thân người đổ gập bất thường ({angle:.1f}°), đầu và ngực sát mặt bàn, cảnh báo mất khả năng kiểm soát tư thế hoặc suy giảm ý thức đột ngột.",
+                    "Phát hiện sự sụt giảm đột ngột trọng tâm cơ thể, thân người bất động trên mặt phẳng bàn làm việc."
+                ],
+                "predictions": [
+                    "KÍCH HOẠT CẢNH BÁO AN TOÀN KHẨN CẤP: Cần nhân viên y tế hoặc đồng nghiệp kiểm tra ngay thể trạng đối tượng.",
+                    "Gửi tín hiệu SOS đến bộ phận giám sát an toàn lao động."
+                ],
+                "severity": "danger"
+            },
+            "Cử chỉ bất thường / Vung tay mạnh": {
+                "descriptions": [
+                    "Biên độ dao động và vận tốc vung cánh tay vượt ngưỡng an toàn thông thường, cử chỉ phản kháng hoặc vận động kích động mạnh.",
+                    "Phát hiện gia tốc chuyển động cổ tay bất thường trong không gian hẹp, tiềm ẩn nguy cơ va chạm xung quanh."
+                ],
+                "predictions": [
+                    "Theo dõi sát diễn biến vận động tiếp theo để xác định nguy cơ mất an toàn.",
+                    "Điều chỉnh lại vị trí ngồi và tránh các vật dụng dễ vỡ xung quanh."
+                ],
+                "severity": "warning"
+            },
+            "Ngồi thẳng bình thường": {
+                "descriptions": [
+                    "Tư thế ngồi chuẩn công thái học, hai tay đặt gần khu vực bàn phím/chuột, mắt nhìn thẳng vào trung tâm không gian làm việc.",
+                    "Cơ thể duy trì trạng thái cân bằng ổn định, cột sống thẳng, nhịp vận động phản ánh tác vụ làm việc bình thường.",
+                    "Người dùng ngồi ngay ngắn trước màn hình, tư thế chuẩn chỉ, tập trung thao tác trong phiên làm việc."
+                ],
+                "predictions": [
+                    "Tiếp tục thực hiện các thao tác gõ phím, rê chuột hoặc điều hướng giao diện trong 4 giây tiếp theo.",
+                    "Duy trì năng suất làm việc ổn định tại vị trí hiện tại.",
+                    "Thực hiện các thao tác văn phòng thường nhật tiếp theo."
+                ],
+                "severity": "safe"
+            },
+            "Rời vị trí / Vắng mặt": {
+                "descriptions": [
+                    "Không phát hiện bóng người trong khung hình giám sát, vị trí làm việc hiện đang để trống.",
+                    "Khung hình camera không ghi nhận được khớp xương cơ thể người, người dùng đã rời khỏi tầm quan sát."
+                ],
+                "predictions": [
+                    "Chờ đối tượng quay trở lại vị trí làm việc để tiếp tục chu kỳ phân tích.",
+                    "Duy trì chế độ theo dõi thụ động tiết kiệm tài nguyên."
+                ],
+                "severity": "safe"
+            }
+        }
+
+        # Tìm kiếm nhãn gần khớp nhất
+        cfg = None
+        for key in TEMPLATES:
+            if key in posture_text or posture_text in key:
+                cfg = TEMPLATES[key]
+                break
+        if cfg is None:
+            cfg = TEMPLATES["Ngồi thẳng bình thường"]
+
+        desc = random.choice(cfg["descriptions"])
+        pred = random.choice(cfg["predictions"])
+        sev = cfg["severity"]
+        if is_danger:
+            sev = "danger"
+        elif is_warning and sev == "safe":
+            sev = "warning"
+
+        return {
+            "action": posture_text,
+            "description": desc,
+            "prediction_next_4s": pred,
+            "severity": sev
+        }
+
     def _gemini_worker(self):
         """
         Luồng Consumer AI Cloud (Google Gemini 3.5 Flash Lite):
@@ -362,25 +519,23 @@ Trả về định dạng JSON thuần:
                             ai_result = json.loads(raw_text)
                             if isinstance(ai_result, list) and len(ai_result) > 0:
                                 ai_result = ai_result[0]
+                            if isinstance(ai_result, dict):
+                                self.gemini_status = "active"
                         except Exception as e_api:
                             err_str = str(e_api)
                             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                                print("[!] Gemini Rate Limit (15 RPM) - Tam nghi 10s de doi lam moi han muc phut...")
-                                time.sleep(10.0)
+                                self.gemini_status = "quota_exceeded"
+                                print("[!] Gemini Rate Limit / Quota Exceeded (429) -> Kich hoat Heuristic AI Tu Hanh Cuc Bo...")
+                                time.sleep(5.0)
                             else:
                                 print(f"[!] Loi goi Gemini Vision: {e_api}")
 
-                    # Fallback thông minh nếu không có kết quả từ Gemini API (hoặc mất mạng)
+                    # Fallback tự hành thông minh nếu không có kết quả từ Gemini API (hoặc mất mạng / hết quota 429)
                     if not ai_result or not isinstance(ai_result, dict):
                         with self.ai_lock:
                             bio = dict(self.biomechanics)
-                        posture_text = bio.get("posture", "Ngồi làm việc trước màn hình")
-                        ai_result = {
-                            "action": posture_text,
-                            "description": f"Người dùng đang trong tư thế {posture_text.lower()} tại vị trí làm việc (Đang đồng bộ phân tích thị giác AI).",
-                            "prediction_next_4s": "Duy trì trạng thái hoạt động trong 4 giây tiếp theo.",
-                            "severity": "safe" if not bio.get("is_danger", False) else "danger"
-                        }
+                        posture_text = bio.get("posture", "Ngồi thẳng bình thường")
+                        ai_result = self._synthesize_heuristic_action(posture_text, bio)
 
                     action_name = ai_result.get("action", "Hành vi bình thường")
                     desc_name = ai_result.get("description", "Không có mô tả chi tiết")
@@ -988,12 +1143,13 @@ async def toggle_camera(request: Request):
 @app.get("/api/camera/logs")
 def get_camera_logs():
     """
-    Trả về danh sách nhật ký hành vi thời gian thực kèm URL ảnh Snapshot (0 Token, 0 API).
+    Trả về danh sách nhật ký hành vi thời gian thực kèm URL ảnh Snapshot và trạng thái AI.
     """
     return {
         "status": "success",
         "total": len(LIVE_CAMERA.action_logs),
-        "logs": LIVE_CAMERA.action_logs
+        "logs": LIVE_CAMERA.action_logs,
+        "gemini_status": LIVE_CAMERA.gemini_status
     }
 
 
