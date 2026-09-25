@@ -2,7 +2,8 @@
 
 > **Học phần**: Hệ Điều Hành  
 > **Giảng viên hướng dẫn**: Thầy Nguyễn Tấn Duẩn  
-> **Đề tài**: *Hệ thống giám sát hành vi video thời gian thực & Phân tích bằng AI kết hợp kiểm soát đa luồng*
+> **Đề tài**: *Hệ thống giám sát hành vi video thời gian thực & Phân tích bằng AI kết hợp kiểm soát đa luồng*  
+> **Chạy 1-Click trên GPU Cloud**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/KhoaK50/os-multithreaded-video-analytics/blob/main/run_on_colab.ipynb)
 
 ---
 
@@ -142,7 +143,15 @@ pip install -r requirements.txt
 
 ## 5. Hướng Dẫn Vận Hành (Các Chế Độ Chạy)
 
-### 🚀 Cách 1: Chạy 1-Click (Dành cho thành viên nhóm trên Windows)
+### ⚡ Cách 0: Chạy 1-Click Trên Cloud (Google Colab GPU Tesla T4 Miễn Phí)
+*Dành cho thành viên nhóm dùng máy tính yếu, MacBook hoặc Thầy cô kiểm thử nhanh mà không cần cài Python vào máy:*
+1. Bấm vào nút [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/KhoaK50/os-multithreaded-video-analytics/blob/main/run_on_colab.ipynb) hoặc mở file [`run_on_colab.ipynb`](run_on_colab.ipynb).
+2. Bấm phím tắt **`Ctrl + F9`** (hoặc chọn menu **Runtime** $\rightarrow$ **Run all**).
+3. Đợi khoảng 45 giây, cuộn xuống ô cuối cùng để bấm vào đường link web công khai `https://xxxx.trycloudflare.com` hiển thị trên màn hình. Toàn bộ hệ thống chạy trên máy chủ đám mây GPU NVIDIA Tesla T4 của Google!
+
+---
+
+### 🚀 Cách 1: Chạy 1-Click Cục Bộ (Dành cho thành viên nhóm trên Windows)
 - **Mở Giao Diện Web Hợp Nhất (FastAPI + CapCut Timeline + Live Camera)**: Click đúp chuột vào file `run_web.bat`.
   *(Hệ thống có cơ chế Readiness Probe tự động kiểm tra cổng 8000 đạt HTTP 200 OK rồi mới mở trình duyệt, không bao giờ gặp lỗi ERR_CONNECTION_REFUSED).*
 - **Mở Camera Cyber Command Center OpenCV (1280x720 HUD)**: Click đúp chuột vào file `run_camera.bat`.
