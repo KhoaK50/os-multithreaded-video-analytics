@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYBER SURVEILLANCE HUB - HỆ ĐIỀU HÀNH</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- HEADER BAR -->
+    <header class="cyber-header">
+        <div class="header-left">
+            <div class="brand-logo">
+                <span class="logo-icon">🛡️</span>
+                <div class="brand-text">
+                    <span class="brand-title">CYBER SURVEILLANCE HUB</span>
+                    <span class="brand-sub">ĐỒ ÁN HỆ ĐIỀU HÀNH — GVHD: THẦY NGUYỄN TẤN DUẨN</span>
+                </div>
+            </div>
+        </div>
+
+        <nav class="cyber-nav">
+            <button class="nav-tab active" id="tab-live-btn" onclick="switchTab('live')">
+                <span class="tab-dot live-dot"></span>
+                <span>🎥 GIÁM SÁT CAMERA TRỰC TIẾP</span>
+            </button>
+            <button class="nav-tab" id="tab-video-btn" onclick="switchTab('video')">
+                <span class="tab-dot"></span>
+                <span>📁 PHÂN TÍCH & CẮT VIDEO (CAPCUT TIMELINE)</span>
+            </button>
+        </nav>
+
+        <div class="header-right">
+            <div class="hardware-pill">
+                <span class="pill-badge">GPU</span>
+                <span class="pill-text" id="header-gpu-text">NVIDIA RTX 5060 (CUDA)</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="main-content">
+        
+        <!-- ============================================================= -->
+        <!-- TAB 1: LIVE SURVEILLANCE CAMERA                               -->
+        <!-- ============================================================= -->
+        <section id="tab-live" class="tab-pane active">
+            <div class="live-full-container">
+                <!-- Video Stream Viewport Card -->
+                <div class="cyber-card stream-card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <span class="indicator-pulse"></span>
+                            <span>LUỒNG CAMERA GIÁM SÁT TRỰC TIẾP — CYBER HUD (1280×720)</span>
+                        </div>
+                        <div class="header-status-badge">
+                            <span id="live-alert-text" class="badge badge-safe mono">Khu vực an toàn</span>
+                        </div>
+                    </div>
+
+                    <div class="stream-viewport-container">
+                        <img id="live-stream-img" src="/api/stream/live" alt="Cyber Surveillance Stream" />
+                        <div id="cam-offline-overlay" class="cam-offline hidden">
+                            <div class="offline-box">
+                                <span class="offline-icon">📷</span>
+                                <p>Camera đang tạm dừng</p>
+                                <button class="btn btn-primary" onclick="toggleCamera('start')">Khởi động lại Camera</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Camera Action Bar directly below video -->
+                    <div class="stream-control-bar">
+                        <div class="control-group-left">
+                            <button class="btn btn-sm btn-primary" id="btn-manual-snap" onclick="captureManualSnapshot()" title="Chụp lại khung hình ngay lập tức và lưu vào nhật ký">
+                                📸 Chụp Snapshot
+                            </button>
+                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-mirror" onclick="toggleCameraEnhancer('mirror')" title="Lật gương để chiều cử động tay tự nhiên">
+                                🪞 Lật gương: BẬT
+                            </button>
+                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-glare" onclick="toggleCameraEnhancer('anti_glare')" title="Cân bằng dải sáng chống lóa bóng đèn trần">
+                                💡 Chống chói: BẬT
+                            </button>
+                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-denoise" onclick="toggleCameraEnhancer('denoise')" title="Khử nhiễu hạt khi thiếu sáng">
+                                🧹 Khử nhiễu: BẬT
+                            </button>
+                        </div>
+                        <div class="control-group-right">
+                            <button class="btn btn-sm btn-danger-outline" id="btn-toggle-cam" onclick="toggleCamera()">
+                                ⏹️ Tạm dừng Camera
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BẢNG NHẬT KÝ HÀNH VI THỜI GIAN THỰC (BEHAVIOR EVENT LOG TABLE) -->
+                <div class="cyber-card behavior-log-card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <div class="card-title">
+                                <span>📋 NHẬT KÝ PHÂN TÍCH HÀNH VI (GOOGLE GEMINI AI — CHU KỲ 4S)</span>
+                                <span class="badge badge-neutral mono" id="log-count-badge">0 sự kiện</span>
+                                <span class="badge badge-safe mono" id="gemini-quota-badge">● 13 RPM Free Quota</span>
+                            </div>
+                            <span class="card-subtitle">Thẩm định ngữ cảnh chuyên sâu theo chu kỳ 4 giây và dự báo xu hướng động tác tiếp theo bằng mô hình Vision Multimodal.</span>
+                        </div>
+                        <div class="table-tools">
+                            <button class="btn btn-sm btn-outline" id="btn-export-csv" onclick="exportLogsToCSV()" title="Xuất toàn bộ bảng nhật ký thành file CSV">
+                                📥 Xuất CSV
+                            </button>
+                            <button class="btn btn-sm btn-outline btn-subtle" id="btn-clear-logs" onclick="clearLogs()" title="Xóa sạch nhật ký hiện tại">
+                                🗑️ Xóa nhật ký
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="log-table-wrapper">
+                        <table class="behavior-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 85px;">STT / MÃ</th>
+                                    <th style="width: 95px;">THỜI GIAN</th>
+                                    <th style="width: 210px;">HÀNH VI (4S QUA)</th>
+                                    <th>MÔ TẢ CHI TIẾT NGỮ CẢNH</th>
+                                    <th style="width: 250px;">🔮 DỰ ĐOÁN 4S TIẾP THEO</th>
+                                    <th style="width: 125px; text-align: center;">TỆP ẢNH ĐÍNH KÈM</th>
+                                </tr>
+                            </thead>
+                            <tbody id="behavior-log-tbody">
+                                <tr class="empty-row">
+                                    <td colspan="6" class="empty-cell">
+                                        <div class="empty-state-box">
+                                            <span class="empty-icon">🤖</span>
+                                            <p class="empty-title">Đang kết nối luồng phân tích hành vi Gemini AI chu kỳ 4s...</p>
+                                            <span class="empty-sub">Mỗi 4 giây, hệ thống tự động chụp khung hình camera gửi lên Gemini Vision để nhận diện hành vi và dự báo xu hướng động tác tiếp theo.</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- TAB 2: VIDEO IMPORT, CAPCUT TIMELINE & EXPORT                 -->
+        <!-- ============================================================= -->
+        <section id="tab-video" class="tab-pane">
+
+            <!-- Step 1: Video Import Source Selection -->
+            <div class="cyber-card import-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="step-num">1</span>
+                        <span>NGUỒN VIDEO ĐẦU VÀO (CHỌN FILE LOCAL HOẶC DÁN URL TRÊN MẠNG)</span>
+                    </div>
+                    <div class="source-toggle">
+                        <button class="toggle-btn active" id="src-local-btn" onclick="switchSourceMode('local')">📁 File Trong Máy</button>
+                        <button class="toggle-btn" id="src-url-btn" onclick="switchSourceMode('url')">🌐 Dán Link URL (YouTube / Web)</button>
+                    </div>
+                </div>
+
+                <!-- Local File Upload Zone -->
+                <div id="source-local-zone" class="source-zone">
+                    <div class="dropzone" id="video-dropzone" onclick="document.getElementById('video-file-input').click()">
+                        <input type="file" id="video-file-input" accept="video/mp4,video/avi,video/quicktime,video/mkv" style="display:none" onchange="handleFileSelected(event)">
+                        <div class="dropzone-content">
+                            <span class="drop-icon">📤</span>
+                            <h4>Kéo thả video vào đây, hoặc <span class="highlight">nhấn để chọn file</span></h4>
+                            <p>Hỗ trợ định dạng .mp4, .avi, .mov, .mkv. Dung lượng tối đa 150MB.</p>
+                            <button type="button" class="btn btn-sm btn-outline" style="margin-top: 10px;" onclick="event.stopPropagation(); loadSampleVideo();">
+                                🎬 Sử dụng video mẫu (demo_synthetic.mp4)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Web URL Input Zone -->
+                <div id="source-url-zone" class="source-zone hidden">
+                    <div class="url-input-group">
+                        <input type="text" id="video-url-input" class="cyber-input" placeholder="Dán link video (Ví dụ: https://www.youtube.com/watch?v=... hoặc link .mp4 trực tiếp)" onkeypress="if(event.key==='Enter') handleURLImport()">
+                        <button class="btn btn-primary" id="btn-fetch-url" onclick="handleURLImport()">
+                            <span id="url-btn-spinner" class="spinner hidden"></span>
+                            <span id="url-btn-text">🔍 Kiểm Tra & Nạp Video</span>
+                        </button>
+                    </div>
+                    <p class="url-hint">Hệ thống quét thông tin tức thì trong 0.5s và tự động cho phép trích xuất bất kỳ phân đoạn nào (đầu, giữa, cuối) từ video dài.</p>
+
+                    <!-- Smart Range Extractor for Long Videos (> 180s) -->
+                    <div id="url-range-extractor-box" class="url-range-box hidden">
+                        <div class="url-meta-row">
+                            <img id="url-meta-thumb" src="" alt="Thumbnail" class="url-thumb">
+                            <div class="url-meta-info">
+                                <h4 id="url-meta-title" class="url-title">Tiêu đề video</h4>
+                                <div class="url-meta-pills">
+                                    <span class="badge badge-neutral mono" id="url-meta-duration">Thời lượng: --:--</span>
+                                    <span class="badge badge-safe" id="url-meta-badge">⚡ Video dài: Cho phép chọn dải bất kỳ</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="range-slice-controls">
+                            <div class="slice-header">
+                                <span>⏱️ CHỌN MỐC THỜI GIAN CẦN TRÍCH XUẤT (TỐI ĐA 90S):</span>
+                                <span class="slice-tip">Hệ thống chỉ tải HTTP Byte-Range đúng đoạn này (mất 2-3s), không tải cả video.</span>
+                            </div>
+                            <div class="slice-inputs-row">
+                                <div class="slice-input-item">
+                                    <label for="url-slice-start">Từ mốc (MM:SS hoặc giây):</label>
+                                    <input type="text" id="url-slice-start" class="cyber-input mono" value="00:00" placeholder="00:00">
+                                </div>
+                                <span class="slice-arrow">➔</span>
+                                <div class="slice-input-item">
+                                    <label for="url-slice-end">Đến mốc (MM:SS hoặc giây):</label>
+                                    <input type="text" id="url-slice-end" class="cyber-input mono" value="01:30" placeholder="01:30">
+                                </div>
+                                <button class="btn btn-success" id="btn-confirm-slice" onclick="confirmURLRangeExtract()">
+                                    <span id="url-slice-spinner" class="spinner hidden"></span>
+                                    <span id="url-slice-text">⚡ Tải Đúng Đoạn Này Vào CapCut</span>
+                                </button>
+                            </div>
+                            <div class="slice-presets-row" id="url-slice-presets">
+                                <span class="preset-label">Mốc nhanh:</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: CapCut-style Timeline Trimmer (Appears once video loaded) -->
+            <div id="timeline-section" class="cyber-card timeline-card hidden">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="step-num">2</span>
+                        <span>TRÌNH CẮT ĐOẠN TIMELINE VIDEO KIỂU CAPCUT (CHỐNG TRÀN TOKEN & TIẾT KIỆM BỘ NHỚ)</span>
+                    </div>
+                    <div class="token-meter-badge" id="token-meter">
+                        <span class="meter-icon">🟢</span>
+                        <span id="token-meter-text">TỐI ƯU HOÀN HẢO (Xử lý ~15s, &lt;1,200 tokens)</span>
+                    </div>
+                </div>
+
+                <!-- Video Preview Player -->
+                <div class="preview-player-wrapper">
+                    <video id="preview-video" controls preload="metadata"></video>
+                </div>
+
+                <!-- Interactive Timeline Range Scrubber -->
+                <div class="timeline-controls-box">
+                    <div class="timeline-header-info">
+                        <div class="time-readout">
+                            <span>VÙNG CHỌN PHÂN TÍCH: </span>
+                            <span class="time-badge mono" id="trim-start-display">00:00</span>
+                            <span> ➔ </span>
+                            <span class="time-badge mono" id="trim-end-display">00:30</span>
+                            <span class="duration-badge" id="trim-duration-display">(30.0 giây)</span>
+                        </div>
+                        <div class="preset-buttons">
+                            <span class="preset-label">Chọn nhanh:</span>
+                            <button class="btn btn-xs btn-outline" onclick="applyPreset(10)">10 giây</button>
+                            <button class="btn btn-xs btn-outline" onclick="applyPreset(15)">15 giây</button>
+                            <button class="btn btn-xs btn-outline" onclick="applyPreset(30)">30 giây</button>
+                            <button class="btn btn-xs btn-outline" onclick="applyPreset(60)">60 giây</button>
+                            <button class="btn btn-xs btn-outline" onclick="applyPreset('all')">Toàn bộ video</button>
+                        </div>
+                    </div>
+
+                    <!-- Dual Sliders for Range Selection -->
+                    <div class="range-slider-container">
+                        <input type="range" id="range-start" min="0" max="100" step="0.1" value="0" oninput="onRangeStartChange(this.value)">
+                        <input type="range" id="range-end" min="0" max="100" step="0.1" value="30" oninput="onRangeEndChange(this.value)">
+                    </div>
+
+                    <div class="timeline-ruler">
+                        <span>0s</span>
+                        <span id="ruler-mid">--</span>
+                        <span id="ruler-end">--</span>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <div class="action-launch-row">
+                    <button class="btn btn-lg btn-success" id="btn-start-process" onclick="launchProcessing()">
+                        ⚡ XÁC NHẬN ĐOẠN ĐÃ CHỌN & KHỞI ĐỘNG AI PHÂN TÍCH
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: Processing Progress Bar -->
+            <div id="processing-section" class="cyber-card processing-card hidden">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="indicator-pulse"></span>
+                        <span id="proc-title">ĐANG CHẠY SUY LUẬN AI TRÊN GPU NVIDIA GEFORCE RTX 5060...</span>
+                    </div>
+                    <div class="fps-badge mono" id="proc-fps-badge">-- FPS</div>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="proc-progress-fill" style="width: 0%;"></div>
+                </div>
+                <div class="progress-status-row">
+                    <span id="proc-frames-text" class="mono">Khung hình: 0 / 0</span>
+                    <span id="proc-pct-text" class="mono">0.0%</span>
+                </div>
+            </div>
+
+            <!-- Step 4: Results, Side-by-Side Player & Export -->
+            <div id="results-section" class="cyber-card results-card hidden">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="step-num">3</span>
+                        <span>KẾT QUẢ KẾT XUẤT: VIDEO GẮN NHÃN SKELETON & CHẨN ĐOÁN HÀNH VI</span>
+                    </div>
+                    <div class="export-actions">
+                        <a id="btn-download-mp4" class="btn btn-primary" href="#" download>
+                            ⬇️ Tải Video MP4 Đã Dán Nhãn
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Interactive Timeline Heatmap Bar & Playhead Indicator -->
+                <div class="results-heatmap-wrapper">
+                    <div class="heatmap-header">
+                        <div class="heatmap-title">
+                            <span>🔥 THƯỚC ĐO CƯỜNG ĐỘ ĐỘNG HỌC & BIẾN CỐ (TIMELINE HEATMAP)</span>
+                            <span class="heatmap-sub">Bấm trực tiếp vào các ô màu trên thanh timeline để nhảy video đến đúng giây đó</span>
+                        </div>
+                        <div class="heatmap-legend">
+                            <span class="legend-item"><span class="legend-dot dot-safe"></span> An toàn</span>
+                            <span class="legend-item"><span class="legend-dot dot-warn"></span> Cảnh báo</span>
+                            <span class="legend-item"><span class="legend-dot dot-danger"></span> Nguy cơ cao</span>
+                        </div>
+                    </div>
+                    <div class="heatmap-bar" id="timeline-heatmap-bar"></div>
+                    <div class="heatmap-time-axis" id="heatmap-time-axis"></div>
+                </div>
+
+                <!-- Segment Focus & Loop Banner (Activated when clicking any segment) -->
+                <div id="segment-focus-banner" class="segment-focus-banner hidden">
+                    <div class="focus-info">
+                        <span class="focus-badge">🎯 ĐANG FOCUS PHÂN ĐOẠN:</span>
+                        <strong id="focus-range-text" class="mono">00:00 ➔ 00:05</strong>
+                        <span id="focus-summary-text" class="focus-sub">Hành vi đang được kiểm tra</span>
+                    </div>
+                    <div class="focus-actions">
+                        <button class="btn btn-xs btn-outline" id="btn-toggle-loop" onclick="toggleLoopCurrentSegment()">🔁 Lặp đoạn này: TẮT</button>
+                        <button class="btn btn-xs btn-outline" onclick="clearSegmentFocus()">✕ Thoát Focus</button>
+                    </div>
+                </div>
+
+                <!-- Side-by-Side Video Players -->
+                <div class="side-by-side-grid">
+                    <div class="player-box">
+                        <div class="player-label">VIDEO ĐOẠN GỐC</div>
+                        <video id="result-orig-video" controls></video>
+                    </div>
+                    <div class="player-box">
+                        <div class="player-label cyber-text">VIDEO ĐÃ DÁN NHÃN SKELETON 17 ĐIỂM + BBOX + HUD</div>
+                        <video id="result-annotated-video" controls></video>
+                    </div>
+                </div>
+
+                <!-- Timeline Segments Master Section -->
+                <div class="cyber-subcard timeline-segments-subcard">
+                    <div class="segments-header">
+                        <div class="subcard-title">⏱️ DANH SÁCH PHÂN ĐOẠN HÀNH VI THEO DÒNG THỜI GIAN (TIMELINE CHAPTERS)</div>
+                        <!-- Entity Filter Bar -->
+                        <div class="entity-filter-bar" id="entity-filter-container">
+                            <span class="filter-label">Lọc đối tượng:</span>
+                            <button class="filter-chip active" id="filter-chip-all" onclick="filterByEntity('all')">🔘 Tất cả</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="cyber-table timeline-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 130px;">PHÂN ĐOẠN</th>
+                                    <th>BỐI CẢNH & HÀNH VI TỪNG ĐỐI TƯỢNG (TRACK ID)</th>
+                                    <th style="width: 120px;">MỨC ĐỘ</th>
+                                    <th style="width: 110px; text-align: center;">BẰNG CHỨNG</th>
+                                    <th style="width: 130px; text-align: right;">THAO TÁC</th>
+                                </tr>
+                            </thead>
+                            <tbody id="timeline-segments-tbody">
+                                <!-- Injected dynamically via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Gemini Medical & Security Synthesis -->
+                <div class="gemini-synthesis-card" id="gemini-report-box">
+                    <div class="report-header">
+                        <span class="ai-sparkle">✨</span>
+                        <span class="report-title">HỘI CHẨN CHUYÊN SÂU TỪ CLOUD AI (GEMINI 3.5 FLASH LITE — SINGLE SYNTHESIS)</span>
+                        <span class="token-cost-badge mono" id="report-token-badge">Tiêu thụ: ~1,120 Tokens</span>
+                    </div>
+                    <div class="report-grid">
+                        <div class="report-item">
+                            <span class="item-label">MỨC ĐỘ NGUY HIỂM:</span>
+                            <span id="rep-threat-level" class="badge badge-safe">● AN TOÀN</span>
+                        </div>
+                        <div class="report-item">
+                            <span class="item-label">SỰ CỐ CHÍNH:</span>
+                            <span id="rep-primary-incident" class="rep-val">Bình thường</span>
+                        </div>
+                        <div class="report-item full-width">
+                            <span class="item-label">CHẨN ĐOÁN CHI TIẾT:</span>
+                            <p id="rep-diagnosis" class="rep-text">Đang nạp chẩn đoán...</p>
+                        </div>
+                        <div class="report-item full-width">
+                            <span class="item-label">HÀNH ĐỘNG KHUYẾN NGHỊ:</span>
+                            <p id="rep-recommendation" class="rep-action">Tiếp tục giám sát.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="analytics-sub-grid">
+                    <!-- Action Percentages -->
+                    <div class="cyber-subcard">
+                        <div class="subcard-title">📊 PHÂN BỔ TỶ LỆ HÀNH VI ĐỐI TƯỢNG</div>
+                        <div id="action-bars-container" class="action-bars">
+                            <!-- Injected dynamically via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Semantic Q&A AI Chatbot -->
+                <div class="cyber-subcard chat-subcard">
+                    <div class="subcard-title">💬 HỎI ĐÁP NGỮ NGHĨA VỀ VIDEO (GEMINI GROUNDED Q&A)</div>
+                    <div class="chat-input-row">
+                        <input type="text" id="chat-question-input" class="cyber-input" placeholder="Hỏi bất kỳ điều gì (ví dụ: Người này có bị chấn thương nặng không? Lúc mấy giây thì ngã?)" onkeypress="if(event.key==='Enter') sendChatMessage()">
+                        <button class="btn btn-primary" onclick="sendChatMessage()">Gửi câu hỏi</button>
+                    </div>
+                    <div id="chat-answer-box" class="chat-response-box hidden">
+                        <div class="answer-header">🤖 TRẢ LỜI CỦA GEMINI AI:</div>
+                        <p id="chat-answer-text"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- SNAPSHOT PREVIEW MODAL -->
+    <div id="snapshot-modal" class="modal-overlay hidden" onclick="closeSnapshotModal(event)">
+        <div class="modal-container" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="modal-badge mono" id="modal-code">#001</span>
+                    <span id="modal-action-title">Hành vi nhận diện</span>
+                </div>
+                <button class="modal-close-btn" onclick="closeSnapshotModal()" title="Đóng cửa sổ">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-image-wrapper">
+                    <img id="modal-img" src="" alt="Bằng chứng ảnh sinh cơ học" />
+                </div>
+                <div class="modal-meta-box">
+                    <div class="meta-row">
+                        <span class="meta-label">Thời điểm ghi nhận:</span>
+                        <span class="meta-val mono" id="modal-time">--:--:--</span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label">Mô tả chi tiết ngữ cảnh:</span>
+                        <span class="meta-val" id="modal-desc">--</span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label">🔮 Dự đoán 4s tiếp theo:</span>
+                        <span class="meta-val text-cyan" id="modal-pred">--</span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label">Mô hình phân tích:</span>
+                        <span class="meta-val mono text-cyan">Google Gemini 3.5 Flash Lite (Vision Multimodal — Chu kỳ 4s)</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a id="modal-download-link" href="#" download="snapshot.jpg" class="btn btn-outline">📥 Tải ảnh về máy</a>
+                <button class="btn btn-primary" onclick="closeSnapshotModal()">Đóng cửa sổ (ESC)</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

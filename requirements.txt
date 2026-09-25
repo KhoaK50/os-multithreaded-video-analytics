@@ -1,0 +1,32 @@
+# ==============================================================================
+# ĐỒ ÁN HỆ ĐIỀU HÀNH - HỆ THỐNG GIÁM SÁT HÀNH VI VIDEO THỜI GIAN THỰC ĐA LUỒNG
+# GVHD: Thầy Nguyễn Tấn Duẩn
+# ==============================================================================
+
+# --- [PYTORCH CHO CARD ĐỒ HỌA NVIDIA RTX 5060 (CUDA 13.2)] ---
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
+torch>=2.2.0
+torchvision>=0.17.0
+
+# --- [XỬ LÝ HÌNH ẢNH & VIDEO / EDGE AI YOLOv8-POSE] ---
+opencv-python>=4.8.0
+pillow>=10.0.0
+numpy>=1.24.0
+ultralytics>=8.0.0
+yt-dlp>=2024.0.0
+
+# --- [TRỌNG TÂM HỆ ĐIỀU HÀNH: ĐO TẢI TÀI NGUYÊN HỆ THỐNG] ---
+psutil>=5.9.0
+nvidia-ml-py>=12.0.0
+
+# --- [AI CLOUD: GEMINI 3.5 FLASH LITE HỘI CHẨN & CHỐNG ẢO GIÁC] ---
+google-genai>=0.1.0
+python-dotenv>=1.0.0
+
+# --- [GIAO DIỆN HỢP NHẤT: FASTAPI CYBER WEB DASHBOARD] ---
+fastapi>=0.110.0
+uvicorn>=0.28.0
+python-multipart>=0.0.9
+
+# (Tùy chọn) Giao diện phụ Streamlit nếu cần:
+streamlit>=1.30.0

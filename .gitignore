@@ -233,3 +233,24 @@ clips/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Antigravity Subagents & Scratch
+.agents/
+scratch/
+
+# IDE settings
+.vscode/
+.idea/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Audio & Video media
+*.webm
+*.m4a
+*.mp3
+*.wav
+*.flv
+
