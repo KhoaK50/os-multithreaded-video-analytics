@@ -239,33 +239,38 @@ async function toggleBrowserWebcam() {
         const offlineOverlay = document.getElementById("cam-offline-overlay");
         if (offlineOverlay) offlineOverlay.classList.add("hidden");
 
-        // Bắt đầu vòng lặp gửi khung hình lên máy chủ GPU
+        // Bắt đầu vòng lặp gửi khung hình thông minh (Adaptive Ping-Pong - Chống Nghẽn Mạng Tuyệt Đối)
         const canvas = document.getElementById("client-webcam-canvas");
+        canvas.width = 480;
+        canvas.height = 360;
         const ctx = canvas.getContext("2d");
-        let isUploading = false;
 
-        browserCamInterval = setInterval(() => {
-            if (!isStreamingBrowserCam || isUploading) return;
-            if (!video || video.readyState < 2) return;
-
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(async (blob) => {
-                if (!blob || !isStreamingBrowserCam) return;
-                isUploading = true;
-                try {
-                    const formData = new FormData();
-                    formData.append("file", blob, "webcam.jpg");
-                    await fetch("/api/camera/client_frame", {
-                        method: "POST",
-                        body: formData
-                    });
-                } catch (e) {
-                    // Bỏ qua lỗi rớt frame mạng tạm thời
-                } finally {
-                    isUploading = false;
+        async function streamLoop() {
+            while (isStreamingBrowserCam) {
+                if (video && video.readyState >= 2) {
+                    ctx.drawImage(video, 0, 0, 480, 360);
+                    try {
+                        const blob = await new Promise((resolve) => {
+                            canvas.toBlob(resolve, "image/jpeg", 0.45);
+                        });
+                        if (blob && isStreamingBrowserCam) {
+                            const formData = new FormData();
+                            formData.append("file", blob, "webcam.jpg");
+                            await fetch("/api/camera/client_frame", {
+                                method: "POST",
+                                body: formData
+                            });
+                        }
+                    } catch (e) {
+                        // Bỏ qua lỗi mạng tạm thời
+                    }
                 }
-            }, "image/jpeg", 0.72);
-        }, 66); // ~15 FPS ổn định
+                // Nghỉ nhẹ 30ms giữa các frame để giữ đường truyền ổn định
+                await new Promise((r) => setTimeout(r, 30));
+            }
+        }
+
+        streamLoop();
 
     } catch (err) {
         console.error("Lỗi mở webcam trình duyệt:", err);
