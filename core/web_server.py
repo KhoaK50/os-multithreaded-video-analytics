@@ -53,6 +53,9 @@ from core.cyber_hud import CyberHUDRenderer
 from core.video_annotator import VideoAnnotatorEngine, download_web_video, probe_web_video, check_video_has_audio
 from core.token_guard import TokenGuard
 from core.enhancer import CameraEnhancer
+from core.model_orchestrator import get_model_orchestrator, ModelTier
+
+MODEL_ORCHESTRATOR = get_model_orchestrator()
 
 # NVML đo VRAM card NVIDIA
 try:
@@ -127,19 +130,11 @@ class LiveCameraPipeline:
         self.last_log_time = 0.0
         self.window_candidates = []
         self.snapshots_dir = os.path.join(RECORDINGS_DIR, "snapshots")
-        # Cloud AI: Google Gemini Multimodal Vision (Chu kỳ 4s điều phối Free Quota)
-        self.gemini_client = None
-        self.gemini_model = getattr(CONFIG, "GEMINI_MODEL", "gemini-3.5-flash-lite")
-        self.gemini_status = "heuristic_offline"
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            try:
-                from google import genai
-                self.gemini_client = genai.Client(api_key=api_key)
-                self.gemini_status = "active"
-                print(f"[+] Khoi tao Gemini Client ({self.gemini_model}) cho chu ky 4s thanh cong!")
-            except Exception as e_init:
-                print(f"[!] Khong the khoi tao Gemini Client: {e_init}")
+        # Cloud AI: Hierarchical Model Orchestrator (Tier 1 -> Tier 2 -> Tier 3 Failover)
+        self.gemini_model = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-2.0-flash")
+        self.gemini_client = MODEL_ORCHESTRATOR.client
+        self.gemini_status = "active" if MODEL_ORCHESTRATOR.client is not None else "heuristic_offline"
+        print(f"[+] LiveCameraPipeline: Ket noi Model Orchestrator ({self.gemini_model}) - Trang thai: {self.gemini_status}")
 
     def get_settings(self) -> Dict[str, bool]:
         return self.enhancer.get_settings()
@@ -154,7 +149,7 @@ class LiveCameraPipeline:
             mirror=mirror, anti_glare=anti_glare, denoise=denoise
         )
 
-    def _record_behavior_log(self, frame, posture: str, angle: float, alert: str, is_danger: bool, severity: str = "safe", prediction_next_4s: str = ""):
+    def _record_behavior_log(self, frame, posture: str, angle: float, alert: str, is_danger: bool, severity: str = "safe", prediction_next_4s: str = "", model_tier: str = "tier_3"):
         """
         Lưu sự kiện hành vi vào nhật ký thời gian thực và trích xuất ảnh Snapshot.
         """
@@ -192,7 +187,8 @@ class LiveCameraPipeline:
                 "description": clean_desc,
                 "prediction_next_4s": pred_text,
                 "snapshot_url": f"/api/snapshots/{snap_name}",
-                "severity": severity
+                "severity": severity,
+                "model_tier": model_tier
             }
             with self.ai_lock:
                 self.action_logs.insert(0, entry)
@@ -287,191 +283,25 @@ class LiveCameraPipeline:
     def _synthesize_heuristic_action(posture_text: str, bio: dict) -> dict:
         """
         Bộ Hội chẩn Hành vi Tự hành Cục bộ (Autonomous Heuristic Arbiter):
-        Tạo phân tích ngữ cảnh chuẩn học thuật, tự nhiên và phong phú khi Gemini API
-        hết hạn mức (429 Quota Exceeded) hoặc chưa cấu hình API Key.
+        Định tuyến qua MODEL_ORCHESTRATOR nhằm duy trì tính liên tục của ngữ cảnh chuỗi hành vi.
         """
-        import random
-        angle = bio.get("angle", 90.0)
-        is_danger = bio.get("is_danger", False)
-        is_warning = bio.get("is_warning", False)
-
-        TEMPLATES = {
-            "Chống cằm / Đỡ má suy nghĩ": {
-                "descriptions": [
-                    "Đối tượng đặt một tay nâng đỡ vùng cằm hoặc má, phần thân hơi nghiêng về phía trước, ánh mắt hướng tập trung quan sát màn hình làm việc.",
-                    "Tư thế tì cằm lên mu bàn tay trong trạng thái trầm ngâm, nhịp vận động tĩnh lặng, thể hiện sự tập trung cao độ vào việc phân tích hoặc đọc tài liệu.",
-                    "Ghi nhận tư thế đỡ cằm bằng tay thuận, đầu hơi nghiêng sang một bên, giữ nhịp thở đều và tương tác thị giác liên tục với màn hình."
-                ],
-                "predictions": [
-                    "Duy trì trạng thái tư duy tập trung hoặc chuẩn bị đưa tay về bàn phím để tiếp tục thao tác.",
-                    "Chuyển đổi trạng thái sau khi giải quyết xong tác vụ tư duy, hạ tay xuống bàn làm việc.",
-                    "Duy trì vị trí ngồi nghiên cứu tài liệu trong các chu kỳ tiếp theo."
-                ],
-                "severity": "safe"
-            },
-            "Giơ tay phát biểu / Vẫy tay": {
-                "descriptions": [
-                    "Cánh tay giơ cao ngang hoặc vượt tầm đầu, lòng bàn tay hướng về phía trước tạo cử chỉ ra hiệu, vẫy tay hoặc chuẩn bị phát biểu ý kiến.",
-                    "Đối tượng thực hiện cử chỉ nâng cánh tay về phía camera để tương tác, cử động dứt khoát và rõ nét trong không gian theo dõi.",
-                    "Ghi nhận tín hiệu giao tiếp cử chỉ tay giơ cao, góc khớp vai mở rộng, thể hiện hành động kết nối hoặc xin quyền phát biểu."
-                ],
-                "predictions": [
-                    "Hạ tay xuống sau khi hoàn thành cử chỉ ra hiệu và quay lại tư thế làm việc bình thường.",
-                    "Tiếp tục duy trì cử chỉ giao tiếp hoặc trao đổi thông tin với người đối diện.",
-                    "Chuyển sang tương tác trực tiếp với thiết bị làm việc."
-                ],
-                "severity": "safe"
-            },
-            "Khoanh tay trước ngực": {
-                "descriptions": [
-                    "Hai tay đan chéo đặt ngang trước ngực, lưng tựa vào ghế, ánh mắt quan sát tổng thể không gian làm việc trong trạng thái thụ động.",
-                    "Tư thế khoanh tay thư giãn, trọng tâm cơ thể ổn định, không có thao tác bàn phím hoặc chuột trong chu kỳ quan sát."
-                ],
-                "predictions": [
-                    "Đang theo dõi nội dung trình chiếu hoặc lắng nghe trao đổi, sẽ sớm mở tay để thao tác thiết bị.",
-                    "Duy trì tư thế quan sát trong vài chu kỳ tiếp theo."
-                ],
-                "severity": "safe"
-            },
-            "Cúi đầu tập trung / Xem tài liệu": {
-                "descriptions": [
-                    "Đầu cúi thấp về phía mặt bàn, góc cổ gập tập trung nhìn tài liệu giấy hoặc thiết bị di động phụ trợ bên cạnh.",
-                    "Ghi nhận góc nghiêng đầu gập sâu xuống dưới, cơ thể hướng về mặt bàn để ghi chép hoặc tra cứu tài liệu chuyên môn."
-                ],
-                "predictions": [
-                    "Ngẩng đầu quan sát lại màn hình chính sau khi kiểm tra xong nội dung tài liệu.",
-                    "Tiếp tục đối chiếu thông tin giữa tài liệu bàn làm việc và màn hình máy tính."
-                ],
-                "severity": "warning" if angle < 60 else "safe"
-            },
-            "Ngả lưng thư giãn": {
-                "descriptions": [
-                    "Thân người tựa sâu vào lưng ghế, cơ bắp thả lỏng sau khoảng thời gian thao tác liên tục trước máy tính.",
-                    "Ghi nhận tư thế ngả lưng ra sau ghế làm việc, tốc độ chuyển động chậm lại, giải tỏa áp lực cột sống."
-                ],
-                "predictions": [
-                    "Nghỉ ngơi ngắn trong vài chục giây trước khi trở lại tư thế công thái học chuẩn.",
-                    "Vận động nhẹ phần vai cổ để tiếp tục ca làm việc."
-                ],
-                "severity": "safe"
-            },
-            "Đưa hai tay lên đầu / Căng thẳng": {
-                "descriptions": [
-                    "Hai bàn tay đưa lên giữ vùng đầu hoặc thái dương, biểu hiện sự mệt mỏi, áp lực hoặc căng thẳng tinh thần khi xử lý tác vụ phức tạp.",
-                    "Cử chỉ ôm đầu hoặc xoa bóp thái dương, nhịp vận động bất an, có dấu hiệu quá tải công việc."
-                ],
-                "predictions": [
-                    "Cần tạm dừng công việc ngắn hạn, hít thở sâu để giảm áp lực cho mắt và hệ thần kinh.",
-                    "Nên đứng dậy vận động nhẹ để phục hồi trạng thái thể lực."
-                ],
-                "severity": "warning"
-            },
-            "Té ngã / Gục xuống bàn": {
-                "descriptions": [
-                    f"Góc thân người đổ gập bất thường ({angle:.1f}°), đầu và ngực sát mặt bàn, cảnh báo mất khả năng kiểm soát tư thế hoặc suy giảm ý thức đột ngột.",
-                    "Phát hiện sự sụt giảm đột ngột trọng tâm cơ thể, thân người bất động trên mặt phẳng bàn làm việc."
-                ],
-                "predictions": [
-                    "KÍCH HOẠT CẢNH BÁO AN TOÀN KHẨN CẤP: Cần nhân viên y tế hoặc đồng nghiệp kiểm tra ngay thể trạng đối tượng.",
-                    "Gửi tín hiệu SOS đến bộ phận giám sát an toàn lao động."
-                ],
-                "severity": "danger"
-            },
-            "Cử chỉ bất thường / Vung tay mạnh": {
-                "descriptions": [
-                    "Biên độ dao động và vận tốc vung cánh tay vượt ngưỡng an toàn thông thường, cử chỉ phản kháng hoặc vận động kích động mạnh.",
-                    "Phát hiện gia tốc chuyển động cổ tay bất thường trong không gian hẹp, tiềm ẩn nguy cơ va chạm xung quanh."
-                ],
-                "predictions": [
-                    "Theo dõi sát diễn biến vận động tiếp theo để xác định nguy cơ mất an toàn.",
-                    "Điều chỉnh lại vị trí ngồi và tránh các vật dụng dễ vỡ xung quanh."
-                ],
-                "severity": "warning"
-            },
-            "Ngồi thẳng bình thường": {
-                "descriptions": [
-                    "Tư thế ngồi chuẩn công thái học, hai tay đặt gần khu vực bàn phím/chuột, mắt nhìn thẳng vào trung tâm không gian làm việc.",
-                    "Cơ thể duy trì trạng thái cân bằng ổn định, cột sống thẳng, nhịp vận động phản ánh tác vụ làm việc bình thường.",
-                    "Người dùng ngồi ngay ngắn trước màn hình, tư thế chuẩn chỉ, tập trung thao tác trong phiên làm việc."
-                ],
-                "predictions": [
-                    "Tiếp tục thực hiện các thao tác gõ phím, rê chuột hoặc điều hướng giao diện trong 4 giây tiếp theo.",
-                    "Duy trì năng suất làm việc ổn định tại vị trí hiện tại.",
-                    "Thực hiện các thao tác văn phòng thường nhật tiếp theo."
-                ],
-                "severity": "safe"
-            },
-            "Rời vị trí / Vắng mặt": {
-                "descriptions": [
-                    "Không phát hiện bóng người trong khung hình giám sát, vị trí làm việc hiện đang để trống.",
-                    "Khung hình camera không ghi nhận được khớp xương cơ thể người, người dùng đã rời khỏi tầm quan sát."
-                ],
-                "predictions": [
-                    "Chờ đối tượng quay trở lại vị trí làm việc để tiếp tục chu kỳ phân tích.",
-                    "Duy trì chế độ theo dõi thụ động tiết kiệm tài nguyên."
-                ],
-                "severity": "safe"
-            }
-        }
-
-        # Tìm kiếm nhãn gần khớp nhất
-        cfg = None
-        for key in TEMPLATES:
-            if key in posture_text or posture_text in key:
-                cfg = TEMPLATES[key]
-                break
-        if cfg is None:
-            cfg = TEMPLATES["Ngồi thẳng bình thường"]
-
-        desc = random.choice(cfg["descriptions"])
-        pred = random.choice(cfg["predictions"])
-        sev = cfg["severity"]
-        if is_danger:
-            sev = "danger"
-        elif is_warning and sev == "safe":
-            sev = "warning"
-
-        return {
-            "action": posture_text,
-            "description": desc,
-            "prediction_next_4s": pred,
-            "severity": sev
-        }
+        return MODEL_ORCHESTRATOR.heuristic_arbiter.synthesize_with_memory(
+            posture_text=posture_text,
+            bio=bio,
+            context_memory=MODEL_ORCHESTRATOR.context_memory
+        )
 
     def _gemini_worker(self):
         """
-        Luồng Consumer AI Cloud (Google Gemini 3.5 Flash Lite):
-        - Chu kỳ điều phối 4.0 - 4.5 giây / lần (Tối ưu hóa tuyệt đối Free Tier 15 RPM).
-        - Phân tích sâu ngữ cảnh thực tế của người trong lát cắt 4 giây.
-        - Đưa ra DỰ ĐOÁN XU HƯỚNG HÀNH VI TRONG 4 GIÂY TIẾP THEO.
-        - Tự động trích xuất snapshot và cập nhật vào bảng nhật ký thời gian thực.
+        Luồng Consumer AI Cloud & Heuristic Arbiter (Hierarchical Model Orchestrator):
+        - Chu kỳ điều phối >= 4.2 giây (khống chế < 15 RPM).
+        - Phân tầng mô hình Tier 1 -> Tier 2 -> Tier 3 qua MODEL_ORCHESTRATOR.
+        - Tự động duy trì và tiêm Rolling Context Memory 3-5 chu kỳ trước.
+        - Tự phục hồi sau 60s cooldown (Preemptive Cooldown Reversion).
+        - Cập nhật nhật ký hành vi thời gian thực và đồng bộ viễn trắc.
         """
-        from PIL import Image
-        from google.genai import types
-
         # Chờ camera ổn định 1.2s sau khi bật
         time.sleep(1.2)
-
-        prompt = """Bạn là Hệ thống Giám sát & Phân tích Hành vi Thông minh (Học phần Hệ Điều Hành - GVHD: Thầy Nguyễn Tấn Duẩn).
-Hãy quan sát bức ảnh khung hình camera vừa chụp được và phân tích thật chi tiết, khách quan, sâu sắc:
-1. "action": Tên hành vi / cử chỉ tóm tắt ngắn gọn người đó đang làm gì (ví dụ: "Giơ 4 ngón tay ra hiệu", "Gõ bàn phím làm việc", "Cầm điện thoại nhắn tin", "Chống cằm suy nghĩ", "Che miệng tập trung", "Chụm tay làm ống nhòm mô phỏng", "Uống nước", "Vắng mặt / Rời vị trí").
-2. "description": Miêu tả chi tiết, tường tận ngữ cảnh: người đó đang làm gì, ở đâu, làm như thế nào (tư thế đầu, vai, cử chỉ bàn tay, ngón tay cử động cụ thể ra sao, mắt nhìn đi đâu, hành động biểu cảm cụ thể, vật thể tương tác).
-   - Phong cách diễn đạt: Dùng ngôn ngữ tiếng Việt phổ thông chuẩn mực, mang tính khoa học / học thuật, lịch sự, khách quan. Tuyệt đối KHÔNG dùng từ lóng, khẩu ngữ địa phương hoặc từ ngữ gây tối nghĩa (ví dụ: không dùng 'kính lợn' mà gọi chuẩn xác là 'ống nhòm mô phỏng bằng tay' hoặc 'kính ngắm giả định').
-   - TUYỆT ĐỐI KHÔNG đưa các thông số góc thân đo đạc khô khan hay số liệu kỹ thuật vào đây, mà tập trung hoàn toàn vào miêu tả sinh động hành vi con người.
-3. "prediction_next_4s": Dự đoán hợp lý xu hướng hành vi trong 4 giây tiếp theo dựa trên cử chỉ, hướng nhìn và biểu cảm hiện tại.
-4. "severity":
-   - "safe": Hoạt động học tập, làm việc, ra hiệu cử chỉ bình thường, an toàn.
-   - "warning": Có dấu hiệu mệt mỏi, mất tập trung, dùng điện thoại nhiều hoặc sai tư thế công thái học.
-   - "danger": Té ngã, gục xỉu, bất tỉnh hoặc cử chỉ nguy hiểm bất thường.
-
-Trả về định dạng JSON thuần:
-{
-    "action": "Tên hành vi tóm tắt chuẩn mực",
-    "description": "Miêu tả chi tiết ngữ cảnh người đó đang làm gì, ở đâu, làm như thế nào (chuẩn mực học thuật)",
-    "prediction_next_4s": "Dự đoán xu hướng trong 4 giây tiếp theo",
-    "severity": "safe" | "warning" | "danger"
-}
-"""
 
         while self.running:
             t_start = time.time()
@@ -487,55 +317,19 @@ Trả về định dạng JSON thuần:
                     snap_path = os.path.join(self.snapshots_dir, snap_name)
                     cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
-                    # Lazy reload Gemini Client nếu ban đầu chưa khởi tạo được
-                    if self.gemini_client is None:
-                        api_key = os.getenv("GEMINI_API_KEY")
-                        if api_key:
-                            try:
-                                from google import genai
-                                self.gemini_client = genai.Client(api_key=api_key)
-                                print(f"[+] [Gemini 4s Consumer] Khoi tao thanh cong Gemini Client ({self.gemini_model})")
-                            except Exception as e_cl:
-                                print(f"[!] [Gemini 4s Consumer] Khong the khoi tao Gemini Client: {e_cl}")
+                    with self.ai_lock:
+                        bio = dict(self.biomechanics)
 
-                    ai_result = None
-                    if self.gemini_client is not None:
-                        try:
-                            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            pil_img = Image.fromarray(rgb_frame)
+                    # Thực thi suy luận đa tầng tự phục hồi qua MODEL_ORCHESTRATOR
+                    ai_result = MODEL_ORCHESTRATOR.execute_live_analysis(frame, bio)
 
-                            response = self.gemini_client.models.generate_content(
-                                model=self.gemini_model,
-                                contents=[prompt, pil_img],
-                                config=types.GenerateContentConfig(
-                                    response_mime_type="application/json"
-                                )
-                            )
-                            raw_text = response.text or "{}"
-                            if "```json" in raw_text:
-                                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-                            elif "```" in raw_text:
-                                raw_text = raw_text.split("```")[1].split("```")[0].strip()
-                            ai_result = json.loads(raw_text)
-                            if isinstance(ai_result, list) and len(ai_result) > 0:
-                                ai_result = ai_result[0]
-                            if isinstance(ai_result, dict):
-                                self.gemini_status = "active"
-                        except Exception as e_api:
-                            err_str = str(e_api)
-                            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                                self.gemini_status = "quota_exceeded"
-                                print("[!] Gemini Rate Limit / Quota Exceeded (429) -> Kich hoat Heuristic AI Tu Hanh Cuc Bo...")
-                                time.sleep(5.0)
-                            else:
-                                print(f"[!] Loi goi Gemini Vision: {e_api}")
-
-                    # Fallback tự hành thông minh nếu không có kết quả từ Gemini API (hoặc mất mạng / hết quota 429)
-                    if not ai_result or not isinstance(ai_result, dict):
-                        with self.ai_lock:
-                            bio = dict(self.biomechanics)
-                        posture_text = bio.get("posture", "Ngồi thẳng bình thường")
-                        ai_result = self._synthesize_heuristic_action(posture_text, bio)
+                    tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
+                    if tier_info["active_tier"] == "tier_3" and MODEL_ORCHESTRATOR.client is None:
+                        self.gemini_status = "heuristic_offline"
+                    elif tier_info["is_cooldown"]:
+                        self.gemini_status = "failover_tier2" if tier_info["active_tier"] == "tier_2" else "quota_exceeded"
+                    else:
+                        self.gemini_status = "active"
 
                     action_name = ai_result.get("action", "Hành vi bình thường")
                     desc_name = ai_result.get("description", "Không có mô tả chi tiết")
@@ -543,6 +337,16 @@ Trả về định dạng JSON thuần:
                     severity_val = ai_result.get("severity", "safe")
                     if severity_val not in ("safe", "warning", "danger"):
                         severity_val = "safe"
+
+                    raw_tier = ai_result.get("model_tier", "Tier-1 Gemini 2.0")
+                    if "Tier-1" in str(raw_tier) or str(raw_tier) == "tier_1":
+                        tier_key = "tier_1"
+                    elif "Tier-2" in str(raw_tier) or str(raw_tier) == "tier_2":
+                        tier_key = "tier_2"
+                    elif "Tier-3" in str(raw_tier) or str(raw_tier) == "tier_3":
+                        tier_key = "tier_3"
+                    else:
+                        tier_key = str(raw_tier)
 
                     code_prefix = "DANGER" if severity_val == "danger" else ("WARN" if severity_val == "warning" else "NORM")
 
@@ -554,7 +358,8 @@ Trả về định dạng JSON thuần:
                         "description": desc_name,
                         "prediction_next_4s": pred_name,
                         "snapshot_url": f"/api/snapshots/{snap_name}",
-                        "severity": severity_val
+                        "severity": severity_val,
+                        "model_tier": tier_key
                     }
 
                     with self.ai_lock:
@@ -565,7 +370,7 @@ Trả về định dạng JSON thuần:
                         self.biomechanics["alert"] = f"Dự đoán 4s tới: {pred_name}"
                         self.biomechanics["is_danger"] = (severity_val == "danger")
 
-                    print(f"[+] Gemini Vision #{self.action_counter:03d} (Chu kỳ 4s): '{action_name}' | '{desc_name[:50]}...' -> {snap_name}")
+                    print(f"[+] Gemini Vision #{self.action_counter:03d} (Chu kỳ 4s - {tier_key}): '{action_name}' | '{desc_name[:50]}...' -> {snap_name}")
 
                 except Exception as e_outer:
                     print(f"[!] Loi chu ky Gemini AI: {e_outer}")
@@ -820,6 +625,7 @@ Trả về định dạng JSON thuần:
                 except Exception:
                     pass
 
+            tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
             telemetry = {
                 "cpu_percent": self.cpu_smoothed,
                 "ram_percent": psutil.virtual_memory().percent,
@@ -828,7 +634,10 @@ Trả về định dạng JSON thuần:
                 "actual_fps": self.current_fps,
                 "raw_queue_size": 1,
                 "drop_count": 0,
-                "active_persons": len(boxes)
+                "active_persons": len(boxes),
+                "active_model_tier": tier_info.get("active_tier", "tier_1"),
+                "active_tier_name": tier_info.get("tier_name", "gemini-2.0-flash"),
+                "cooldown_remaining": tier_info.get("cooldown_remaining", 0.0)
             }
 
             diagnosis = {
@@ -837,7 +646,8 @@ Trả về định dạng JSON thuần:
                 "danger_level": "NGUY HIEM" if bio["is_danger"] else "AN TOAN",
                 "danger_score": 9 if bio["is_danger"] else 1,
                 "danger_reason": bio["alert"],
-                "timestamp": time.strftime("%H:%M:%S")
+                "timestamp": time.strftime("%H:%M:%S"),
+                "model_tier_str": tier_info.get("tier_badge", "● Tier-1 Gemini 2.0")
             }
 
             is_danger = bio.get("is_danger", False)
@@ -872,15 +682,33 @@ Trả về định dạng JSON thuần:
                 danger_level=danger_level
             )
 
+            # Nhận diện GPU name cho metrics HUD
+            gpu_name = getattr(CONFIG, "_cached_gpu_name", None)
+            if not gpu_name:
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        raw_gpu = torch.cuda.get_device_name(0)
+                        gpu_name = "RTX 5060" if "5060" in raw_gpu else raw_gpu
+                    else:
+                        gpu_name = "CPU Only"
+                except Exception:
+                    gpu_name = "CPU Only"
+
             # Render Glass Sidebar bằng Pillow Unicode
             metrics = {
                 "cpu_percent": self.cpu_smoothed,
                 "ram_percent": psutil.virtual_memory().percent,
                 "gpu_vram_used": vram_mb / 1024.0,
                 "gpu_vram_total": vram_total / 1024.0 if vram_total > 0 else 8.0,
+                "gpu_name": gpu_name,
                 "queue_size": 1,
                 "queue_max": 5,
-                "dropped_frames": 0
+                "dropped_frames": 0,
+                "drop_rate_pct": 0.0,
+                "active_model_tier": tier_info.get("active_tier", "tier_1"),
+                "active_tier_name": tier_info.get("tier_name", "Tier-1 Gemini 2.0"),
+                "cooldown_remaining": tier_info.get("cooldown_remaining", 0.0)
             }
 
             sidebar_bgr = self.hud_renderer.render_sidebar_pil(
@@ -1143,21 +971,32 @@ async def toggle_camera(request: Request):
 @app.get("/api/camera/logs")
 def get_camera_logs():
     """
-    Trả về danh sách nhật ký hành vi thời gian thực kèm URL ảnh Snapshot và trạng thái AI.
+    Trả về danh sách nhật ký hành vi thời gian thực kèm trạng thái bộ điều phối phân tầng.
+    Bảo đảm Thread-safe khi Starlette chuyển đổi JSON.
     """
+    tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
+    with LIVE_CAMERA.ai_lock:
+        logs_copy = list(LIVE_CAMERA.action_logs)
+
     return {
         "status": "success",
-        "total": len(LIVE_CAMERA.action_logs),
-        "logs": LIVE_CAMERA.action_logs,
-        "gemini_status": LIVE_CAMERA.gemini_status
+        "total": len(logs_copy),
+        "logs": logs_copy,
+        "gemini_status": LIVE_CAMERA.gemini_status,
+        "active_tier": tier_info.get("active_tier", "tier_1"),
+        "tier_name": tier_info.get("tier_name", "Tier-1 Gemini 2.0"),
+        "tier_badge": tier_info.get("tier_badge", "● Tier-1 Gemini 2.0"),
+        "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
+        "is_cooldown": tier_info.get("is_cooldown", False)
     }
 
 
 @app.post("/api/camera/logs/clear")
 def clear_camera_logs():
-    """Xóa danh sách nhật ký hành vi."""
-    LIVE_CAMERA.action_logs.clear()
-    LIVE_CAMERA.action_counter = 0
+    """Xóa danh sách nhật ký hành vi bảo đảm Thread-safe."""
+    with LIVE_CAMERA.ai_lock:
+        LIVE_CAMERA.action_logs.clear()
+        LIVE_CAMERA.action_counter = 0
     return {"status": "cleared", "total": 0}
 
 
@@ -1267,15 +1106,47 @@ def get_telemetry():
         except Exception:
             pass
 
+    tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
     cam_settings = LIVE_CAMERA.get_settings()
+
+    gpu_name = "CPU Only"
+    try:
+        import torch
+        if torch.cuda.is_available():
+            raw_gpu = torch.cuda.get_device_name(0)
+            gpu_name = "RTX 5060" if "5060" in raw_gpu else raw_gpu
+    except Exception:
+        pass
+
+    with LIVE_CAMERA.ai_lock:
+        bio_copy = dict(LIVE_CAMERA.biomechanics)
+
     return {
-        "camera_running": LIVE_CAMERA.running,
+        # Academic OS Telemetry (PROJECT.md)
+        "producer_running": LIVE_CAMERA.running,
+        "producer_fps": round(LIVE_CAMERA.current_fps, 1),
+        "consumer_status": LIVE_CAMERA.gemini_status,
+        "queue_size": 1,
+        "queue_max": 5,
+        "dropped_frames": 0,
+        "drop_rate_pct": 0.0,
         "cpu_percent": round(LIVE_CAMERA.cpu_smoothed, 1),
         "ram_percent": round(psutil.virtual_memory().percent, 1),
+        "gpu_vram_used": round(vram_mb / 1024.0, 2),
+        "gpu_vram_total": round(vram_total / 1024.0, 2) if vram_total > 0 else 8.0,
+        "gpu_name": gpu_name,
+        "active_model_tier": tier_info.get("active_tier", "tier_1"),
+        "active_tier_name": tier_info.get("tier_name", "Tier-1 Gemini 2.0"),
+        "tier_badge": tier_info.get("tier_badge", "● Tier-1 Gemini 2.0"),
+        "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
+        "is_cooldown": tier_info.get("is_cooldown", False),
+
+        # Tương thích ngược với UI và test suite hiện hành
+        "camera_running": LIVE_CAMERA.running,
+        "fps": round(LIVE_CAMERA.current_fps, 1),
         "gpu_vram_mb": vram_mb,
         "gpu_vram_total_mb": vram_total,
-        "fps": round(LIVE_CAMERA.current_fps, 1),
-        "biomechanics": LIVE_CAMERA.biomechanics,
+        "biomechanics": bio_copy,
         "camera_settings": cam_settings,
         "mirror": cam_settings["mirror"],
         "anti_glare": cam_settings["anti_glare"],
@@ -1395,6 +1266,9 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
     if not os.path.exists(req.video_path):
         raise HTTPException(status_code=404, detail="File video không tồn tại trên hệ thống.")
 
+    if req.end_time <= req.start_time:
+        raise HTTPException(status_code=400, detail="Khoảng thời gian timeline không hợp lệ: end_time phải lớn hơn start_time.")
+
     job_id = str(uuid.uuid4())[:8]
     output_filename = f"annotated_{job_id}_{os.path.basename(req.video_path)}"
     output_path = os.path.abspath(os.path.join(RECORDINGS_DIR, output_filename))
@@ -1488,11 +1362,8 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 def ask_gemini_qa(req: ChatRequest):
     """
-    Hỏi đáp AI ngữ nghĩa về video đã phân tích.
+    Hỏi đáp AI ngữ nghĩa kế thừa cơ chế Hierarchical Failover (Tier 1 -> Tier 2 -> Tier 3).
     """
-    if not TOKEN_GUARD.client:
-        return {"answer": "Chưa cấu hình API Key Gemini trong hệ thống."}
-
     context_str = "Chưa có dữ liệu video cụ thể."
     if req.job_id and req.job_id in JOBS and JOBS[req.job_id].get("result"):
         res = JOBS[req.job_id]["result"]
@@ -1507,11 +1378,14 @@ THÔNG SỐ PHÂN TÍCH TỪ RTX 5060:
 - Dòng sự kiện: {timeline}
 - Chẩn đoán y tế sơ bộ: {gemini_rep.get('detailed_diagnosis', 'Bình thường')}
 """
+    else:
+        # Nếu hỏi về luồng Live Camera, lấy ngữ cảnh từ RollingContextMemory
+        context_str = MODEL_ORCHESTRATOR.context_memory.get_context_summary_for_prompt()
 
-    prompt = f"""Bạn là Trợ lý AI Giám sát An ninh & Y tế của hệ thống Cyber Command Center.
+    prompt = f"""Bạn là Trợ lý AI Giám sát An ninh & Y tế (Học phần Hệ Điều Hành - GVHD: Thầy Nguyễn Tấn Duẩn).
 Hãy trả lời câu hỏi của người dùng một cách chính xác, ngắn gọn, súc tích dựa trên bằng chứng dữ liệu dưới đây:
 
-DỮ LIỆU BẰNG CHỨNG TỪ VIDEO:
+DỮ LIỆU BẰNG CHỨNG TỪ HỆ THỐNG:
 {context_str}
 
 CÂU HỎI NGƯỜI DÙNG:
@@ -1519,11 +1393,5 @@ CÂU HỎI NGƯỜI DÙNG:
 
 TRẢ LỜI (Tiếng Việt trang trọng, chuyên môn cao):"""
 
-    try:
-        resp = TOKEN_GUARD.client.models.generate_content(
-            model=TOKEN_GUARD.model_name,
-            contents=[prompt]
-        )
-        return {"answer": resp.text.strip()}
-    except Exception as e:
-        return {"answer": f"Lỗi gọi Gemini: {str(e)}"}
+    result = MODEL_ORCHESTRATOR.execute_chat_qa(prompt)
+    return result

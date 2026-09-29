@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CYBER SURVEILLANCE HUB - HỆ ĐIỀU HÀNH</title>
+    <title>HỆ THỐNG GIÁM SÁT VIDEO ĐA LUỒNG — HỆ ĐIỀU HÀNH</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -11,18 +11,18 @@
 </head>
 <body>
     <!-- HEADER BAR -->
-    <header class="cyber-header">
+    <header class="app-header">
         <div class="header-left">
             <div class="brand-logo">
                 <span class="logo-icon">🛡️</span>
                 <div class="brand-text">
-                    <span class="brand-title">CYBER SURVEILLANCE HUB</span>
+                    <span class="brand-title">HỆ THỐNG GIÁM SÁT VIDEO ĐA LUỒNG</span>
                     <span class="brand-sub">ĐỒ ÁN HỆ ĐIỀU HÀNH — GVHD: THẦY NGUYỄN TẤN DUẨN</span>
                 </div>
             </div>
         </div>
 
-        <nav class="cyber-nav">
+        <nav class="app-nav">
             <button class="nav-tab active" id="tab-live-btn" onclick="switchTab('live')">
                 <span class="tab-dot live-dot"></span>
                 <span>🎥 GIÁM SÁT CAMERA TRỰC TIẾP</span>
@@ -34,6 +34,9 @@
         </nav>
 
         <div class="header-right">
+            <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()" title="Chuyển đổi giao diện Sáng / Tối" aria-label="Chuyển giao diện Sáng / Tối">
+                <span id="theme-icon">🌙</span>
+            </button>
             <div class="hardware-pill">
                 <span class="pill-badge">GPU</span>
                 <span class="pill-text" id="header-gpu-text">NVIDIA RTX 5060 (CUDA)</span>
@@ -50,19 +53,19 @@
         <section id="tab-live" class="tab-pane active">
             <div class="live-full-container">
                 <!-- Video Stream Viewport Card -->
-                <div class="cyber-card stream-card">
+                <div class="app-card stream-card">
                     <div class="card-header">
                         <div class="card-title">
                             <span class="indicator-pulse"></span>
-                            <span>LUỒNG CAMERA GIÁM SÁT TRỰC TIẾP — CYBER HUD (1280×720)</span>
+                            <span>LUỒNG CAMERA THỜI GIAN THỰC — VIỄN TRẮC HỆ ĐIỀU HÀNH (1280×720)</span>
                         </div>
                         <div class="header-status-badge">
-                            <span id="live-alert-text" class="badge badge-safe mono">Khu vực an toàn</span>
+                            <span id="live-alert-text" class="badge badge-safe mono">Trạng thái: An toàn</span>
                         </div>
                     </div>
 
                     <div class="stream-viewport-container">
-                        <img id="live-stream-img" src="/api/stream/live" alt="Cyber Surveillance Stream" />
+                        <img id="live-stream-img" src="/api/stream/live" alt="OS Video Analytics Stream" />
                         <video id="client-webcam-video" playsinline autoplay muted style="display:none;"></video>
                         <canvas id="client-webcam-canvas" width="640" height="480" style="display:none;"></canvas>
                         <div id="cam-offline-overlay" class="cam-offline hidden">
@@ -80,7 +83,7 @@
                     <!-- Live Camera Action Bar directly below video -->
                     <div class="stream-control-bar">
                         <div class="control-group-left">
-                            <button class="btn btn-sm btn-primary" id="btn-browser-cam" onclick="toggleBrowserWebcam()" title="Sử dụng webcam của laptop/điện thoại này để gửi khung hình lên GPU Google Colab phân tích">
+                            <button class="btn btn-sm btn-primary" id="btn-browser-cam" onclick="toggleBrowserWebcam()" title="Sử dụng webcam của laptop/điện thoại này để gửi khung hình lên GPU phân tích">
                                 🌐 Bật Webcam Trình Duyệt
                             </button>
                             <button class="btn btn-sm btn-outline" id="btn-manual-snap" onclick="captureManualSnapshot()" title="Chụp lại khung hình ngay lập tức và lưu vào nhật ký">
@@ -104,16 +107,110 @@
                     </div>
                 </div>
 
-                <!-- BẢNG NHẬT KÝ HÀNH VI THỜI GIAN THỰC (BEHAVIOR EVENT LOG TABLE) -->
-                <div class="cyber-card behavior-log-card">
+                <!-- BẢNG ĐIỀU KHIỂN VIỄN TRẮC HỆ ĐIỀU HÀNH (OS TELEMETRY DASHBOARD GRID) -->
+                <div class="app-card os-telemetry-card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <span class="indicator-pulse"></span>
+                            <span>BẢNG ĐIỀU KHIỂN VIỄN TRẮC HỆ ĐIỀU HÀNH (OS TELEMETRY DASHBOARD)</span>
+                        </div>
+                        <div class="header-status-badge">
+                            <span id="model-tier-badge" class="badge badge-safe mono">● Tier-1 Gemini 2.5</span>
+                        </div>
+                    </div>
+
+                    <div class="telemetry-grid">
+                        <!-- Card 1: Producer Thread FPS -->
+                        <div class="telemetry-item">
+                            <div class="telemetry-label">
+                                <span class="telemetry-icon">⚡</span>
+                                <span>Luồng Thu Nhận (Producer Thread)</span>
+                            </div>
+                            <div class="telemetry-value-row">
+                                <span class="telemetry-main-val mono" id="live-fps">30.0 FPS</span>
+                                <span class="badge badge-safe mono" id="producer-thread-badge">HOẠT ĐỘNG</span>
+                            </div>
+                            <span class="telemetry-sub mono">Tốc độ nạp khung hình camera</span>
+                        </div>
+
+                        <!-- Card 2: Consumer Thread Status -->
+                        <div class="telemetry-item">
+                            <div class="telemetry-label">
+                                <span class="telemetry-icon">🧠</span>
+                                <span>Luồng Xử Lý Thị Giác (Consumer Thread)</span>
+                            </div>
+                            <div class="telemetry-value-row">
+                                <span class="badge badge-safe mono" id="consumer-thread-badge">YOLOv8 + Gemini Vision</span>
+                            </div>
+                            <span class="telemetry-sub mono">Trạng thái suy luận chu kỳ 4s</span>
+                        </div>
+
+                        <!-- Card 3: Bounded Buffer Queue -->
+                        <div class="telemetry-item">
+                            <div class="telemetry-label">
+                                <span class="telemetry-icon">📦</span>
+                                <span>Hàng Đợi Đệm (Bounded Buffer Queue)</span>
+                            </div>
+                            <div class="telemetry-value-row">
+                                <span class="telemetry-main-val mono" id="live-queue">1 / 5 frames</span>
+                            </div>
+                            <div class="meter-bar">
+                                <div class="meter-fill" id="queue-progress-bar" style="width: 20%;"></div>
+                            </div>
+                            <span class="telemetry-sub mono">Trạng thái dung lượng đệm hàng đợi</span>
+                        </div>
+
+                        <!-- Card 4: Flow Control Drop Frames & Drop Rate % -->
+                        <div class="telemetry-item">
+                            <div class="telemetry-label">
+                                <span class="telemetry-icon">🛡️</span>
+                                <span>Điều Tiết Lưu Lượng (Flow Control)</span>
+                            </div>
+                            <div class="telemetry-value-row">
+                                <span class="telemetry-main-val mono" id="live-drop-frames">0 frames</span>
+                                <span class="badge badge-neutral mono" id="live-drop-rate">Drop: 0.0%</span>
+                            </div>
+                            <span class="telemetry-sub mono">Khung hình loại bỏ khi quá tải</span>
+                        </div>
+
+                        <!-- Card 5: Hardware Resources -->
+                        <div class="telemetry-item">
+                            <div class="telemetry-label">
+                                <span class="telemetry-icon">💻</span>
+                                <span>Tài Nguyên Phần Cứng</span>
+                            </div>
+                            <div class="hw-mini-grid">
+                                <div class="hw-stat">
+                                    <span class="hw-name">CPU:</span>
+                                    <span class="hw-val mono" id="live-cpu">0.0%</span>
+                                </div>
+                                <div class="hw-stat">
+                                    <span class="hw-name">RAM:</span>
+                                    <span class="hw-val mono" id="live-ram">0.0%</span>
+                                </div>
+                                <div class="hw-stat">
+                                    <span class="hw-name">VRAM:</span>
+                                    <span class="hw-val mono" id="live-vram">0.0 / 8.0 GB</span>
+                                </div>
+                                <div class="hw-stat">
+                                    <span class="hw-name">GPU:</span>
+                                    <span class="hw-val mono" id="live-gpu-name">RTX 5060</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BẢNG NHẬT KÝ NHẬN DIỆN TƯ THẾ CÔNG THÁI HỌC & HÀNH VI (BEHAVIOR EVENT LOG TABLE) -->
+                <div class="app-card behavior-log-card">
                     <div class="card-header">
                         <div class="card-title-group">
                             <div class="card-title">
-                                <span>📋 NHẬT KÝ PHÂN TÍCH HÀNH VI (GOOGLE GEMINI AI — CHU KỲ 4S)</span>
+                                <span>📋 NHẬT KÝ NHẬN DIỆN TƯ THẾ CÔNG THÁI HỌC & HÀNH VI (CHU KỲ 4S)</span>
                                 <span class="badge badge-neutral mono" id="log-count-badge">0 sự kiện</span>
-                                <span class="badge badge-safe mono" id="gemini-quota-badge">● 13 RPM Free Quota</span>
+                                <span class="badge badge-safe mono" id="gemini-quota-badge">● Tier-1 Gemini 2.5</span>
                             </div>
-                            <span class="card-subtitle">Thẩm định ngữ cảnh chuyên sâu theo chu kỳ 4 giây và dự báo xu hướng động tác tiếp theo bằng mô hình Vision Multimodal.</span>
+                            <span class="card-subtitle">Thẩm định tư thế công thái học theo chu kỳ 4 giây và dự đoán xu hướng chuyển tiếp động tác tiếp theo bằng mô hình Vision Multimodal.</span>
                         </div>
                         <div class="table-tools">
                             <button class="btn btn-sm btn-outline" id="btn-export-csv" onclick="exportLogsToCSV()" title="Xuất toàn bộ bảng nhật ký thành file CSV">
@@ -131,19 +228,20 @@
                                 <tr>
                                     <th style="width: 85px;">STT / MÃ</th>
                                     <th style="width: 95px;">THỜI GIAN</th>
-                                    <th style="width: 210px;">HÀNH VI (4S QUA)</th>
-                                    <th>MÔ TẢ CHI TIẾT NGỮ CẢNH</th>
-                                    <th style="width: 250px;">🔮 DỰ ĐOÁN 4S TIẾP THEO</th>
-                                    <th style="width: 125px; text-align: center;">TỆP ẢNH ĐÍNH KÈM</th>
+                                    <th style="width: 140px;">TẦNG MÔ HÌNH</th>
+                                    <th style="width: 180px;">TƯ THẾ CÔNG THÁI HỌC</th>
+                                    <th>MÔ TẢ NGỮ CẢNH</th>
+                                    <th style="width: 220px;">DỰ ĐOÁN 4S TỚI</th>
+                                    <th style="width: 125px; text-align: center;">BẰNG CHỨNG ẢNH</th>
                                 </tr>
                             </thead>
                             <tbody id="behavior-log-tbody">
                                 <tr class="empty-row">
-                                    <td colspan="6" class="empty-cell">
+                                    <td colspan="7" class="empty-cell">
                                         <div class="empty-state-box">
-                                            <span class="empty-icon">🤖</span>
-                                            <p class="empty-title">Đang kết nối luồng phân tích hành vi Gemini AI chu kỳ 4s...</p>
-                                            <span class="empty-sub">Mỗi 4 giây, hệ thống tự động chụp khung hình camera gửi lên Gemini Vision để nhận diện hành vi và dự báo xu hướng động tác tiếp theo.</span>
+                                            <span class="empty-icon">📋</span>
+                                            <p class="empty-title">Chưa có bản ghi nhận diện tư thế công thái học</p>
+                                            <span class="empty-sub">Khởi động camera hoặc nạp luồng video để hệ thống bắt đầu thu nhận khung hình và phân tích hành vi theo chu kỳ 4 giây.</span>
                                         </div>
                                     </td>
                                 </tr>
@@ -160,7 +258,7 @@
         <section id="tab-video" class="tab-pane">
 
             <!-- Step 1: Video Import Source Selection -->
-            <div class="cyber-card import-card">
+            <div class="app-card import-card">
                 <div class="card-header">
                     <div class="card-title">
                         <span class="step-num">1</span>
@@ -190,7 +288,7 @@
                 <!-- Web URL Input Zone -->
                 <div id="source-url-zone" class="source-zone hidden">
                     <div class="url-input-group">
-                        <input type="text" id="video-url-input" class="cyber-input" placeholder="Dán link video (Ví dụ: https://www.youtube.com/watch?v=... hoặc link .mp4 trực tiếp)" onkeypress="if(event.key==='Enter') handleURLImport()">
+                        <input type="text" id="video-url-input" class="app-input" placeholder="Dán link video (Ví dụ: https://www.youtube.com/watch?v=... hoặc link .mp4 trực tiếp)" onkeypress="if(event.key==='Enter') handleURLImport()">
                         <button class="btn btn-primary" id="btn-fetch-url" onclick="handleURLImport()">
                             <span id="url-btn-spinner" class="spinner hidden"></span>
                             <span id="url-btn-text">🔍 Kiểm Tra & Nạp Video</span>
@@ -225,12 +323,12 @@
                             <div class="slice-inputs-row">
                                 <div class="slice-input-item">
                                     <label for="url-slice-start">Từ mốc (MM:SS hoặc giây):</label>
-                                    <input type="text" id="url-slice-start" class="cyber-input mono" value="00:00" placeholder="00:00">
+                                    <input type="text" id="url-slice-start" class="app-input mono" value="00:00" placeholder="00:00">
                                 </div>
                                 <span class="slice-arrow">➔</span>
                                 <div class="slice-input-item">
                                     <label for="url-slice-end">Đến mốc (MM:SS hoặc giây):</label>
-                                    <input type="text" id="url-slice-end" class="cyber-input mono" value="01:30" placeholder="01:30">
+                                    <input type="text" id="url-slice-end" class="app-input mono" value="01:30" placeholder="01:30">
                                 </div>
                                 <button class="btn btn-success" id="btn-confirm-slice" onclick="confirmURLRangeExtract()">
                                     <span id="url-slice-spinner" class="spinner hidden"></span>
@@ -246,7 +344,7 @@
             </div>
 
             <!-- Step 2: CapCut-style Timeline Trimmer (Appears once video loaded) -->
-            <div id="timeline-section" class="cyber-card timeline-card hidden">
+            <div id="timeline-section" class="app-card timeline-card hidden">
                 <div class="card-header">
                     <div class="card-title">
                         <span class="step-num">2</span>
@@ -305,11 +403,11 @@
             </div>
 
             <!-- Step 3: Processing Progress Bar -->
-            <div id="processing-section" class="cyber-card processing-card hidden">
+            <div id="processing-section" class="app-card processing-card hidden">
                 <div class="card-header">
                     <div class="card-title">
                         <span class="indicator-pulse"></span>
-                        <span id="proc-title">ĐANG CHẠY SUY LUẬN AI TRÊN GPU NVIDIA GEFORCE RTX 5060...</span>
+                        <span id="proc-title">ĐANG CHẠY SUY LUẬN AI TRÊN GPU...</span>
                     </div>
                     <div class="fps-badge mono" id="proc-fps-badge">-- FPS</div>
                 </div>
@@ -323,7 +421,7 @@
             </div>
 
             <!-- Step 4: Results, Side-by-Side Player & Export -->
-            <div id="results-section" class="cyber-card results-card hidden">
+            <div id="results-section" class="app-card results-card hidden">
                 <div class="card-header">
                     <div class="card-title">
                         <span class="step-num">3</span>
@@ -373,13 +471,13 @@
                         <video id="result-orig-video" controls></video>
                     </div>
                     <div class="player-box">
-                        <div class="player-label cyber-text">VIDEO ĐÃ DÁN NHÃN SKELETON 17 ĐIỂM + BBOX + HUD</div>
+                        <div class="player-label app-text">VIDEO DÁN NHÃN TƯ THẾ & VIỄN TRẮC HĐH</div>
                         <video id="result-annotated-video" controls></video>
                     </div>
                 </div>
 
                 <!-- Timeline Segments Master Section -->
-                <div class="cyber-subcard timeline-segments-subcard">
+                <div class="app-subcard timeline-segments-subcard">
                     <div class="segments-header">
                         <div class="subcard-title">⏱️ DANH SÁCH PHÂN ĐOẠN HÀNH VI THEO DÒNG THỜI GIAN (TIMELINE CHAPTERS)</div>
                         <!-- Entity Filter Bar -->
@@ -389,7 +487,7 @@
                         </div>
                     </div>
                     <div class="table-responsive">
-                        <table class="cyber-table timeline-table">
+                        <table class="app-table timeline-table">
                             <thead>
                                 <tr>
                                     <th style="width: 130px;">PHÂN ĐOẠN</th>
@@ -400,22 +498,30 @@
                                 </tr>
                             </thead>
                             <tbody id="timeline-segments-tbody">
-                                <!-- Injected dynamically via JS -->
+                                <tr class="empty-row">
+                                    <td colspan="5" class="empty-cell">
+                                        <div class="empty-state-box">
+                                            <span class="empty-icon">⏱️</span>
+                                            <p class="empty-title">Chưa có phân đoạn hành vi dòng thời gian</p>
+                                            <span class="empty-sub">Hãy tải video lên hoặc dán liên kết URL và nhấn "Xác nhận đoạn đã chọn & khởi động AI phân tích" để bắt đầu xử lý.</span>
+                                        </div>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- Gemini Medical & Security Synthesis -->
+                <!-- Multimodal Vision Synthesis Report -->
                 <div class="gemini-synthesis-card" id="gemini-report-box">
                     <div class="report-header">
                         <span class="ai-sparkle">✨</span>
-                        <span class="report-title">HỘI CHẨN CHUYÊN SÂU TỪ CLOUD AI (GEMINI 3.5 FLASH LITE — SINGLE SYNTHESIS)</span>
+                        <span class="report-title">TỔNG HỢP ĐÁNH GIÁ AN TOÀN & HÀNH VI TỪ MÔ HÌNH THỊ GIÁC ĐA PHƯƠNG THỨC</span>
                         <span class="token-cost-badge mono" id="report-token-badge">Tiêu thụ: ~1,120 Tokens</span>
                     </div>
                     <div class="report-grid">
                         <div class="report-item">
-                            <span class="item-label">MỨC ĐỘ NGUY HIỂM:</span>
+                            <span class="item-label">MỨC ĐỘ RỦI RO LAO ĐỘNG:</span>
                             <span id="rep-threat-level" class="badge badge-safe">● AN TOÀN</span>
                         </div>
                         <div class="report-item">
@@ -436,19 +542,23 @@
                 <!-- Stats Grid -->
                 <div class="analytics-sub-grid">
                     <!-- Action Percentages -->
-                    <div class="cyber-subcard">
+                    <div class="app-subcard">
                         <div class="subcard-title">📊 PHÂN BỔ TỶ LỆ HÀNH VI ĐỐI TƯỢNG</div>
                         <div id="action-bars-container" class="action-bars">
-                            <!-- Injected dynamically via JS -->
+                            <div class="empty-state-box empty-state-compact">
+                                <span class="empty-icon">📊</span>
+                                <p class="empty-title">Chưa có dữ liệu thống kê hành vi</p>
+                                <span class="empty-sub">Dữ liệu phân bổ tỷ lệ các tư thế sẽ xuất hiện sau khi phân tích video.</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Semantic Q&A AI Chatbot -->
-                <div class="cyber-subcard chat-subcard">
+                <div class="app-subcard chat-subcard">
                     <div class="subcard-title">💬 HỎI ĐÁP NGỮ NGHĨA VỀ VIDEO (GEMINI GROUNDED Q&A)</div>
                     <div class="chat-input-row">
-                        <input type="text" id="chat-question-input" class="cyber-input" placeholder="Hỏi bất kỳ điều gì (ví dụ: Người này có bị chấn thương nặng không? Lúc mấy giây thì ngã?)" onkeypress="if(event.key==='Enter') sendChatMessage()">
+                        <input type="text" id="chat-question-input" class="app-input" placeholder="Hỏi bất kỳ điều gì (ví dụ: Người này có ngồi đúng tư thế không? Lúc mấy giây thì nghiêng người?)" onkeypress="if(event.key==='Enter') sendChatMessage()">
                         <button class="btn btn-primary" onclick="sendChatMessage()">Gửi câu hỏi</button>
                     </div>
                     <div id="chat-answer-box" class="chat-response-box hidden">
@@ -472,7 +582,7 @@
             </div>
             <div class="modal-body">
                 <div class="modal-image-wrapper">
-                    <img id="modal-img" src="" alt="Bằng chứng ảnh sinh cơ học" />
+                    <img id="modal-img" src="" alt="Bằng chứng ảnh công thái học" />
                 </div>
                 <div class="modal-meta-box">
                     <div class="meta-row">
@@ -484,12 +594,12 @@
                         <span class="meta-val" id="modal-desc">--</span>
                     </div>
                     <div class="meta-row">
-                        <span class="meta-label">🔮 Dự đoán 4s tiếp theo:</span>
-                        <span class="meta-val text-cyan" id="modal-pred">--</span>
+                        <span class="meta-label">Dự đoán 4s tiếp theo:</span>
+                        <span class="meta-val text-primary" id="modal-pred">--</span>
                     </div>
                     <div class="meta-row">
                         <span class="meta-label">Mô hình phân tích:</span>
-                        <span class="meta-val mono text-cyan">Google Gemini 3.5 Flash Lite (Vision Multimodal — Chu kỳ 4s)</span>
+                        <span class="meta-val mono text-primary">Mô hình phân tầng: Tier-1 Gemini 2.5 / Tier-2 Gemini 1.5 Failover / AI Tự Hành</span>
                     </div>
                 </div>
             </div>

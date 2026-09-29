@@ -13,27 +13,55 @@ import os
 import cv2
 import json
 import time
+import io
+import logging
 from typing import List, Dict, Any, Optional
 from google import genai
 from google.genai import types
 from PIL import Image
-import io
+
+from core.config import CONFIG
+
+logger = logging.getLogger(__name__)
+
+
+def get_shared_orchestrator():
+    """Hàm nạp an toàn singleton Model Orchestrator tránh lỗi circular import."""
+    try:
+        from core.model_orchestrator import get_model_orchestrator
+        return get_model_orchestrator()
+    except Exception as e:
+        logger.warning(f"Không thể nạp Model Orchestrator singleton trong TokenGuard: {e}")
+        return None
 
 
 class TokenGuard:
     """
-    Quản lý ngân sách token và trích xuất keyframe đỉnh điểm nguy hiểm.
+    Quản lý ngân sách token, trích xuất keyframe đỉnh điểm nguy hiểm,
+    và điều phối báo cáo video qua bộ chuyển đổi mô hình phân tầng.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.5-flash-lite"):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
-        self.model_name = os.getenv("GEMINI_MODEL", model_name)
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model_name: Optional[str] = None,
+        orchestrator: Optional[Any] = None
+    ):
+        self.api_key = api_key or getattr(CONFIG, "GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+        self.model_name = model_name or getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-2.0-flash")
+        self.orchestrator = orchestrator
         self.client = None
         if self.api_key:
             try:
                 self.client = genai.Client(api_key=self.api_key)
             except Exception as e:
                 print(f"[!] Lỗi khởi tạo Gemini Client trong TokenGuard: {e}")
+
+    def _resolve_orchestrator(self):
+        """Đảm bảo luôn có đối tượng orchestrator nếu module khả dụng."""
+        if self.orchestrator is None:
+            self.orchestrator = get_shared_orchestrator()
+        return self.orchestrator
 
     def _get_golden_cache_path(self) -> str:
         return os.path.join(os.path.dirname(__file__), "golden_cache.json")
@@ -114,10 +142,11 @@ class TokenGuard:
 
         return {
             "status": "success",
+            "model_tier": "Tier-3 Local Arbiter",
             "threat_level": "AN TOÀN",
             "is_safe_environment": True,
-            "primary_incident": "Sinh hoạt & Tương tác an toàn (Autonomous Heuristic)",
-            "detailed_diagnosis": f"Không gian sinh hoạt an toàn, ghi nhận {max_entities} đối tượng tương tác ổn định. Hệ thống kích hoạt Bộ hội chẩn Cục bộ Tự hành (Autonomous Heuristic) bảo toàn nguyên vẹn 100% trải nghiệm mà không phụ thuộc Quota API.",
+            "primary_incident": "Sinh hoạt & Tương tác an toàn (Autonomous Heuristic Arbiter)",
+            "detailed_diagnosis": f"Không gian sinh hoạt an toàn, ghi nhận {max_entities} đối tượng tương tác ổn định. Hệ thống kích hoạt Bộ hội chẩn Cục bộ Tự hành (Tier-3 Autonomous Heuristic) bảo toàn 100% dữ liệu mà không phụ thuộc Quota API.",
             "recommended_action": "Duy trì giám sát tự động theo chu kỳ, không cần can thiệp.",
             "scene_context": f"Không gian sinh hoạt an toàn với {max_entities} đối tượng, bảo toàn 0 token.",
             "confidence_score": 0.95,
@@ -189,9 +218,10 @@ class TokenGuard:
         segment_info: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
-        Gửi duy nhất 1 lượt gọi đến Gemini 3.5 Flash Lite tổng hợp toàn bộ video
-        và miêu tả chi tiết ngữ cảnh cho từng phân đoạn timeline.
-        Bảo toàn hạn mức < 1,500 tokens.
+        Tổng hợp báo cáo video đa tầng:
+        1. Golden Cache thẩm định đầu tiên (0 token, 0ms).
+        2. Điều tiết nhịp độ (Pacing >= 4.2s) tránh xung đột hạn mức với Live Camera.
+        3. Phân tầng: Tier 1 (gemini-2.0-flash) -> Tier 2 (gemini-1.5-flash) -> Tier 3 (Arbiter).
         """
         # 1. Thẩm định qua Golden Cache trước tiên (Bảo toàn 100% trải nghiệm & 0 Token)
         cache = self._load_golden_cache()
@@ -199,15 +229,18 @@ class TokenGuard:
         if isinstance(source_key, str) and source_key:
             for k, cached_data in cache.items():
                 if k.lower() in source_key.lower():
-                    print(f"[TokenGuard] ✨ Tìm thấy Golden Cache cho '{k}'. Nạp tức thì (0 token, 0ms, không phụ thuộc API)!")
+                    logger.info(f"[TokenGuard] Tìm thấy Golden Cache cho '{k}'. Nạp tức thì (0 token)!")
                     res = dict(cached_data)
                     res["status"] = "success"
+                    if "model_tier" not in res:
+                        res["model_tier"] = "Golden Cache"
                     return res
 
-        # 2. Nếu chưa có client (chưa cấu hình API Key) -> Kích hoạt Bộ hội chẩn Cục bộ Tự hành
-        if not self.client:
-            print("[TokenGuard] ℹ️ GEMINI_API_KEY chưa cấu hình. Kích hoạt Bộ hội chẩn Cục bộ Tự hành (Autonomous Heuristic)...")
-            return self._synthesize_local_autonomous_report(event_summary, video_metadata, segment_info, reason="no_api_key")
+        orch = self._resolve_orchestrator()
+
+        # 2. Kiểm soát điều tiết lưu lượng (Backpressure Pacing)
+        if orch is not None:
+            orch.acquire_api_permission(priority="video_synthesis")
 
 
         # Tạo bảng tóm tắt thời gian (timeline summary text)
@@ -333,29 +366,54 @@ HƯỚNG DẪN ĐẶC BIỆT VỀ QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ:
                     mime_type="image/jpeg"
                 ))
 
+        config = types.GenerateContentConfig(
+            temperature=0.2,
+            response_mime_type="application/json"
+        )
+
+        # 4. Thực thi qua Bộ Điều Phối Phân Tầng (Hierarchical Failover)
+        if orch is not None:
+            data, used_tier = orch.execute_multimodal_failover(contents=contents, config=config)
+            if data is not None and isinstance(data, dict):
+                data["status"] = "success"
+                data["model_tier"] = getattr(used_tier, "value", str(used_tier))
+                if "token_usage" not in data:
+                    data["token_usage"] = 0
+                if source_key and len(source_key) > 4:
+                    save_key = "GeLhuvhyWuM" if "GeLhuvhyWuM" in source_key else os.path.basename(source_key)
+                    self._save_to_golden_cache(save_key, data)
+                return data
+
+            # Nếu toàn bộ các tầng Cloud đều cạn kiệt Quota -> Rơi vào Tier 3 Arbiter
+            logger.warning("[TokenGuard] Toàn bộ tầng Cloud API chạm hạn mức. Kích hoạt Tier-3 Local Arbiter...")
+            fallback_data = self._synthesize_local_autonomous_report(event_summary, video_metadata, segment_info, reason="all_cloud_tiers_exhausted")
+            fallback_data["model_tier"] = "Tier-3 Local Arbiter"
+            return fallback_data
+
+        # 5. Fallback độc lập khi không có Orchestrator
+        if not self.client:
+            logger.info("[TokenGuard] Chưa cấu hình API Key. Kích hoạt Tier-3 Local Arbiter...")
+            fallback_data = self._synthesize_local_autonomous_report(event_summary, video_metadata, segment_info, reason="no_api_key")
+            fallback_data["model_tier"] = "Tier-3 Local Arbiter"
+            return fallback_data
+
         try:
-            config = types.GenerateContentConfig(
-                temperature=0.2,
-                response_mime_type="application/json"
-            )
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=contents,
                 config=config
             )
 
-            # Lấy số token đã dùng
             token_usage = 0
             if hasattr(response, "usage_metadata") and response.usage_metadata:
                 token_usage = getattr(response.usage_metadata, "total_token_count", 0) or 0
 
-            # Parse JSON
             raw_text = response.text.strip()
             data = json.loads(raw_text)
             data["token_usage"] = token_usage
             data["status"] = "success"
+            data["model_tier"] = "Tier-1 Gemini 2.0"
 
-            # Tự động lưu vào Golden Cache nếu thành công
             if source_key and len(source_key) > 4:
                 save_key = "GeLhuvhyWuM" if "GeLhuvhyWuM" in source_key else os.path.basename(source_key)
                 self._save_to_golden_cache(save_key, data)
@@ -363,6 +421,8 @@ HƯỚNG DẪN ĐẶC BIỆT VỀ QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ:
             return data
 
         except Exception as e:
-            print(f"[!] Lỗi gọi Gemini trong synthesize_video_report ({e}). Tự động kích hoạt Bộ hội chẩn Cục bộ Tự hành dự phòng (Bảo toàn Quota)...")
-            return self._synthesize_local_autonomous_report(event_summary, video_metadata, segment_info, reason=str(e))
+            logger.warning(f"[TokenGuard] Lỗi gọi Gemini trong synthesize_video_report ({e}). Kích hoạt Tier-3 Local Arbiter...")
+            fallback_data = self._synthesize_local_autonomous_report(event_summary, video_metadata, segment_info, reason=str(e))
+            fallback_data["model_tier"] = "Tier-3 Local Arbiter"
+            return fallback_data
 

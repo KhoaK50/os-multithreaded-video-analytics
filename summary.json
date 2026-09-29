@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-09-29T16:19:51Z",
+  "total_passed": 38,
+  "total_failed": 0,
+  "total_skipped": 0,
+  "total_duration": 20.42,
+  "overall_status": "PASS",
+  "tiers": [
+    {
+      "tier": 1,
+      "name": "Tier 1: Feature Coverage (F01 - F19)",
+      "file": "tests\\e2e\\test_tier1_feature_coverage.py",
+      "status": "PASS",
+      "returncode": 0,
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 5.03,
+      "output": "....................                                                     [100%]\n============================== warnings summary ===============================\ntests/e2e/test_tier1_feature_coverage.py::TestHierarchicalFailoverAndContextMemory::test_t1_f01_hierarchical_tiers_priority\n  C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\google\\genai\\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17\n    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n20 passed, 1 warning in 3.75s\n\n"
+    },
+    {
+      "tier": 2,
+      "name": "Tier 2: Boundary & Corner Cases",
+      "file": "tests\\e2e\\test_tier2_boundary_corner_cases.py",
+      "status": "PASS",
+      "returncode": 0,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 3.04,
+      "output": "..........                                                               [100%]\n============================== warnings summary ===============================\ntests/e2e/test_tier2_boundary_corner_cases.py::TestFailoverTimingAndFloodBoundaries::test_t2_cooldown_threshold_61s_preemptive_reversion\n  C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\google\\genai\\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17\n    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n10 passed, 1 warning in 2.19s\n\n"
+    },
+    {
+      "tier": 3,
+      "name": "Tier 3: Cross-Feature Interactions",
+      "file": "tests\\e2e\\test_tier3_cross_feature_interactions.py",
+      "status": "PASS",
+      "returncode": 0,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 4.59,
+      "output": ".....                                                                    [100%]\n============================== warnings summary ===============================\ntests/e2e/test_tier3_cross_feature_interactions.py::TestCrossFeatureInteractions::test_t3_failover_during_live_stream_while_video_upload_starts\n  C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\google\\genai\\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17\n    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n5 passed, 1 warning in 3.24s\n\n"
+    },
+    {
+      "tier": 4,
+      "name": "Tier 4: Real-World Scenarios",
+      "file": "tests\\e2e\\test_tier4_real_world_scenarios.py",
+      "status": "PASS",
+      "returncode": 0,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 7.75,
+      "output": "...                                                                      [100%]\n============================== warnings summary ===============================\ntests/e2e/test_tier4_real_world_scenarios.py::TestRealWorldWorkflows::test_t4_capcut_timeline_workflow_with_safety_checks\n  C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\google\\genai\\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17\n    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n3 passed, 1 warning in 6.02s\n\n"
+    }
+  ]
+}

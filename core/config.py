@@ -3,6 +3,11 @@ Global Configuration for Video Behavior Analytics & OS Multithreading System.
 """
 import os
 
+from dotenv import load_dotenv
+
+# Đảm bảo biến môi trường từ .env luôn được nạp đầy đủ
+load_dotenv()
+
 # Cấu hình lưu trữ Cache Hugging Face sang ổ D nếu có để tiết kiệm dung lượng ổ C
 if os.path.exists("D:/huggingface_cache") or (os.name == "nt" and os.path.exists("D:/")):
     HF_CACHE_DIR = "D:/huggingface_cache"
@@ -12,6 +17,21 @@ if os.path.exists("D:/huggingface_cache") or (os.name == "nt" and os.path.exists
 
 from dataclasses import dataclass, field
 from typing import List, Optional
+
+
+def parse_gemini_api_keys(raw_keys: Optional[str] = None) -> List[str]:
+    """
+    Phân tích chuỗi API Keys phân tách bằng dấu phẩy thành danh sách khóa.
+    Ưu tiên biến GEMINI_API_KEYS, tự động fallback về GEMINI_API_KEY đơn lẻ.
+    """
+    keys_str = raw_keys if raw_keys is not None else os.getenv("GEMINI_API_KEYS", "")
+    if keys_str and keys_str.strip():
+        keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+        if keys:
+            return keys
+    single_key = os.getenv("GEMINI_API_KEY", "").strip()
+    return [single_key] if single_key else []
+
 
 @dataclass
 class SystemConfig:
@@ -73,9 +93,18 @@ class SystemConfig:
     VIEWPORT_HEIGHT: int = 720
     SIDEBAR_WIDTH: int = 380
 
-    # --- Cloud LLM Model & Rate Limiting ---
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-    GEMINI_INTERVAL_SECONDS: float = 3.5  # Rate limit: <= 15 requests per minute
+    # --- Cloud LLM Hierarchical Tiers & Rate Limiting (R1 Specification) ---
+    GEMINI_TIER1_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_TIER1_MODEL", "gemini-2.0-flash"))
+    GEMINI_TIER2_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_TIER2_MODEL", "gemini-1.5-flash"))
+    GEMINI_COOLDOWN_SECONDS: float = field(default_factory=lambda: float(os.getenv("GEMINI_COOLDOWN_SECONDS", "60.0")))
+    GEMINI_API_KEYS: List[str] = field(default_factory=parse_gemini_api_keys)
+    GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+
+    # Tương thích ngược với mã nguồn cũ
+    GEMINI_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", os.getenv("GEMINI_TIER1_MODEL", "gemini-2.0-flash")))
+    GEMINI_INTERVAL_SECONDS: float = field(default_factory=lambda: float(os.getenv("GEMINI_INTERVAL_SECONDS", "4.2")))
+    API_PACE_SECONDS: float = 4.2  # Nhịp độ khống chế >= 4.2s giữa Live Camera và Video Upload (< 15 RPM)
+
 
 # Global instance
 CONFIG = SystemConfig()

@@ -1,36 +1,113 @@
 /* ==========================================================================
-   CYBER SURVEILLANCE HUB - RADIX SLATE DARK THEME
-   Thiết kế chuyên nghiệp, chống A.I. Slop, tuân thủ typography và visual hierarchy.
+   OS MULTITHREADED VIDEO ANALYTICS - RADIX SLATE THEME (DARK / LIGHT)
+   Thiết kế chuyên nghiệp, chuẩn học thuật Hệ Điều Hành, độ tương phản cao.
    ========================================================================== */
 
 :root {
-    --bg-base: #080B10;
-    --bg-surface: #101620;
-    --bg-surface-elevated: #16202D;
-    --bg-subtle: #1C2838;
-    
-    --border-subtle: #1F2C3D;
-    --border-strong: #2A3D54;
-    --border-focus: #00E5FF;
-    
-    --text-primary: #F0F4F8;
-    --text-secondary: #94A3B8;
-    --text-tertiary: #64748B;
-    
-    --accent-cyan: #00E5FF;
-    --accent-cyan-bg: rgba(0, 229, 255, 0.12);
-    --accent-emerald: #10B981;
-    --accent-emerald-bg: rgba(16, 185, 129, 0.14);
-    --accent-amber: #F59E0B;
-    --accent-amber-bg: rgba(245, 158, 11, 0.14);
-    --accent-crimson: #EF4444;
-    --accent-crimson-bg: rgba(239, 68, 68, 0.16);
+    /* Radix Slate Dark Scale (Steps 1 to 12) */
+    --slate-1: #111113;
+    --slate-2: #18191b;
+    --slate-3: #212225;
+    --slate-4: #27282d;
+    --slate-5: #2e3135;
+    --slate-6: #363a3f;
+    --slate-7: #43484e;
+    --slate-8: #5a6169;
+    --slate-9: #69717d;
+    --slate-10: #7d8692;
+    --slate-11: #9ba1a6;
+    --slate-12: #ecedee;
+
+    /* Radix Indigo Scale (Dark) */
+    --indigo-9: #3e63dd;
+    --indigo-10: #5373e7;
+    --indigo-11: #849dff;
+    --indigo-bg: rgba(62, 99, 221, 0.16);
+    --indigo-border: rgba(62, 99, 221, 0.35);
+
+    /* Radix Semantic Mappings (Dark Mode) */
+    --bg-base: var(--slate-1);
+    --bg-surface: var(--slate-2);
+    --bg-surface-elevated: var(--slate-3);
+    --bg-subtle: var(--slate-4);
+
+    --border-subtle: var(--slate-6);
+    --border-strong: var(--slate-7);
+    --border-focus: var(--indigo-9);
+
+    --text-primary: var(--slate-12);
+    --text-secondary: var(--slate-11);
+    --text-tertiary: var(--slate-9);
+
+    --accent-primary: var(--indigo-9);
+    --accent-primary-hover: var(--indigo-10);
+    --accent-primary-bg: var(--indigo-bg);
+
+    /* Backward-compatible accent tokens mapped to Radix colors */
+    --accent-cyan: var(--indigo-9);
+    --accent-cyan-bg: var(--indigo-bg);
+    --accent-emerald: #30a46c;
+    --accent-emerald-bg: rgba(48, 164, 108, 0.16);
+    --accent-amber: #f5a623;
+    --accent-amber-bg: rgba(245, 166, 35, 0.16);
+    --accent-crimson: #e5484d;
+    --accent-crimson-bg: rgba(229, 72, 77, 0.16);
 
     --font-ui: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
     --radius-sm: 6px;
     --radius-md: 10px;
     --radius-lg: 14px;
+}
+
+[data-theme="light"] {
+    /* Radix Slate Light Scale (Steps 1 to 12) */
+    --slate-1: #fbfcfd;
+    --slate-2: #f8f9fa;
+    --slate-3: #f1f3f5;
+    --slate-4: #eceef0;
+    --slate-5: #e6e8eb;
+    --slate-6: #dfe2e6;
+    --slate-7: #d3d6db;
+    --slate-8: #c1c6cd;
+    --slate-9: #889096;
+    --slate-10: #7e868c;
+    --slate-11: #687076;
+    --slate-12: #11181c;
+
+    /* Radix Indigo Scale (Light) */
+    --indigo-9: #3e63dd;
+    --indigo-10: #3358d4;
+    --indigo-11: #2b4acb;
+    --indigo-bg: rgba(62, 99, 221, 0.10);
+    --indigo-border: rgba(62, 99, 221, 0.25);
+
+    /* Radix Semantic Mappings (Light Mode) */
+    --bg-base: var(--slate-1);
+    --bg-surface: var(--slate-2);
+    --bg-surface-elevated: #ffffff;
+    --bg-subtle: var(--slate-3);
+
+    --border-subtle: var(--slate-6);
+    --border-strong: var(--slate-7);
+    --border-focus: var(--indigo-9);
+
+    --text-primary: var(--slate-12);
+    --text-secondary: var(--slate-11);
+    --text-tertiary: var(--slate-9);
+
+    --accent-primary: var(--indigo-9);
+    --accent-primary-hover: var(--indigo-10);
+    --accent-primary-bg: var(--indigo-bg);
+
+    --accent-cyan: var(--indigo-9);
+    --accent-cyan-bg: var(--indigo-bg);
+    --accent-emerald: #299764;
+    --accent-emerald-bg: rgba(41, 151, 100, 0.12);
+    --accent-amber: #e58c06;
+    --accent-amber-bg: rgba(229, 140, 6, 0.12);
+    --accent-crimson: #ce2c31;
+    --accent-crimson-bg: rgba(206, 44, 49, 0.12);
 }
 
 * {
@@ -62,7 +139,7 @@ body {
 /* ==========================================================================
    HEADER BAR
    ========================================================================== */
-.cyber-header {
+.app-header {
     background-color: var(--bg-surface);
     border-bottom: 1px solid var(--border-subtle);
     padding: 12px 28px;
@@ -103,7 +180,7 @@ body {
     letter-spacing: 0.06em;
 }
 
-.cyber-nav {
+.app-nav {
     display: flex;
     gap: 8px;
     background: var(--bg-base);
@@ -152,6 +229,33 @@ body {
     box-shadow: 0 0 6px var(--accent-emerald);
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Theme Toggle Button */
+.theme-toggle-btn {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s ease;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--bg-surface-elevated);
+    border-color: var(--border-focus);
+}
+
 .hardware-pill {
     display: flex;
     align-items: center;
@@ -198,13 +302,114 @@ body {
 }
 
 /* CARDS COMMON */
-.cyber-card {
+.app-card {
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     padding: 20px;
     margin-bottom: 20px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+/* ==========================================================================
+   OS TELEMETRY DASHBOARD GRID
+   ========================================================================== */
+.os-telemetry-card {
+    margin-top: 16px;
+    margin-bottom: 20px;
+}
+
+.telemetry-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+}
+
+.telemetry-item {
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.telemetry-item:hover {
+    border-color: var(--border-strong);
+}
+
+.telemetry-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+}
+
+.telemetry-icon {
+    font-size: 14px;
+}
+
+.telemetry-value-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.telemetry-main-val {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.telemetry-sub {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    line-height: 1.3;
+}
+
+.meter-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.meter-fill {
+    height: 100%;
+    background: var(--accent-primary);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.hw-mini-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 10px;
+}
+
+.hw-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+}
+
+.hw-name {
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.hw-val {
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .card-header {
@@ -893,7 +1098,7 @@ body {
     margin-bottom: 8px;
 }
 
-.cyber-input {
+.app-input {
     flex: 1;
     background: var(--bg-base);
     border: 1px solid var(--border-strong);
@@ -905,7 +1110,7 @@ body {
     transition: border-color 0.2s;
 }
 
-.cyber-input:focus {
+.app-input:focus {
     outline: none;
     border-color: var(--border-focus);
     box-shadow: 0 0 0 1px var(--border-focus);
@@ -1198,8 +1403,8 @@ body {
     color: var(--text-secondary);
 }
 
-.player-label.cyber-text {
-    color: var(--accent-cyan);
+.player-label.app-text {
+    color: var(--accent-primary);
 }
 
 .player-box video {
@@ -1209,10 +1414,11 @@ body {
     display: block;
 }
 
-/* Gemini Report Box */
+/* Multimodal Report Box */
 .gemini-synthesis-card {
-    background: linear-gradient(180deg, #162232 0%, #101824 100%);
-    border: 1px solid rgba(0, 229, 255, 0.3);
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-strong);
+    border-left: 4px solid var(--accent-primary);
     border-radius: var(--radius-md);
     padding: 18px 22px;
     margin-bottom: 20px;
@@ -1292,11 +1498,78 @@ body {
     margin-bottom: 20px;
 }
 
-.cyber-subcard {
+.app-subcard {
     background: var(--bg-surface-elevated);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     padding: 16px;
+}
+
+/* Common App Table Styles */
+.app-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    text-align: left;
+}
+
+.app-table th {
+    background: var(--bg-surface);
+    color: var(--text-tertiary);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-strong);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.app-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: middle;
+    color: var(--text-secondary);
+}
+
+.app-table tr:hover td {
+    background: rgba(255, 255, 255, 0.025);
+}
+
+/* Empty States */
+.empty-state-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px 20px;
+    color: var(--text-secondary);
+}
+
+.empty-state-compact {
+    padding: 16px 12px;
+}
+
+.empty-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    opacity: 0.85;
+}
+
+.empty-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.empty-sub {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    max-width: 460px;
+    line-height: 1.45;
 }
 
 .subcard-title {
@@ -1860,14 +2133,20 @@ tr.active-segment-row {
     color: var(--accent-cyan);
 }
 
+@media (max-width: 1024px) {
+    .telemetry-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 768px) {
-    .cyber-header {
+    .app-header {
         flex-direction: column;
         gap: 12px;
         align-items: flex-start;
         padding: 12px 16px;
     }
-    .cyber-nav {
+    .app-nav {
         width: 100%;
         justify-content: space-between;
     }
@@ -1875,8 +2154,43 @@ tr.active-segment-row {
         padding: 6px 12px;
         font-size: 11.5px;
     }
+    .header-right {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
     .main-content {
         padding: 14px;
+    }
+    .telemetry-grid {
+        grid-template-columns: 1fr;
+    }
+    .log-table-wrapper,
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .stream-control-bar {
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-start;
+    }
+    .stream-control-bar .btn {
+        min-height: 44px;
+        min-width: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .control-group-left,
+    .control-group-right {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    .theme-toggle-btn {
+        min-height: 44px;
+        min-width: 44px;
     }
     .modal-container {
         max-width: 100%;

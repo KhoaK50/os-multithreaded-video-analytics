@@ -1,15 +1,15 @@
 """
-Video Annotator Engine: Phân tích & Dán nhãn Video Quy mô lớn bằng YOLOv8-Pose trên RTX 5060.
+Video Annotator Engine: Phân tích & Dán nhãn Video Quy mô lớn bằng YOLOv8-Pose đa nền tảng.
 Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
 
 Chức năng:
 1. Nhập file video từ Local (.mp4, .avi, .mov) hoặc Web URL (YouTube, mạng xã hội) qua yt-dlp.
 2. Hỗ trợ cắt đoạn Timeline tùy chọn (start_time -> end_time) kiểu CapCut, không tốn đĩa.
-3. Chạy YOLOv8-Pose trên GPU NVIDIA GeForce RTX 5060 (>80 FPS) để phát hiện ĐA ĐỐI TƯỢNG.
-4. Vẽ Bounding Box kiểu Sci-Fi (Corner Brackets) + Bộ Khung Xương Neon 17 khớp nối cho từng người.
+3. Chạy YOLOv8-Pose trên thiết bị tăng tốc phần cứng (GPU/MPS/CPU) để phát hiện ĐA ĐỐI TƯỢNG.
+4. Vẽ Technical Bounding Box chuẩn xác + Khung xương tư thế công thái học 17 điểm cho từng người.
 5. Đánh giá Sinh cơ học (Biomechanics): Đo góc trục thân người, phát hiện té ngã, phát hiện cử chỉ bạo lực qua từng khung hình.
 6. Kết xuất (Export) video thành phẩm hoàn chỉnh (.mp4) tương thích trình duyệt web.
-7. Tích hợp TokenGuard: Chọn 1-3 keyframe đỉnh điểm, gọi 1 lượt Gemini 3.5 Flash Lite với ngân sách < 1,500 tokens.
+7. Tích hợp TokenGuard: Chọn 1-3 keyframe đỉnh điểm, gọi 1 lượt mô hình phân tầng với ngân sách < 1,500 tokens.
 """
 
 import os
@@ -22,6 +22,7 @@ import shutil
 import cv2
 import numpy as np
 from typing import Optional, Dict, Any, Callable, Tuple, List
+from PIL import Image, ImageDraw, ImageFont
 
 from core.cyber_hud import CyberHUDRenderer
 from core.config import CONFIG
@@ -465,6 +466,15 @@ class VideoAnnotatorEngine:
     def device(self, value: str):
         self._device = value
 
+    @property
+    def device_name(self) -> str:
+        """Trả về tên thiết bị phần cứng thực tế (Tesla T4, RTX 5060, Apple Silicon (MPS), hoặc CPU)."""
+        from core.metrics import get_hardware_gpu_name
+        dev = getattr(self, "_device", None)
+        if dev and str(dev).lower() == "cpu":
+            return "CPU"
+        return get_hardware_gpu_name()
+
     def warmup(self):
         """Khởi động nóng mô hình trên GPU RTX 5060 (Chạy trong luồng nền)."""
         with self._warmup_lock:
@@ -856,7 +866,7 @@ class VideoAnnotatorEngine:
                 fps_tracker.pop(0)
             avg_proc_fps = sum(fps_tracker) / len(fps_tracker)
 
-            # --- DÁN NHÃN HUD CÔNG NGHỆ CAO ---
+            # --- DÁN NHÃN HUD BẰNG PILLOW UNICODE (KHÔNG VỠ FONT TIẾNG VIỆT) ---
             header_h = 45
             overlay_hdr = frame.copy()
             cv2.rectangle(overlay_hdr, (0, 0), (orig_w, header_h), (15, 20, 28), -1)
@@ -865,11 +875,23 @@ class VideoAnnotatorEngine:
             cv2.addWeighted(overlay_hdr, 0.85, frame, 0.15, 0, frame)
 
             cur_time_str = format_time(current_time_sec - start_time)
-            hdr_text = f"FRAME: {processed_count:05d}/{target_total_frames:05d} [{cur_time_str}]  |  XỬ LÝ: {avg_proc_fps:.0f} FPS (RTX 5060)  |  ĐỐI TƯỢNG: {detected_persons_count}"
-            cv2.putText(frame, hdr_text, (20, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (245, 247, 250), 1, cv2.LINE_AA)
-
+            dev_hw = self.device_name
+            hdr_text = f"FRAME: {processed_count:05d}/{target_total_frames:05d} [{cur_time_str}]  |  XỬ LÝ: {avg_proc_fps:.0f} FPS ({dev_hw})  |  ĐỐI TƯỢNG: {detected_persons_count}"
             status_tag = f"[ {frame_alert} ]" if has_frame_danger else "[ AN TOÀN ]"
-            cv2.putText(frame, status_tag, (orig_w - 280, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, banner_color, 2, cv2.LINE_AA)
+
+            # Vẽ text tiếng Việt Unicode mượt mà bằng Pillow ImageDraw
+            hdr_roi = frame[0:header_h, 0:orig_w]
+            pil_hdr = Image.fromarray(cv2.cvtColor(hdr_roi, cv2.COLOR_BGR2RGB))
+            draw_hdr = ImageDraw.Draw(pil_hdr)
+            font_hdr = getattr(self.hud, "font_body_bold", None) or getattr(self.hud, "font_body", None)
+            font_status = getattr(self.hud, "font_section", None) or getattr(self.hud, "font_body_bold", None)
+
+            draw_hdr.text((20, 14), hdr_text, font=font_hdr, fill=(245, 247, 250))
+            tag_color_rgb = (banner_color[2], banner_color[1], banner_color[0])
+            status_x = max(orig_w - 320, int(orig_w * 0.70))
+            draw_hdr.text((status_x, 14), status_tag, font=font_status, fill=tag_color_rgb)
+
+            frame[0:header_h, 0:orig_w] = cv2.cvtColor(np.array(pil_hdr), cv2.COLOR_RGB2BGR)
 
             if has_frame_danger:
                 cv2.rectangle(frame, (0, 0), (orig_w - 1, orig_h - 1), (68, 68, 239), 4)
