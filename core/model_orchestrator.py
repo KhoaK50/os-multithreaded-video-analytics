@@ -335,6 +335,32 @@ class HierarchicalModelOrchestrator:
             data = data[0]
         return data
 
+    def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
+        """Gọi client.models.generate_content kèm cơ chế tự động chuyển sang model tương thích nếu gặp lỗi 404 Deprecated."""
+        candidates = [model]
+        if "2.0" in model or "2.5" in model:
+            candidates.extend(["gemini-3-flash-preview", "gemini-3.5-flash-lite"])
+        elif "1.5" in model:
+            candidates.extend(["gemini-3.5-flash-lite", "gemini-3-flash-preview"])
+
+        last_err = None
+        for m in candidates:
+            try:
+                return self.client.models.generate_content(
+                    model=m,
+                    contents=contents,
+                    config=config
+                )
+            except Exception as e:
+                last_err = e
+                err_msg = str(e).upper()
+                if "404" in err_msg or "NOT_FOUND" in err_msg or "NO LONGER AVAILABLE" in err_msg:
+                    logger.warning(f"Mô hình '{m}' báo 404 Not Found / Deprecated. Tự động chuyển tiếp sang mô hình '{candidates[-1]}'...")
+                    continue
+                raise e
+        if last_err:
+            raise last_err
+
     def _call_gemini_vision(self, model: str, prompt: str, frame_img: Any) -> dict:
         from google.genai import types
         contents = [prompt]
@@ -350,7 +376,7 @@ class HierarchicalModelOrchestrator:
         config = types.GenerateContentConfig(
             response_mime_type="application/json"
         )
-        response = self.client.models.generate_content(
+        response = self._safe_generate_content(
             model=model,
             contents=contents,
             config=config
@@ -455,7 +481,7 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
         # 2. Thử Tier 1
         if self.cooldown_tracker.is_tier1_ready():
             try:
-                resp = self.client.models.generate_content(
+                resp = self._safe_generate_content(
                     model=self.tier1_model,
                     contents=contents,
                     config=config
@@ -474,7 +500,7 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
         # 3. Thử Tier 2
         if self.cooldown_tracker.is_tier2_ready():
             try:
-                resp = self.client.models.generate_content(
+                resp = self._safe_generate_content(
                     model=self.tier2_model,
                     contents=contents,
                     config=config
@@ -494,7 +520,7 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
         rotated_key = self.rotate_api_key()
         if rotated_key and self.client:
             try:
-                resp = self.client.models.generate_content(
+                resp = self._safe_generate_content(
                     model=self.tier2_model,
                     contents=contents,
                     config=config
