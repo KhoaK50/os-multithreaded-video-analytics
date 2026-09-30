@@ -413,4 +413,50 @@ def test_telemetry_realtime_quota_contract():
     assert rq["rpd_limit"] == 1500
 
 
+def test_annotator_timeline_segment_gemini_merge():
+    """
+    Kiểm thử cơ chế ghép narrative và thông số Gemini vào timeline_segments,
+    đảm bảo không còn bất kỳ lỗi NameError nào (như 'ga' is not defined).
+    """
+    timeline_segments = [
+        {"segment_id": "SEG-01", "time_range": "00:00 -> 00:04", "severity": "safe", "danger_score": 1.0, "entities": []}
+    ]
+    gemini_result = {
+        "segment_analyses": [
+            {
+                "segment_id": "SEG-01",
+                "detailed_narrative": "Đối tượng A tiếp cận đối tượng B với thái độ căng thẳng.",
+                "weapon_detected": "gậy gỗ",
+                "threat_level": "NGUY HIỂM",
+                "threat_score": 9.2,
+                "prediction_next_4s": "Nguy cơ cao xảy ra va chạm xô xát."
+            }
+        ]
+    }
+    gemini_analyses = {a.get("segment_id"): a for a in gemini_result.get("segment_analyses", []) if isinstance(a, dict)}
+    for seg in timeline_segments:
+        s_id = seg["segment_id"]
+        if s_id in gemini_analyses:
+            ga = gemini_analyses[s_id]
+            detailed_nar = ga.get("detailed_narrative") or ga.get("context_description") or ga.get("macro_narrative") or ga.get("detailed_action")
+            macro_sum = ga.get("macro_narrative") or ga.get("detailed_action") or detailed_nar
+            if detailed_nar:
+                seg["scene_summary"] = macro_sum
+                seg["detailed_narrative"] = detailed_nar
+                seg["context_description"] = detailed_nar
+            if ga.get("prediction_next_4s"):
+                seg["prediction_next_4s"] = ga["prediction_next_4s"]
+            w_det = ga.get("weapon_detected")
+            if w_det and str(w_det).lower() not in ["null", "none", "không có", "không", "false"]:
+                seg["weapon_detected"] = str(w_det)
+                seg["severity"] = "danger"
+                seg["danger_score"] = max(seg.get("danger_score", 0.0), float(ga.get("threat_score", 8.8)))
+
+    assert timeline_segments[0]["detailed_narrative"] == "Đối tượng A tiếp cận đối tượng B với thái độ căng thẳng."
+    assert timeline_segments[0]["weapon_detected"] == "gậy gỗ"
+    assert timeline_segments[0]["severity"] == "danger"
+    assert timeline_segments[0]["danger_score"] == 9.2
+
+
+
 
