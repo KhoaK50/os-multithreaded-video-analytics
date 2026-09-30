@@ -858,16 +858,15 @@ class KinematicAnomalyRanker:
                     det_a["interaction_score"] = max(det_a["interaction_score"], clash_val)
                     det_b["interaction_score"] = max(det_b["interaction_score"], clash_val)
 
-        # 3. Tính điểm Saliency tổng hợp và làm mịn EMA
+        # 3. Tính điểm Saliency tổng hợp và làm mịn EMA (Chuẩn hóa miền giá trị [0.0, 1.0])
         for det in detections:
             raw_id = det["raw_id"]
             st = self.track_states[raw_id]
-            inst_score = (
-                0.40 * det["kinetic_spike"] +
-                0.30 * det["posture_anomaly"] +
-                0.30 * det["interaction_score"] +
-                det.get("threat_score", 0.0)
-            )
+            norm_k = min(1.0, det["kinetic_spike"] / 3.0)
+            norm_p = min(1.0, det["posture_anomaly"] / 10.0)
+            norm_i = min(1.0, det["interaction_score"] / 6.0)
+            norm_t = min(1.0, det.get("threat_score", 0.0) / 10.0)
+            inst_score = (0.35 * norm_k + 0.25 * norm_p + 0.25 * norm_i + 0.15 * norm_t) * 10.0
             st["saliency"] = (1.0 - self.ema_alpha) * st["saliency"] + self.ema_alpha * inst_score
             det["saliency_score"] = st["saliency"]
 
@@ -1180,6 +1179,8 @@ class VideoAnnotatorEngine:
         anomaly_ranker = KinematicAnomalyRanker(top_k=4) if anomaly_focus else None
         posture_distribution = {"upright": 0, "bent": 0, "slouched": 0}
         fall_streaks = {}
+        sitting_streaks = {}
+        max_sitting_streaks = {}
         temporal_stabilizer = TemporalActionStabilizer(window_size=8, trigger_thresh=3, cooldown_frames=6)
         has_orig_audio = check_video_has_audio(input_path)
 
@@ -1453,61 +1454,41 @@ class VideoAnnotatorEngine:
                                 person_action = "Thủ thế đối đầu / Căng thẳng"
                                 person_threat_score = 6.0
 
-                            # 7. Phân loại Tư thế Sinh cơ học Tự nhiên
+                            # 7. Phân loại Tư thế Sinh cơ học & Động học Vật lý Khách quan (Objective Physical States)
                             elif not person_danger:
-                                # A. Đưa 2 tay lên đầu / Căng thẳng
-                                if l_wrist[2] > 0.30 and r_wrist[2] > 0.30 and l_wrist[1] < nose[1] + 25 and r_wrist[1] < nose[1] + 25:
-                                    person_action = "Đưa tay lên đầu / Căng thẳng"
-                                    person_threat_score = 3.0
+                                # A. Nhóm Ngồi (Seated)
+                                if is_seated:
+                                    if kinetic_spike < 0.65:
+                                        person_action = "Ngồi tại bàn / Quan sát tĩnh"
+                                    else:
+                                        person_action = "Ngồi làm việc / Thao tác tay"
+                                    person_threat_score = 0.1
 
-                                # B. Giơ tay phát biểu / Vẫy tay chào
-                                elif (l_wrist[2] > 0.30 and l_wrist[1] < l_sh[1] - 25) or (r_wrist[2] > 0.30 and r_wrist[1] < r_sh[1] - 25):
-                                    person_action = "Giơ tay / Vẫy tay chào"
-                                    person_threat_score = 0.5
+                                # B. Nhóm Đứng thẳng (Upright Standing)
+                                elif aspect_ratio >= 1.62 and torso_angle >= 70.0:
+                                    if kinetic_spike < 0.65:
+                                        person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
+                                    else:
+                                        person_action = "Đang đứng / Di chuyển vận động"
+                                    person_threat_score = 0.2
 
-                                # C. Chống cằm / Đỡ má suy nghĩ
-                                elif (l_wrist[2] > 0.30 and math.hypot(l_wrist[0] - nose[0], l_wrist[1] - nose[1]) < 0.60 * sh_w) or \
-                                     (r_wrist[2] > 0.30 and math.hypot(r_wrist[0] - nose[0], r_wrist[1] - nose[1]) < 0.60 * sh_w):
-                                    person_action = "Chống cằm / Đỡ má suy nghĩ"
+                                # C. Nhóm Cúi người / Tập trung (Bent Torso)
+                                elif 40.0 <= torso_angle < 70.0:
+                                    person_action = "Cúi gập thân / Tập trung"
+                                    person_threat_score = 0.3
 
-                                # D. Khoanh tay trước ngực
-                                elif (l_wrist[2] > 0.35 and r_wrist[2] > 0.35 and
-                                      sh_y < l_wrist[1] < hip_y and sh_y < r_wrist[1] < hip_y and
-                                      l_wrist[0] > sh_x - 0.15 * sh_w and r_wrist[0] < sh_x + 0.15 * sh_w and
-                                      abs(l_wrist[0] - r_wrist[0]) < 0.45 * sh_w and
-                                      l_wrist[1] < hip_y - 15 and r_wrist[1] < hip_y - 15):
-                                    person_action = "Khoanh tay trước ngực"
-
-                                # E. Tương tác trước ngực / Ôm giữ vật thể
-                                elif (kinetic_spike < 0.6 and interaction_score < 1.0 and
-                                      l_wrist[2] > 0.20 and r_wrist[2] > 0.20 and 
-                                      abs(l_wrist[0] - r_wrist[0]) < max(50.0, 0.85 * sh_w) and 
-                                      l_wrist[1] > sh_y + 0.15 * sh_w and l_wrist[1] < hip_y + 40 and 
-                                      r_wrist[1] > sh_y + 0.15 * sh_w and r_wrist[1] < hip_y + 40):
-                                    person_action = "Tương tác trước ngực / Ôm giữ vật thể"
-
-                                # F. Ngồi làm việc / Ngồi tại bàn học
-                                elif is_seated:
-                                    person_action = "Ngồi tại bàn / Quan sát tĩnh"
-
-                                # G. Cúi người / Nhặt đồ
-                                elif 45.0 <= torso_angle < 68.0:
-                                    person_action = "Cúi đầu / Tập trung"
-
-                                # H. Ngả lưng thư giãn
-                                elif torso_angle > 98.0:
+                                # D. Nhóm Ngả lưng thư giãn (Reclining)
+                                elif torso_angle > 102.0:
                                     person_action = "Ngả lưng thư giãn"
+                                    person_threat_score = 0.2
 
-                                # I. Đứng thẳng / Đi lại di chuyển
-                                elif aspect_ratio >= 1.70:
-                                    person_action = "Đứng thẳng / Đi lại di chuyển"
-
-                                # J. Mặc định tự nhiên
+                                # E. Nhóm Vận động / Sinh hoạt tự nhiên
                                 else:
-                                    if aspect_ratio >= 1.62:
-                                        person_action = "Đang đứng / Hoạt động trong phòng"
+                                    if kinetic_spike >= 0.85:
+                                        person_action = "Vận động trong phòng / Di chuyển"
                                     else:
                                         person_action = "Sinh hoạt bình thường / Quan sát"
+                                    person_threat_score = 0.2
 
                             # Lọc trễ thời gian (Temporal Hysteresis) + Cửa sổ trượt đồng thuận đa số để khử giật nhãn/màu
                             stab_res = temporal_stabilizer.update(
@@ -1535,6 +1516,12 @@ class VideoAnnotatorEngine:
                             self.hud.draw_cyber_skeleton(frame, kpts_scaled, color)
 
                         action_counts[stable_action] = action_counts.get(stable_action, 0) + 1
+                        if is_seated:
+                            sitting_streaks[c_id] = sitting_streaks.get(c_id, 0) + 1
+                            max_sitting_streaks[c_id] = max(max_sitting_streaks.get(c_id, 0), sitting_streaks[c_id])
+                        else:
+                            sitting_streaks[c_id] = 0
+
                         if torso_angle >= 75.0:
                             posture_distribution["upright"] += 1
                         elif 45.0 <= torso_angle < 75.0:
@@ -2093,19 +2080,15 @@ class VideoAnnotatorEngine:
         slouched_pct = round((posture_distribution["slouched"] / total_postures) * 100.0, 1)
 
         # Tính toán Điểm số Công thái học (Ergonomic Score 0 - 100)
-        base_ergo = 95.0
-        ergo_deduct = (danger_pct * 0.70) + (warn_pct * 0.35) + (bent_pct * 0.15) + (slouched_pct * 0.25)
-        raw_ergo = max(20.0, min(99.0, base_ergo - ergo_deduct))
-
-        if gemini_result.get("threat_level") == "AN TOÀN" or gemini_result.get("is_safe_environment", False):
-            raw_ergo = max(86.0, raw_ergo)
-
+        # Chuẩn hóa thuần sinh cơ học cột sống: Thẳng lưng (upright), cúi gập (bent), gù/sụp đổ (slouched)
+        ergo_deduct = (bent_pct * 0.25) + (slouched_pct * 0.55)
+        raw_ergo = max(25.0, min(98.0, 96.0 - ergo_deduct))
         ergo_score = round(raw_ergo, 1)
 
-        # Ước lượng thời gian ngồi liên tục (Sedentary time)
-        sitting_counts = action_counts.get("Ngồi làm việc / Thao tác tay", 0) + action_counts.get("Ngồi tại bàn / Quan sát tĩnh", 0)
-        sitting_ratio = sitting_counts / max(1, sum(action_counts.values()))
-        continuous_sitting_sec = round(sitting_ratio * (processed_count / input_fps), 1)
+        # Ước lượng thời gian ngồi liên tục (Sedentary Streak time)
+        # Tính theo chuỗi frame ngồi liên tục lớn nhất của một cá nhân (Max Individual Continuous Sitting Streak)
+        max_streak_frames = max(max_sitting_streaks.values()) if max_sitting_streaks else 0
+        continuous_sitting_sec = round(max_streak_frames / input_fps, 1)
 
         if ergo_score >= 82.0:
             ergo_advice = "Tư thế sinh hoạt và lao động trong phân đoạn đạt chuẩn Tốt. Cột sống và các khớp duy trì góc độ giải phẫu học tự nhiên."

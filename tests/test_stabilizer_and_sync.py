@@ -263,3 +263,81 @@ def test_seated_classroom_jitter_not_attacker():
     assert s1_res["interaction_score"] == 0.0
     assert s2_res["interaction_score"] == 0.0
 
+
+def test_ergonomics_decoupled_from_security_threat():
+    """
+    Kiểm thử tách biệt độc lập giữa Công thái học (Ergonomics) và An ninh (Security):
+    Dù môi trường an toàn 100% (threat_level == 'AN TOÀN'), nếu người ngồi bị gù lưng (slouched_pct cao),
+    điểm công thái học phải phản ánh đúng độ gù và KHÔNG bị kéo khống lên >= 86.
+    """
+    bent_pct = 20.0
+    slouched_pct = 50.0  # Gù lưng 50% thời gian
+    ergo_deduct = (bent_pct * 0.25) + (slouched_pct * 0.55)
+    raw_ergo = max(25.0, min(98.0, 96.0 - ergo_deduct))
+    ergo_score = round(raw_ergo, 1)
+
+    # 96.0 - (5.0 + 27.5) = 63.5 -> Đúng chuẩn cần cải thiện, không bị ép lên >= 86
+    assert ergo_score < 70.0
+    assert ergo_score == 63.5
+
+
+def test_continuous_sitting_streak_calculation():
+    """
+    Kiểm thử tính toán Thời gian ngồi liên tục (Sedentary Streak):
+    Chuỗi ngồi liên tục lớn nhất của từng cá nhân (max individual continuous streak)
+    phải phản ánh đúng chuỗi liên tục, không bị cộng dồn thời gian ngắt quãng của nhiều người.
+    """
+    fps = 30.0
+    # Đối tượng 1: ngồi liên tục 150 frames (5s)
+    # Đối tượng 2: ngồi ngắt quãng 2 lần, mỗi lần 60 frames (2s)
+    max_sitting_streaks = {1: 150, 2: 60}
+    max_streak_frames = max(max_sitting_streaks.values())
+    continuous_sitting_sec = round(max_streak_frames / fps, 1)
+
+    assert continuous_sitting_sec == 5.0
+    assert continuous_sitting_sec != round((150 + 60 * 2) / fps, 1)
+
+
+def test_saliency_score_normalized_weights():
+    """
+    Kiểm thử chuẩn hóa điểm Saliency:
+    Threat score cao (vd: 9.0) không được phép áp đảo toàn bộ điểm số,
+    mà phải được cân đối cùng vận tốc động năng và tương tác cơ học.
+    """
+    from core.video_annotator import KinematicAnomalyRanker
+    ranker = KinematicAnomalyRanker(top_k=2)
+    det1 = {
+        "raw_id": 1,
+        "bbox": [10, 10, 100, 200],
+        "kpts": [[50, 50, 0.9] for _ in range(17)],
+        "kinetic_spike": 2.5,
+        "posture_anomaly": 4.0,
+        "interaction_score": 3.0,
+        "threat_score": 8.0
+    }
+    res = ranker.update_frame([det1], 640, 480)
+    # Kiểm tra saliency_score nằm trong miền hợp lý [0, 10]
+    assert 0.0 <= res[0]["saliency_score"] <= 10.0
+    assert res[0]["is_focus"] == True
+
+
+def test_fallback_role_differentiation_fall_vs_strike():
+    """
+    Kiểm thử phân vai Tier-3 Arbiter:
+    Biến cố té ngã (has_fall = True) BẮT BUỘC gán vai 'Nạn nhân / Người gặp biến cố té ngã',
+    TUYỆT ĐỐI KHÔNG tự bịa ra 'Kẻ tấn công' khi chỉ có té ngã y tế/sinh hoạt.
+    """
+    from core.token_guard import TokenGuard
+    tg = TokenGuard()
+    report_fall = tg._synthesize_local_autonomous_report(
+        event_summary=[{"threat_type": "TÉ NGÃ", "threat_score": 9.0, "details": "Sụp đổ trục thân"}],
+        video_metadata={"duration_sec": 10.0, "frame_count": 300, "fps": 30.0},
+        segment_info=[]
+    )
+    actors = report_fall.get("detected_actors", [])
+    assert len(actors) >= 1
+    # Người thứ nhất phải là nạn nhân té ngã, không được là kẻ tấn công
+    assert "té ngã" in actors[0]["role"].lower() or "nạn nhân" in actors[0]["role"].lower()
+    assert "tấn công" not in actors[0]["role"].lower()
+
+

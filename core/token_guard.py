@@ -143,12 +143,20 @@ class TokenGuard:
             scene_ctx = f"Khu vực ghi nhận {max_entities} đối tượng với diễn biến tương tác xung đột cường độ cao, chuyển động tay chân nhanh và áp sát trực tiếp."
             overall_concl = f"Kết luận an ninh: Ghi nhận tình huống đe dọa thể xác / biến động động năng nguy hiểm ({max_threat_score:.1f}/10.0). Yêu cầu lực lượng giám sát lưu tâm xử lý."
             
-            base_roles = [
-                {"role": "Kẻ tấn công / Gây hấn", "action": "Vung tay ra đòn / Tấn công áp sát", "posture": "Thủ thế và va chạm cường độ cao", "appearance": "Đối tượng tiêu điểm quan sát"},
-                {"role": "Nạn nhân / Phòng thủ", "action": "Giằng co va chạm / Đỡ đòn", "posture": "Thủ thế đối đầu né đòn", "appearance": "Đối tượng tương tác trực tiếp"},
-                {"role": "Người quan sát #03", "action": "Đứng quan sát hiện trường", "posture": "Tư thế đứng thẳng quan sát", "appearance": "Đối tượng xung quanh"},
-                {"role": "Người quan sát #04", "action": "Đang di chuyển / Đứng gần", "posture": "Quan sát bối cảnh", "appearance": "Đối tượng xung quanh"}
-            ]
+            if has_fall and not (has_clash or has_strike):
+                base_roles = [
+                    {"role": "Nạn nhân / Người gặp biến cố té ngã", "action": "Té ngã / Nằm bất động trên sàn", "posture": "Sụp đổ trục thân và nằm sát mặt sàn", "appearance": "Đối tượng tiêu điểm ghi nhận"},
+                    {"role": "Người quan sát / Hỗ trợ #02", "action": "Đứng quan sát / Tiếp cận hỗ trợ", "posture": "Tư thế đứng hoặc cúi kiểm tra", "appearance": "Đối tượng xung quanh hiện trường"},
+                    {"role": "Người quan sát #03", "action": "Quan sát không gian", "posture": "Tư thế đứng quan sát", "appearance": "Đối tượng xung quanh"},
+                    {"role": "Người quan sát #04", "action": "Đang di chuyển", "posture": "Tự nhiên", "appearance": "Đối tượng xung quanh"}
+                ]
+            else:
+                base_roles = [
+                    {"role": "Chủ thể gây hấn / Tấn công", "action": "Vung tay ra đòn / Tấn công áp sát", "posture": "Thủ thế và va chạm cường độ cao", "appearance": "Đối tượng tiêu điểm quan sát"},
+                    {"role": "Đối tượng bị tác động / Phòng vệ", "action": "Giằng co va chạm / Đỡ đòn né tránh", "posture": "Thủ thế đối đầu né đòn", "appearance": "Đối tượng tương tác trực tiếp"},
+                    {"role": "Người quan sát #03", "action": "Đứng quan sát hiện trường", "posture": "Tư thế đứng thẳng quan sát", "appearance": "Đối tượng xung quanh"},
+                    {"role": "Người quan sát #04", "action": "Đang di chuyển / Đứng gần", "posture": "Quan sát bối cảnh", "appearance": "Đối tượng xung quanh"}
+                ]
         elif max_threat_score >= 5.0:
             threat_level = "CẢNH BÁO"
             is_safe = False
@@ -304,7 +312,7 @@ class TokenGuard:
             src_base = os.path.basename(source_key).lower()
             for k, cached_data in cache.items():
                 k_lower = k.lower()
-                if (k_lower in source_key.lower() and "GeLhuvhyWuM" in k) or (src_base == k_lower):
+                if src_base == k_lower:
                     logger.info(f"[TokenGuard] Tìm thấy Golden Cache cho '{k}'. Nạp tức thì (0 token)!")
                     res = dict(cached_data)
                     res["status"] = "success"
@@ -456,7 +464,7 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
                 if "token_usage" not in data:
                     data["token_usage"] = 0
                 if source_key and len(source_key) > 4:
-                    save_key = "GeLhuvhyWuM" if "GeLhuvhyWuM" in source_key else os.path.basename(source_key)
+                    save_key = os.path.basename(source_key)
                     self._save_to_golden_cache(save_key, data)
                 return data
 
@@ -491,7 +499,7 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
             data["model_tier"] = "Tier-1 Gemini 2.0"
 
             if source_key and len(source_key) > 4:
-                save_key = "GeLhuvhyWuM" if "GeLhuvhyWuM" in source_key else os.path.basename(source_key)
+                save_key = os.path.basename(source_key)
                 self._save_to_golden_cache(save_key, data)
 
             return data
