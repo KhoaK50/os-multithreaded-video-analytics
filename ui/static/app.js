@@ -1094,12 +1094,15 @@ async function launchProcessing() {
 
     const startVal = parseFloat(document.getElementById("range-start").value);
     const endVal = parseFloat(document.getElementById("range-end").value);
+    const chkAnomaly = document.getElementById("chk-anomaly-focus");
+    const anomalyFocus = chkAnomaly ? chkAnomaly.checked : true;
 
     const payload = {
         video_path: currentVideoData.video_path,
         start_time: startVal,
         end_time: endVal,
-        call_gemini: true
+        call_gemini: true,
+        anomaly_focus: anomalyFocus
     };
 
     // Show processing section

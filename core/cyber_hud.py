@@ -231,6 +231,41 @@ class CyberHUDRenderer:
     # Alias học thuật chuẩn HĐH
     draw_ergonomic_skeleton = draw_cyber_skeleton
 
+    def draw_ghost_skeleton(self, img, kpts, color_bgr=(115, 125, 138)):
+        """Vẽ khung xương mờ bán trong suốt (Ghosted Skeleton) cho người ngoài cuộc/đứng xem."""
+        if kpts is None or len(kpts) == 0:
+            return
+
+        overlay = img.copy()
+        # 1. Vẽ các đường xương cơ thể mỏng nhẹ
+        for (i, j) in self.SKELETON_PAIRS:
+            if i < len(kpts) and j < len(kpts):
+                p1, p2 = kpts[i], kpts[j]
+                conf1 = p1[2] if len(p1) > 2 else 1.0
+                conf2 = p2[2] if len(p2) > 2 else 1.0
+                if conf1 > 0.40 and conf2 > 0.40:
+                    pt1 = (int(p1[0]), int(p1[1]))
+                    pt2 = (int(p2[0]), int(p2[1]))
+                    cv2.line(overlay, pt1, pt2, color_bgr, 1, cv2.LINE_AA)
+
+        # 2. Vẽ khớp xương nhỏ kín đáo
+        for idx, pt in enumerate(kpts):
+            if idx < 5:
+                continue
+            conf = pt[2] if len(pt) > 2 else 1.0
+            if conf > 0.40:
+                px, py = int(pt[0]), int(pt[1])
+                cv2.circle(overlay, (px, py), 2, color_bgr, -1, cv2.LINE_AA)
+
+        # Trộn mờ với ảnh gốc (alpha blending 35% để tránh tranh chấp thị giác)
+        cv2.addWeighted(overlay, 0.35, img, 0.65, 0, img)
+
+    def draw_ghost_bbox(self, img, x1, y1, x2, y2, color_bgr=(90, 98, 110)):
+        """Vẽ khung viền tối giản mờ cho người ngoài cuộc để tránh làm rối mắt."""
+        overlay = img.copy()
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), color_bgr, 1, lineType=cv2.LINE_AA)
+        cv2.addWeighted(overlay, 0.25, img, 0.75, 0, img)
+
     def draw_technical_bbox(self, img, x1, y1, x2, y2, color_bgr, label="", score=0.0):
         """Vẽ khung định vị đối tượng chuẩn kỹ thuật (Technical Bounding Box) kèm nhãn tiếng Việt Unicode."""
         w = x2 - x1

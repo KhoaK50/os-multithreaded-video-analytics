@@ -1335,6 +1335,125 @@ body {
     margin-top: 2px;
 }
 
+/* Options Bar: Bộ lọc tiêu điểm Top-4 */
+.analysis-options-bar {
+    margin: 16px 0 14px 0;
+}
+
+.anomaly-toggle-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 12px 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.anomaly-toggle-card:hover {
+    border-color: var(--indigo-border);
+    background: var(--bg-surface-elevated);
+}
+
+.toggle-switch-wrapper {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.toggle-switch-input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.toggle-switch-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: var(--slate-6);
+    border-radius: 24px;
+    transition: all 0.25s ease;
+    border: 1px solid var(--border-strong);
+}
+
+.toggle-switch-slider::before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #ffffff;
+    border-radius: 50%;
+    transition: all 0.25s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-switch-input:checked + .toggle-switch-slider {
+    background-color: var(--indigo-9);
+    border-color: var(--indigo-10);
+}
+
+.toggle-switch-input:checked + .toggle-switch-slider::before {
+    transform: translateX(20px);
+}
+
+.toggle-text-block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.toggle-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.toggle-icon {
+    font-size: 14px;
+}
+
+.badge-feature {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 4px;
+    background: var(--indigo-bg);
+    color: var(--indigo-11);
+    border: 1px solid var(--indigo-border);
+}
+
+.toggle-description {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    .anomaly-toggle-card {
+        padding: 10px 12px;
+        gap: 10px;
+    }
+    .toggle-description {
+        font-size: 11px;
+    }
+}
+
 .action-launch-row {
     text-align: center;
 }

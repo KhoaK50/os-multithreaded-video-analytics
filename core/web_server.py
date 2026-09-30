@@ -1335,6 +1335,7 @@ class ProcessRequest(BaseModel):
     start_time: float = 0.0
     end_time: float = 60.0
     call_gemini: bool = True
+    anomaly_focus: bool = True
 
 
 @app.post("/api/video/process")
@@ -1378,7 +1379,8 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
                 start_time=req.start_time,
                 end_time=req.end_time,
                 progress_callback=on_progress,
-                call_gemini=req.call_gemini
+                call_gemini=req.call_gemini,
+                anomaly_focus=req.anomaly_focus
             )
 
             res["annotated_stream_url"] = f"/api/video/stream_file/{output_filename}"

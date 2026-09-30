@@ -585,6 +585,143 @@ class SpatialTrackStabilizer:
         return self.canonical_postures.get(c_id)
 
 
+class KinematicAnomalyRanker:
+    """
+    Bộ xếp hạng đột biến động học và lọc tiêu điểm (Kinematic Saliency & Anomaly Ranker).
+    - Tính toán độ dịch chuyển vận tốc khớp xương (Kinetic Velocity Spike).
+    - Phát hiện biến động tư thế đột ngột (Posture Collapse / Fall / Sudden Crouch).
+    - Tính toán mật độ tương tác va chạm vật lý giữa các thực thể (Physical Clash / Interaction Density).
+    - Phân loại Top-K (K <= 4) đối tượng tiêu điểm và gắn cờ Ghosted cho người ngoài cuộc.
+    """
+    def __init__(self, top_k: int = 4, ema_alpha: float = 0.20):
+        self.top_k = top_k
+        self.ema_alpha = ema_alpha
+        self.track_states = {}  # raw_id -> {"saliency": float, "prev_kpts": list, "max_h": int}
+        self.active_indices = [7, 8, 9, 10, 13, 14, 15, 16]
+
+    def update_frame(
+        self,
+        detections: List[Dict[str, Any]],
+        frame_w: int,
+        frame_h: int
+    ) -> List[Dict[str, Any]]:
+        if not detections:
+            return []
+
+        # 1. Tính toán Kinetic Spike và Posture Anomaly cho từng người
+        for det in detections:
+            raw_id = det["raw_id"]
+            kpts = det.get("kpts")
+            bbox = det["bbox"]
+            torso_angle = det.get("torso_angle", 90.0)
+            threat_score = det.get("threat_score", 0.0)
+            is_danger = det.get("person_danger", False)
+
+            x1, y1, x2, y2 = bbox
+            h = max(1, y2 - y1)
+            w = max(1, x2 - x1)
+
+            st = self.track_states.setdefault(raw_id, {
+                "saliency": 0.0,
+                "prev_kpts": None,
+                "max_h": h
+            })
+
+            # A. Kinetic velocity spike (Vận tốc dịch chuyển khớp xương)
+            kinetic_spike = 0.0
+            prev_kpts = st["prev_kpts"]
+            if kpts is not None and prev_kpts is not None:
+                disps = []
+                for idx in self.active_indices:
+                    if idx < len(kpts) and idx < len(prev_kpts):
+                        p_c = kpts[idx]
+                        p_p = prev_kpts[idx]
+                        if p_c[2] > 0.25 and p_p[2] > 0.25:
+                            d = math.hypot(p_c[0] - p_p[0], p_c[1] - p_p[1])
+                            disps.append(d / max(35.0, float(h)))
+                if disps:
+                    kinetic_spike = (sum(disps) / len(disps)) * 18.0
+
+            st["prev_kpts"] = [(p[0], p[1], p[2]) for p in kpts] if kpts is not None else None
+
+            # B. Posture Anomaly (Sụt giảm chiều cao, té ngã, co cụm)
+            st["max_h"] = max(st["max_h"], h)
+            posture_anomaly = 0.0
+            if st["max_h"] > 40 and (h / float(st["max_h"])) < 0.55:
+                posture_anomaly += 6.0
+            if torso_angle < 35.0:
+                posture_anomaly += 5.0
+            if is_danger:
+                posture_anomaly += 8.0
+
+            det["kinetic_spike"] = kinetic_spike
+            det["posture_anomaly"] = posture_anomaly
+            det["interaction_score"] = 0.0
+
+        # 2. Tính toán tương tác vật lý (Physical Interaction) giữa các cặp trong frame
+        n = len(detections)
+        for i in range(n):
+            for j in range(i + 1, n):
+                det_a, det_b = detections[i], detections[j]
+                ba, bb = det_a["bbox"], det_b["bbox"]
+
+                ca_x, ca_y = (ba[0] + ba[2]) / 2.0, (ba[1] + ba[3]) / 2.0
+                cb_x, cb_y = (bb[0] + bb[2]) / 2.0, (bb[1] + bb[3]) / 2.0
+                dist = math.hypot(ca_x - cb_x, ca_y - cb_y)
+                avg_h = ((ba[3] - ba[1]) + (bb[3] - bb[1])) / 2.0
+
+                xA = max(ba[0], bb[0])
+                yA = max(ba[1], bb[1])
+                xB = min(ba[2], bb[2])
+                yB = min(ba[3], bb[3])
+                inter = max(0, xB - xA) * max(0, yB - yA)
+                areaA = max(1, (ba[2] - ba[0]) * (ba[3] - ba[1]))
+                areaB = max(1, (bb[2] - bb[0]) * (bb[3] - bb[1]))
+                iou = inter / float(areaA + areaB - inter)
+
+                if iou > 0.10 or dist < 0.65 * avg_h:
+                    if (det_a["kinetic_spike"] > 1.2 or det_b["kinetic_spike"] > 1.2 or 
+                        det_a.get("threat_score", 0) > 4.0 or det_b.get("threat_score", 0) > 4.0 or
+                        det_a.get("person_danger") or det_b.get("person_danger")):
+                        inter_boost = 5.0
+                        det_a["interaction_score"] = max(det_a["interaction_score"], inter_boost)
+                        det_b["interaction_score"] = max(det_b["interaction_score"], inter_boost)
+
+        # 3. Tính điểm Saliency tổng hợp và làm mịn EMA
+        for det in detections:
+            raw_id = det["raw_id"]
+            st = self.track_states[raw_id]
+            inst_score = (
+                0.40 * det["kinetic_spike"] +
+                0.30 * det["posture_anomaly"] +
+                0.30 * det["interaction_score"] +
+                det.get("threat_score", 0.0)
+            )
+            st["saliency"] = (1.0 - self.ema_alpha) * st["saliency"] + self.ema_alpha * inst_score
+            det["saliency_score"] = st["saliency"]
+
+        # 4. Phân tầng: Nếu tổng số người <= top_k, toàn bộ đều là FOCUS
+        if n <= self.top_k:
+            for det in detections:
+                det["is_focus"] = True
+                det["is_ghost"] = False
+            return detections
+
+        # Nếu n > top_k: Sắp xếp theo Saliency giảm dần
+        sorted_indices = sorted(range(n), key=lambda idx: detections[idx]["saliency_score"], reverse=True)
+        focus_set = set(sorted_indices[:self.top_k])
+
+        for idx, det in enumerate(detections):
+            if idx in focus_set:
+                det["is_focus"] = True
+                det["is_ghost"] = False
+            else:
+                det["is_focus"] = False
+                det["is_ghost"] = True
+
+        return detections
+
+
 class VideoAnnotatorEngine:
 
     def __init__(self, auto_warmup: bool = False):
@@ -684,7 +821,8 @@ class VideoAnnotatorEngine:
         start_time: float = 0.0,
         end_time: Optional[float] = None,
         progress_callback: Optional[Callable[[int, int, float], None]] = None,
-        call_gemini: bool = True
+        call_gemini: bool = True,
+        anomaly_focus: bool = True
     ) -> Dict[str, Any]:
         """
         Xử lý video (toàn bộ hoặc đoạn được cắt từ start_time đến end_time).
@@ -748,6 +886,7 @@ class VideoAnnotatorEngine:
         peak_danger_reason = "Toàn bộ đoạn video an toàn"
         all_detected_entities = set()
         stabilizer = SpatialTrackStabilizer(max_missing_frames=90, match_dist_ratio=0.35, max_k=4)
+        anomaly_ranker = KinematicAnomalyRanker(top_k=4) if anomaly_focus else None
         posture_distribution = {"upright": 0, "bent": 0, "slouched": 0}
         fall_streaks = {}
         has_orig_audio = check_video_has_audio(input_path)
@@ -823,36 +962,26 @@ class VideoAnnotatorEngine:
                 if boxes is not None and len(boxes) > 0:
                     detected_persons_count = len(boxes)
 
+                    candidates = []
                     for p_idx, box in enumerate(boxes):
                         conf = float(box.conf[0].item())
                         x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
-
-                        # Lấy track_id ổn định qua SpatialTrackStabilizer (triệt tiêu hiện tượng nhảy lên 76 ID)
                         raw_track_id = int(box.id[0].item()) if (hasattr(box, "id") and box.id is not None and len(box.id) > 0) else (p_idx + 1)
-                        c_id = stabilizer.update(raw_track_id, (x1, y1, x2, y2), processed_count, orig_w, orig_h)
-                        id_label = f"ID #{c_id:02d}"
 
-                        person_danger = False
-                        person_action = "Đang đứng / Hoạt động trong phòng"
-                        person_threat_score = 0.0
-                        torso_angle = 90.0
-
+                        kpts = None
                         if kpts_data is not None and len(kpts_data) > p_idx:
                             kpts = kpts_data[p_idx].data[0].cpu().numpy()
 
+                        torso_angle = 90.0
+                        if kpts is not None:
                             nose = kpts[0]
                             l_sh, r_sh = kpts[5], kpts[6]
                             l_hip, r_hip = kpts[11], kpts[12]
-                            l_wrist, r_wrist = kpts[9], kpts[10]
-
-                            # Tính góc thân người (Torso Angle)
                             sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
                             hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
-
                             if l_sh[2] > 0.30 and r_sh[2] > 0.30:
                                 sh_x = (l_sh[0] + r_sh[0]) / 2.0
                                 sh_y = (l_sh[1] + r_sh[1]) / 2.0
-
                             if l_hip[2] > 0.25 and r_hip[2] > 0.25:
                                 hip_x = (l_hip[0] + r_hip[0]) / 2.0
                                 hip_y = (l_hip[1] + r_hip[1]) / 2.0
@@ -861,9 +990,59 @@ class VideoAnnotatorEngine:
                             else:
                                 dx = abs(nose[0] - sh_x) if nose[2] > 0.25 else 10.0
                                 dy = abs(sh_y - nose[1]) if nose[2] > 0.25 else 50.0
-
                             if dx + dy > 1e-4:
                                 torso_angle = math.degrees(math.atan2(dy, dx))
+
+                        candidates.append({
+                            "p_idx": p_idx,
+                            "raw_id": raw_track_id,
+                            "bbox": (x1, y1, x2, y2),
+                            "conf": conf,
+                            "kpts": kpts,
+                            "torso_angle": torso_angle,
+                            "threat_score": 0.0,
+                            "person_danger": False
+                        })
+
+                    # Nếu bật lọc tiêu điểm bất thường (Top-4 Saliency Focus)
+                    if anomaly_ranker is not None:
+                        candidates = anomaly_ranker.update_frame(candidates, orig_w, orig_h)
+                    else:
+                        for cand in candidates:
+                            cand["is_focus"] = True
+                            cand["is_ghost"] = False
+
+                    # Xử lý và hiển thị phân tầng
+                    for cand in candidates:
+                        x1, y1, x2, y2 = cand["bbox"]
+                        conf = cand["conf"]
+                        kpts = cand["kpts"]
+                        torso_angle = cand["torso_angle"]
+                        raw_track_id = cand["raw_id"]
+                        is_focus = cand.get("is_focus", True)
+                        is_ghost = cand.get("is_ghost", False)
+
+                        # Nếu là người ngoài cuộc (Ghosted Bystander): Vẽ mờ tối giản tránh rối mắt
+                        if is_ghost and not is_focus:
+                            if kpts is not None:
+                                kpts_scaled = [(pt[0], pt[1], pt[2]) for pt in kpts]
+                                self.hud.draw_ghost_skeleton(frame, kpts_scaled)
+                            self.hud.draw_ghost_bbox(frame, x1, y1, x2, y2)
+                            continue
+
+                        # Nếu là người trong tiêu điểm (Top-K Focus):
+                        c_id = stabilizer.update(raw_track_id, (x1, y1, x2, y2), processed_count, orig_w, orig_h)
+                        id_label = f"ID #{c_id:02d}"
+
+                        person_danger = False
+                        person_action = "Đang đứng / Hoạt động trong phòng"
+                        person_threat_score = 0.0
+
+                        if kpts is not None:
+                            nose = kpts[0]
+                            l_sh, r_sh = kpts[5], kpts[6]
+                            l_hip, r_hip = kpts[11], kpts[12]
+                            l_wrist, r_wrist = kpts[9], kpts[10]
 
                             # 1. Kiểm tra Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
                             if torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
@@ -884,6 +1063,14 @@ class VideoAnnotatorEngine:
                                 bbox_h = max(1, y2 - y1)
                                 bbox_w = max(1, x2 - x1)
                                 aspect_ratio = bbox_h / bbox_w
+                                sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
+                                hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
+                                if l_sh[2] > 0.30 and r_sh[2] > 0.30:
+                                    sh_x = (l_sh[0] + r_sh[0]) / 2.0
+                                    sh_y = (l_sh[1] + r_sh[1]) / 2.0
+                                if l_hip[2] > 0.25 and r_hip[2] > 0.25:
+                                    hip_x = (l_hip[0] + r_hip[0]) / 2.0
+                                    hip_y = (l_hip[1] + r_hip[1]) / 2.0
 
                                 # A. Đưa 2 tay lên đầu / Căng thẳng
                                 if l_wrist[2] > 0.30 and r_wrist[2] > 0.30 and l_wrist[1] < nose[1] + 25 and r_wrist[1] < nose[1] + 25:
