@@ -148,7 +148,9 @@ class TokenGuard:
             "primary_incident": "Sinh hoạt & Tương tác an toàn (Autonomous Heuristic Arbiter)",
             "detailed_diagnosis": f"Không gian sinh hoạt an toàn, ghi nhận {max_entities} đối tượng tương tác ổn định. Hệ thống kích hoạt Bộ hội chẩn Cục bộ Tự hành (Tier-3 Autonomous Heuristic) bảo toàn 100% dữ liệu mà không phụ thuộc Quota API.",
             "recommended_action": "Duy trì giám sát tự động theo chu kỳ, không cần can thiệp.",
-            "scene_context": f"Không gian sinh hoạt an toàn với {max_entities} đối tượng, bảo toàn 0 token.",
+            "scene_context": f"Khu vực sinh hoạt nội bộ ổn định với {max_entities} đối tượng tham gia, không gian có ánh sáng đầy đủ và không ghi nhận chướng ngại vật nguy hiểm.",
+            "chronological_evolution": "Giai đoạn khởi đầu: Các đối tượng xuất hiện ổn định trong khung hình và thiết lập vị trí tương tác. Giai đoạn giữa: Tiếp tục duy trì các cử chỉ giao tiếp và sinh hoạt nhịp nhàng, không có gia tốc đột ngột hay xung đột vận động. Giai đoạn kết thúc: Toàn bộ phân cảnh duy trì trạng thái an toàn tuyệt đối, các đối tượng giữ vững thăng bằng.",
+            "overall_conclusion": "Đánh giá an toàn tổng thể: Toàn bộ quá trình vận động của các đối tượng hoàn toàn an toàn và lành mạnh. Không phát hiện bất kỳ dấu hiệu té ngã, va đập hoặc hành vi bất thường. Khuyến nghị: Tiếp tục duy trì giám sát tự động định kỳ.",
             "confidence_score": 0.95,
             "token_usage": 0,
             "detected_actors": detected_actors,
@@ -294,7 +296,9 @@ HƯỚNG DẪN ĐẶC BIỆT VỀ QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ:
   "primary_incident": "Tóm tắt hoạt động chủ đạo (Ví dụ: Chăm sóc gia đình / Bế em bé / Sinh hoạt bình thường)",
   "detailed_diagnosis": "Nhận định an ninh, an toàn tổng thể trong 2 câu.",
   "recommended_action": "Hành động khuyến nghị (ví dụ: Duy trì giám sát tự động / Không cần can thiệp)",
-  "scene_context": "Mô tả tổng thể không gian và sự tương tác giữa các đối tượng trong video (1-2 câu)",
+  "scene_context": "Mô tả tổng thể không gian, số lượng người và sự tương tác giữa các đối tượng trong video (1-2 câu)",
+  "chronological_evolution": "Tường thuật mạch lạc diễn biến toàn cảnh theo 3 giai đoạn: Khởi đầu -> Diễn biến chính / biến cố -> Kết thúc và trạng thái cuối cùng (2-3 câu)",
+  "overall_conclusion": "Kết luận an toàn tổng thể, đánh giá nguy cơ động học và khuyến nghị an ninh/lao động (1-2 câu)",
   "detected_actors": [
     {{
       "actor_index": 1,

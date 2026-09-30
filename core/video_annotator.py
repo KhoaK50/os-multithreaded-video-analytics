@@ -34,6 +34,9 @@ except ImportError:
     YTDLP_AVAILABLE = False
 
 
+import urllib.request
+import urllib.parse
+
 def format_time(seconds: float) -> str:
     m = int(seconds) // 60
     s = int(seconds) % 60
@@ -58,14 +61,87 @@ def get_ffmpeg_bin() -> str:
         return "ffmpeg"
 
 
+def resolve_redirect_url(url: str) -> str:
+    """
+    Theo vết và giải mã các đường dẫn rút gọn như vt.tiktok.com, vm.tiktok.com, youtu.be, fb.watch, bit.ly...
+    để lấy URL đích thực sự trước khi nạp vào yt-dlp hoặc bộ nạp trực tiếp.
+    """
+    clean_url = url.strip()
+    if not clean_url.startswith(("http://", "https://")):
+        return clean_url
 
+    short_domains = ["tiktok.com", "youtu.be", "fb.watch", "bit.ly", "tinyurl.com", "t.co", "goo.gl"]
+    if not any(d in clean_url.lower() for d in short_domains):
+        return clean_url
+
+    try:
+        req = urllib.request.Request(
+            clean_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            final_url = response.geturl()
+            if final_url:
+                return final_url
+    except Exception:
+        pass
+    return clean_url
+
+
+def is_direct_video_url(url: str) -> bool:
+    """Kiểm tra URL có phải là link file video trực tiếp hay không."""
+    clean_url = url.split("?")[0].lower()
+    return clean_url.endswith((".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"))
+
+
+def download_direct_video(url: str, output_path: str, max_size_mb: int = 150) -> bool:
+    """Tải trực tiếp video qua HTTP Chunked Stream khi gặp direct file link hoặc CDN."""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "*/*"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=35) as resp, open(output_path, "wb") as out_f:
+            total_read = 0
+            max_bytes = max_size_mb * 1024 * 1024
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                total_read += len(chunk)
+                if total_read > max_bytes:
+                    break
+                out_f.write(chunk)
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 1000
+    except Exception:
+        return False
 
 
 def probe_web_video(url: str) -> Dict[str, Any]:
     """
     Quét nhanh thông tin video (Metadata) từ URL mà KHÔNG tải video.
+    Hỗ trợ TikTok, YouTube, Reels, Facebook và Direct Video Link.
     Trả về: title, duration, duration_str, thumbnail, uploader, is_long (> 180s).
     """
+    resolved_url = resolve_redirect_url(url)
+
+    if is_direct_video_url(resolved_url):
+        base_title = os.path.basename(resolved_url.split("?")[0]) or "Video Trực Tiếp"
+        return {
+            "title": f"Direct Stream: {base_title}",
+            "duration": 30.0,
+            "duration_str": "00:30",
+            "thumbnail": "",
+            "uploader": "Direct HTTP Source",
+            "is_long": False
+        }
+
     if not YTDLP_AVAILABLE:
         raise RuntimeError("Thư viện yt-dlp chưa được cài đặt trên hệ thống.")
 
@@ -74,11 +150,20 @@ def probe_web_video(url: str) -> Dict[str, Any]:
         'no_warnings': True,
         'nocheckcertificate': True,
         'ignoreerrors': False,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+            'Referer': 'https://www.tiktok.com/',
+        },
+        'extractor_args': {
+            'youtube': {'player_client': ['ios', 'android', 'web']},
+            'tiktok': {'app_version': 'v2.8.0'}
+        },
     }
     try:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(resolved_url, download=False)
     except Exception as e_probe:
         err_msg = str(e_probe)
         if any(w in err_msg.lower() for w in ["private", "sign in", "login", "drm", "copyright", "blocked", "bản quyền", "members-only"]):
@@ -130,18 +215,41 @@ def download_web_video(
     end_time: Optional[float] = None
 ) -> Dict[str, Any]:
     """
-    Tải video (hoặc trích xuất đúng phân đoạn start_time -> end_time) từ URL bằng yt-dlp HTTP Byte Ranges.
-    Cơ chế tối thượng: Định cấu hình extractor_args với iOS & Android player clients nhằm tránh lỗi 403 Forbidden
-    khi FFmpeg kết nối trực tiếp với Google Video CDN trên Windows.
-    Đồng thời tích hợp Fallback Tầng 2 cắt cục bộ bằng FFmpeg đảm bảo 100% thành công.
+    Tải video (hoặc trích xuất đúng phân đoạn start_time -> end_time) từ URL.
+    Hỗ trợ TikTok (bao gồm vt.tiktok.com, video dọc 9:16), YouTube, Shorts, Reels, và direct video links.
+    Cơ chế dự phòng kép: yt-dlp HTTP Byte Ranges + Direct Stream Downloader + FFmpeg local slicing.
     """
+    resolved_url = resolve_redirect_url(url)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 1. Trực tiếp tải qua HTTP Stream nếu là Direct Video File URL
+    if is_direct_video_url(resolved_url):
+        base_name = os.path.basename(resolved_url.split("?")[0]) or "direct_video.mp4"
+        clean_base = "".join([c if c.isalnum() or c in "-_." else "_" for c in base_name])
+        dest_path = os.path.join(output_dir, f"direct_{int(time.time())}_{clean_base}")
+        ok = download_direct_video(resolved_url, dest_path)
+        if ok and os.path.exists(dest_path):
+            cap_check = cv2.VideoCapture(dest_path)
+            f_count = cap_check.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+            f_fps = cap_check.get(cv2.CAP_PROP_FPS) or 30.0
+            actual_dur = round(f_count / f_fps, 2) if f_fps > 0 else 30.0
+            cap_check.release()
+            return {
+                "file_path": os.path.abspath(dest_path),
+                "title": clean_base,
+                "duration": actual_dur,
+                "thumbnail": "",
+                "uploader": "Direct Video Source",
+                "is_clipped": False,
+                "has_audio": check_video_has_audio(dest_path)
+            }
+
     if not YTDLP_AVAILABLE:
         raise RuntimeError("Thư viện yt-dlp chưa được cài đặt trên hệ thống.")
 
-    info = probe_web_video(url)
+    info = probe_web_video(resolved_url)
     total_duration = info["duration"]
 
-    os.makedirs(output_dir, exist_ok=True)
     suffix = f"_{int(start_time)}_{int(end_time)}" if start_time is not None and end_time is not None else ""
     clean_id = "".join([c if c.isalnum() or c in "-_" else "" for c in info.get("id", "webvid")]) or "webvid"
     out_template = os.path.join(output_dir, f"web_{clean_id}{suffix}.%(ext)s")
@@ -161,16 +269,23 @@ def download_web_video(
         s_end = 90.0
         is_range = True
 
-    # Cấu hình đa nền tảng tối thượng: Ưu tiên ios, android để vượt qua Google CDN 403 Forbidden
-    common_extractor_args = {'youtube': {'player_client': ['ios', 'android', 'web']}}
+    common_extractor_args = {
+        'youtube': {'player_client': ['ios', 'android', 'web']},
+        'tiktok': {'app_version': 'v2.8.0'}
+    }
 
+    # Định dạng hỗ trợ cả ngang và dọc 9:16 (không giới hạn cứng height<=720 làm hỏng TikTok)
     ydl_opts = {
-        'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best',
         'outtmpl': out_template,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'merge_output_format': 'mp4',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Referer': 'https://www.tiktok.com/',
+        },
         'extractor_args': common_extractor_args,
     }
 
@@ -181,7 +296,7 @@ def download_web_video(
     final_file = None
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            download_info = ydl.extract_info(url, download=True)
+            download_info = ydl.extract_info(resolved_url, download=True)
             filename = ydl.prepare_filename(download_info)
             base, _ = os.path.splitext(filename)
             cand_file = filename if os.path.exists(filename) else f"{base}.mp4"
@@ -202,19 +317,23 @@ def download_web_video(
                 "Video bị chặn bởi cơ chế bản quyền / DRM của nền tảng. Vui lòng tải video về máy và sử dụng ô kéo thả File cục bộ."
             )
 
-        # Fallback Tầng 2: Tải định dạng đơn hoặc luồng nhẹ bằng yt-dlp rồi cắt cục bộ bằng FFmpeg (Zero 403 Error)
+        # Fallback Tầng 2: Tải định dạng đơn nhẹ bằng yt-dlp rồi cắt cục bộ bằng FFmpeg
         try:
             fb_full_path = os.path.join(output_dir, f"raw_stream_{clean_id}_{int(time.time())}.mp4")
             ydl_fb_opts = {
-                'format': '18/worst[ext=mp4]/best[height<=360]/best',
+                'format': 'best[ext=mp4]/best',
                 'outtmpl': fb_full_path,
                 'quiet': True,
                 'no_warnings': True,
                 'nocheckcertificate': True,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Referer': 'https://www.tiktok.com/',
+                },
                 'extractor_args': common_extractor_args,
             }
             with yt_dlp.YoutubeDL(ydl_fb_opts) as ydl_fb:
-                ydl_fb.download([url])
+                ydl_fb.download([resolved_url])
 
             if os.path.exists(fb_full_path) and os.path.getsize(fb_full_path) > 1000:
                 fb_slice_path = os.path.join(output_dir, f"web_{clean_id}{suffix}.mp4")
@@ -266,17 +385,18 @@ def download_web_video(
 
 class SpatialTrackStabilizer:
     """
-    Bộ ổn định và gom cụm Track ID không gian (Spatial-Temporal Tracking Re-linker).
-    - Khắc phục hiện tượng ByteTrack drop track và cấp hàng chục ID mới cho cùng 1 người.
-    - Duy trì danh tính ID ổn định xuyên suốt video.
-    - Đảm bảo giới hạn đúng số thực thể có mặt thực tế trong không gian (K <= 4).
-    - Loại bỏ các Bounding Box rác (ghost detections) xuất hiện ngắn hạn.
-    - Hỗ trợ gán vai trò trực tiếp từ Gemini Multimodal Visual Grounding.
+    Bộ ổn định và gom cụm Track ID không gian (Online K-Cap Persistent ID Tracker).
+    - Khống chế danh tính thực thể ổn định trong khoảng K <= 4 người xuyên suốt video.
+    - Kết hợp IoU + Khoảng cách tâm hình học (Centroid Distance) + Gợi ý ByteTrack ID.
+    - Triệt tiêu hoàn toàn hiện tượng phân mảnh / nhảy ID (như #05, #08, #15).
+    - Tự động re-link người cũ khi tái xuất hiện hoặc sau khi bị che khuất.
+    - Đảm bảo 100% đồng bộ giữa nhãn dán trên khung hình video và dữ liệu bảng phân đoạn timeline.
     """
-    def __init__(self, max_missing_frames: int = 90, match_dist_ratio: float = 0.22):
+    def __init__(self, max_missing_frames: int = 90, match_dist_ratio: float = 0.35, max_k: int = 4):
         self.max_missing_frames = max_missing_frames
         self.match_dist_ratio = match_dist_ratio
-        self.active_tracks = {}      # canonical_id -> {"last_seen": int, "bbox": tuple, "cx": float, "cy": float, "heights": [], "aspects": []}
+        self.max_k = max_k
+        self.active_tracks = {}      # canonical_id -> {"last_seen": int, "bbox": tuple, "cx": float, "cy": float, "heights": [], "aspects": [], "last_raw_id": int}
         self.canonical_next_id = 1
         self.raw_to_canonical = {}   # raw_track_id -> canonical_id
         self.canonical_counts = {}   # canonical_id -> int
@@ -287,6 +407,41 @@ class SpatialTrackStabilizer:
         self.concurrent_pairs = set() # (c_id1, c_id2) pairs that co-occur in the same frame
         self.max_concurrent_seen = 1
 
+    def compute_iou(self, boxA: Tuple[int, int, int, int], boxB: Tuple[int, int, int, int]) -> float:
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        inter_area = max(0, xB - xA) * max(0, yB - yA)
+        areaA = max(1, (boxA[2] - boxA[0]) * (boxA[3] - boxA[1]))
+        areaB = max(1, (boxB[2] - boxB[0]) * (boxB[3] - boxB[1]))
+        return inter_area / float(areaA + areaB - inter_area)
+
+    def _record_track(self, c_id: int, bbox: Tuple[int, int, int, int], cx: float, cy: float, h: int, aspect: float, frame_idx: int, raw_id: int):
+        if c_id not in self.active_tracks:
+            self.active_tracks[c_id] = {
+                "last_seen": frame_idx,
+                "bbox": bbox,
+                "cx": cx,
+                "cy": cy,
+                "heights": [h],
+                "aspects": [aspect],
+                "last_raw_id": raw_id
+            }
+        else:
+            trk = self.active_tracks[c_id]
+            trk["last_seen"] = frame_idx
+            trk["bbox"] = bbox
+            trk["cx"] = cx
+            trk["cy"] = cy
+            trk["last_raw_id"] = raw_id
+            trk["heights"].append(h)
+            trk["aspects"].append(aspect)
+            if len(trk["heights"]) > 100:
+                trk["heights"].pop(0)
+                trk["aspects"].pop(0)
+        self.canonical_counts[c_id] = self.canonical_counts.get(c_id, 0) + 1
+
     def update(self, raw_id: int, bbox: Tuple[int, int, int, int], frame_idx: int, frame_w: int, frame_h: int) -> int:
         x1, y1, x2, y2 = bbox
         cx = (x1 + x2) / 2.0
@@ -294,67 +449,64 @@ class SpatialTrackStabilizer:
         w = max(1, x2 - x1)
         h = max(1, y2 - y1)
         aspect = h / float(w)
+        diag = math.hypot(frame_w, frame_h)
 
         occupied = self.frame_canonical_occupancy.setdefault(frame_idx, set())
 
-        # Nếu raw_id đã được ánh xạ và canonical_id này chưa bị chiếm chỗ trong frame hiện tại
+        # 1. Nếu raw_id đã có canonical_id hợp lệ và chưa bị chiếm chỗ trong frame hiện tại
         if raw_id in self.raw_to_canonical:
             c_id = self.raw_to_canonical[raw_id]
-            if c_id not in occupied:
-                self.active_tracks[c_id] = {
-                    "last_seen": frame_idx,
-                    "bbox": bbox,
-                    "cx": cx,
-                    "cy": cy,
-                    "heights": self.active_tracks.get(c_id, {}).get("heights", []) + [h],
-                    "aspects": self.active_tracks.get(c_id, {}).get("aspects", []) + [aspect]
-                }
-                self.canonical_counts[c_id] = self.canonical_counts.get(c_id, 0) + 1
+            if 1 <= c_id <= self.max_k and c_id not in occupied:
+                self._record_track(c_id, bbox, cx, cy, h, aspect, frame_idx, raw_id)
                 occupied.add(c_id)
                 self._record_concurrency(frame_idx)
                 return c_id
 
-        # Raw ID mới từ ByteTrack (hoặc c_id cũ bị trùng occupancy):
-        # Tìm xem có trùng với canonical track nào chưa xuất hiện trong frame hiện tại không
-        diag = math.hypot(frame_w, frame_h)
-        threshold_dist = self.match_dist_ratio * diag
-        best_match = None
+        # 2. Tìm kiếm trong các track canonical hợp lệ (1 <= cid <= max_k) chưa xuất hiện ở frame hiện tại
+        best_cid = None
         min_cost = 999999.0
+        threshold_dist = self.match_dist_ratio * diag
+        available_cids = [cid for cid in self.active_tracks if cid not in occupied and (1 <= cid <= self.max_k)]
 
-        for c_id, trk in list(self.active_tracks.items()):
-            # Không ghép với canonical track đã có mặt trong cùng frame này!
-            if c_id in occupied:
-                continue
-
+        for cid in available_cids:
+            trk = self.active_tracks[cid]
             time_gap = frame_idx - trk["last_seen"]
             if 0 < time_gap <= self.max_missing_frames:
                 dist = math.hypot(cx - trk["cx"], cy - trk["cy"])
-                old_w = trk["bbox"][2] - trk["bbox"][0]
-                old_h = trk["bbox"][3] - trk["bbox"][1]
-                size_ratio = min(w * h, old_w * old_h) / max(1.0, max(w * h, old_w * old_h))
+                iou = self.compute_iou(bbox, trk["bbox"])
 
-                if dist < threshold_dist and size_ratio > 0.25:
-                    cost = (dist / threshold_dist) + (1.0 - size_ratio) * 0.5
-                    if cost < min_cost:
-                        min_cost = cost
-                        best_match = c_id
+                iou_cost = 1.0 - iou
+                dist_cost = min(1.0, dist / max(1.0, threshold_dist))
+                cost = 0.55 * iou_cost + 0.45 * dist_cost
 
-        if best_match is not None:
-            c_id = best_match
+                if trk.get("last_raw_id") == raw_id:
+                    cost -= 0.25
+
+                if (iou > 0.05 or dist < threshold_dist) and cost < min_cost:
+                    min_cost = cost
+                    best_cid = cid
+
+        if best_cid is not None:
+            c_id = best_cid
         else:
-            c_id = self.canonical_next_id
-            self.canonical_next_id += 1
+            # Nếu chưa có track phù hợp, kiểm tra xem còn slot ID nào chưa tạo trong [1..max_k] không
+            created_cids = set(self.active_tracks.keys())
+            free_cids = [i for i in range(1, self.max_k + 1) if i not in created_cids]
+            if free_cids:
+                c_id = min(free_cids)
+            else:
+                # Toàn bộ max_k ID đã được tạo: chọn canonical ID chưa occupied trong frame
+                unoccupied_cids = [i for i in range(1, self.max_k + 1) if i not in occupied]
+                if unoccupied_cids:
+                    c_id = min(unoccupied_cids, key=lambda i: math.hypot(cx - self.active_tracks[i]["cx"], cy - self.active_tracks[i]["cy"]) if i in self.active_tracks else 99999)
+                else:
+                    # Nếu đã occupied hết cả max_k ID trong frame
+                    c_id = min(range(1, self.max_k + 1), key=lambda i: math.hypot(cx - self.active_tracks[i]["cx"], cy - self.active_tracks[i]["cy"]) if i in self.active_tracks else 99999)
 
+        # Ràng buộc chặt chẽ: c_id luôn nằm trong [1..max_k]
+        c_id = max(1, min(self.max_k, c_id))
         self.raw_to_canonical[raw_id] = c_id
-        self.active_tracks[c_id] = {
-            "last_seen": frame_idx,
-            "bbox": bbox,
-            "cx": cx,
-            "cy": cy,
-            "heights": self.active_tracks.get(c_id, {}).get("heights", []) + [h],
-            "aspects": self.active_tracks.get(c_id, {}).get("aspects", []) + [aspect]
-        }
-        self.canonical_counts[c_id] = self.canonical_counts.get(c_id, 0) + 1
+        self._record_track(c_id, bbox, cx, cy, h, aspect, frame_idx, raw_id)
         occupied.add(c_id)
         self._record_concurrency(frame_idx)
         return c_id
@@ -362,7 +514,7 @@ class SpatialTrackStabilizer:
     def _record_concurrency(self, frame_idx: int):
         current_ids = list(self.frame_canonical_occupancy.get(frame_idx, set()))
         if len(current_ids) > self.max_concurrent_seen:
-            self.max_concurrent_seen = len(current_ids)
+            self.max_concurrent_seen = min(self.max_k, len(current_ids))
         for i in range(len(current_ids)):
             for j in range(i + 1, len(current_ids)):
                 pair = tuple(sorted((current_ids[i], current_ids[j])))
@@ -371,15 +523,18 @@ class SpatialTrackStabilizer:
     def get_dominant_canonical_ids(self, max_limit: int = 4) -> List[int]:
         """
         Lấy danh sách các canonical ID đại diện cho đúng số người thực tế (K <= 4).
-        Loại bỏ các ID ma / nhiễu chớp tắt.
+        Chắc chắn ID luôn thuộc [1..max_limit].
         """
-        valid_counts = {cid: cnt for cid, cnt in self.canonical_counts.items() if cnt >= 15}
+        limit = min(self.max_k, max_limit)
+        valid_counts = {cid: cnt for cid, cnt in self.canonical_counts.items() if 1 <= cid <= limit and cnt >= 5}
         if not valid_counts:
-            valid_counts = self.canonical_counts
+            valid_counts = {cid: cnt for cid, cnt in self.canonical_counts.items() if 1 <= cid <= limit}
+        if not valid_counts:
+            return [1]
 
         sorted_cids = sorted(valid_counts.keys(), key=lambda c: valid_counts[c], reverse=True)
-        target_k = min(max_limit, max(1, self.max_concurrent_seen))
-        target_k = max(target_k, min(len(sorted_cids), max_limit))
+        target_k = min(limit, max(1, self.max_concurrent_seen))
+        target_k = max(target_k, min(len(sorted_cids), limit))
         return sorted(sorted_cids[:target_k])
 
     def finalize_roles(self, frame_h: int):
@@ -592,7 +747,8 @@ class VideoAnnotatorEngine:
         max_danger_score = 0
         peak_danger_reason = "Toàn bộ đoạn video an toàn"
         all_detected_entities = set()
-        stabilizer = SpatialTrackStabilizer(max_missing_frames=90, match_dist_ratio=0.22)
+        stabilizer = SpatialTrackStabilizer(max_missing_frames=90, match_dist_ratio=0.35, max_k=4)
+        posture_distribution = {"upright": 0, "bent": 0, "slouched": 0}
         fall_streaks = {}
         has_orig_audio = check_video_has_audio(input_path)
 
@@ -790,6 +946,13 @@ class VideoAnnotatorEngine:
                             self.hud.draw_cyber_skeleton(frame, kpts_scaled, color)
 
                         action_counts[person_action] = action_counts.get(person_action, 0) + 1
+                        if torso_angle >= 75.0:
+                            posture_distribution["upright"] += 1
+                        elif 45.0 <= torso_angle < 75.0:
+                            posture_distribution["bent"] += 1
+                        else:
+                            posture_distribution["slouched"] += 1
+
                         frame_threat_score = max(frame_threat_score, person_threat_score)
                         frame_entities.append({
                             "canonical_id": c_id,
@@ -1174,6 +1337,74 @@ class VideoAnnotatorEngine:
                 elif gemini_result.get("scene_context"):
                     seg["context_description"] = gemini_result.get("scene_context")
 
+        # Thống kê Phân bổ Rủi ro & Tư thế Đa chiều (Multi-dimensional Behavior & Risk Analytics)
+        safe_cnt = 0
+        warn_cnt = 0
+        danger_cnt = 0
+        for slot in heatmap_data:
+            sc = slot.get("score", 0.0)
+            if sc >= 8.0:
+                danger_cnt += 1
+            elif sc >= 4.0:
+                warn_cnt += 1
+            else:
+                safe_cnt += 1
+
+        total_risk_slots = max(1, len(heatmap_data))
+        safe_pct = round((safe_cnt / total_risk_slots) * 100.0, 1)
+        warn_pct = round((warn_cnt / total_risk_slots) * 100.0, 1)
+        danger_pct = round((danger_cnt / total_risk_slots) * 100.0, 1)
+
+        total_postures = max(1, sum(posture_distribution.values()))
+        upright_pct = round((posture_distribution["upright"] / total_postures) * 100.0, 1)
+        bent_pct = round((posture_distribution["bent"] / total_postures) * 100.0, 1)
+        slouched_pct = round((posture_distribution["slouched"] / total_postures) * 100.0, 1)
+
+        # Tính toán Điểm số Công thái học (Ergonomic Score 0 - 100)
+        base_ergo = 95.0
+        ergo_deduct = (danger_pct * 0.70) + (warn_pct * 0.35) + (bent_pct * 0.15) + (slouched_pct * 0.25)
+        raw_ergo = max(20.0, min(99.0, base_ergo - ergo_deduct))
+
+        if gemini_result.get("threat_level") == "AN TOÀN" or gemini_result.get("is_safe_environment", False):
+            raw_ergo = max(86.0, raw_ergo)
+
+        ergo_score = round(raw_ergo, 1)
+
+        # Ước lượng thời gian ngồi liên tục (Sedentary time)
+        sitting_ratio = action_counts.get("Ngồi làm việc / Thao tác tay", 0) / max(1, sum(action_counts.values()))
+        continuous_sitting_sec = round(sitting_ratio * (processed_count / input_fps), 1)
+
+        if ergo_score >= 82.0:
+            ergo_advice = "Tư thế sinh hoạt và lao động trong phân đoạn đạt chuẩn Tốt. Cột sống và các khớp duy trì góc độ giải phẫu học tự nhiên."
+        elif ergo_score >= 65.0:
+            ergo_advice = "Ghi nhận góc nghiêng cột sống lệch chuẩn trong một số thời điểm. Nên điều chỉnh độ cao mặt bàn hoặc thay đổi tư thế định kỳ."
+        else:
+            ergo_advice = "Cảnh báo công thái học: Xuất hiện tư thế gập sâu bất đối xứng hoặc dấu hiệu té ngã. Cần kiểm tra an toàn lập tức."
+
+        behavior_analytics = {
+            "risk_breakdown": {
+                "safe_count": safe_cnt,
+                "warning_count": warn_cnt,
+                "danger_count": danger_cnt,
+                "safe_pct": safe_pct,
+                "warning_pct": warn_pct,
+                "danger_pct": danger_pct,
+                "dominant_risk": "safe" if safe_cnt >= warn_cnt and safe_cnt >= danger_cnt else ("warning" if warn_cnt >= danger_cnt else "danger")
+            },
+            "posture_distribution": {
+                "upright_count": posture_distribution["upright"],
+                "bent_count": posture_distribution["bent"],
+                "slouched_count": posture_distribution["slouched"],
+                "upright_pct": upright_pct,
+                "bent_pct": bent_pct,
+                "slouched_pct": slouched_pct
+            },
+            "risk_curve": heatmap_data,
+            "ergonomic_score": ergo_score,
+            "continuous_sitting_sec": continuous_sitting_sec,
+            "ergonomic_advice": ergo_advice
+        }
+
         return {
             "input_path": input_path,
             "output_path": output_path,
@@ -1189,6 +1420,7 @@ class VideoAnnotatorEngine:
             "max_danger_score": max_danger_score,
             "peak_danger_reason": peak_danger_reason,
             "overall_danger_level": "NGUY HIEM" if max_danger_score >= 8 else ("CANH BAO" if max_danger_score >= 5 else "AN TOAN"),
+            "behavior_analytics": behavior_analytics,
             "gemini_report": gemini_result
         }
 

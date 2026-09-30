@@ -1164,6 +1164,36 @@ def get_telemetry():
 
     with LIVE_CAMERA.ai_lock:
         bio_copy = dict(LIVE_CAMERA.biomechanics)
+        logs_copy = list(LIVE_CAMERA.action_logs)
+
+    # Thống kê phân bổ rủi ro từ danh sách sự kiện phiên trực tiếp
+    safe_cnt = 0
+    warn_cnt = 0
+    danger_cnt = 0
+    for l in logs_copy:
+        sev = l.get("severity", "safe")
+        if sev == "danger":
+            danger_cnt += 1
+        elif sev == "warning":
+            warn_cnt += 1
+        else:
+            safe_cnt += 1
+
+    session_risk_counts = {
+        "safe": safe_cnt,
+        "warning": warn_cnt,
+        "danger": danger_cnt
+    }
+
+    recent_angle = bio_copy.get("angle", 90.0)
+    if bio_copy.get("is_danger", False):
+        curr_ergo = 25.0
+    elif 75.0 <= recent_angle <= 105.0:
+        curr_ergo = 94.0
+    elif 45.0 <= recent_angle < 75.0:
+        curr_ergo = 76.0
+    else:
+        curr_ergo = 58.0
 
     return {
         # Academic OS Telemetry (PROJECT.md)
@@ -1195,6 +1225,11 @@ def get_telemetry():
         "mirror": cam_settings["mirror"],
         "anti_glare": cam_settings["anti_glare"],
         "denoise": cam_settings["denoise"],
+
+        # Thống kê rủi ro & công thái học phiên trực tiếp
+        "session_risk_counts": session_risk_counts,
+        "current_ergonomic_score": curr_ergo,
+        "continuous_sitting_sec": 0.0,
     }
 
 

@@ -2292,3 +2292,474 @@ tr.active-segment-row {
         justify-content: flex-end;
     }
 }
+
+/* ==========================================================================
+   TAB 1: LIVE SESSION STATS PILLS BAR
+   ========================================================================== */
+.live-session-stats-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--bg-surface-elevated);
+    border-bottom: 1px solid var(--border-subtle);
+    align-items: center;
+}
+
+.session-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-surface);
+}
+
+.session-stat-pill .stat-label {
+    color: var(--text-secondary);
+}
+
+.session-stat-pill strong {
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.session-stat-pill.pill-safe {
+    border-color: rgba(16, 185, 129, 0.25);
+}
+.session-stat-pill.pill-safe strong {
+    color: #10B981;
+}
+
+.session-stat-pill.pill-warn {
+    border-color: rgba(245, 158, 11, 0.25);
+}
+.session-stat-pill.pill-warn strong {
+    color: #F59E0B;
+}
+
+.session-stat-pill.pill-danger {
+    border-color: rgba(239, 68, 68, 0.25);
+}
+.session-stat-pill.pill-danger strong {
+    color: #EF4444;
+}
+
+.session-stat-pill.pill-ergo {
+    border-color: rgba(6, 182, 212, 0.25);
+}
+.session-stat-pill.pill-ergo strong {
+    color: #06B6D4;
+}
+
+/* ==========================================================================
+   TAB 2: EXECUTIVE SCENE NARRATIVE & CHRONOLOGICAL EVOLUTION
+   ========================================================================== */
+.narrative-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.narrative-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-surface-elevated);
+}
+
+.narrative-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.narrative-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.narrative-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+}
+
+.narrative-content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.25fr 1fr;
+    gap: 16px;
+    padding: 18px 20px;
+}
+
+.narrative-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 14px;
+}
+
+.narrative-col-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.narrative-text {
+    font-size: 0.84rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.actors-pill-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.actor-chip-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    font-size: 0.78rem;
+}
+
+.actor-chip-id {
+    font-weight: 700;
+    color: var(--accent-primary);
+}
+
+.actor-chip-role {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.actor-chip-act {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+.chronology-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chronology-step-item {
+    display: flex;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    align-items: flex-start;
+}
+
+.chronology-step-tag {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60A5FA;
+}
+
+.chronology-step-text {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.conclusion-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+}
+
+.conclusion-text {
+    font-size: 0.84rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.recommendation-badge {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    font-size: 0.8rem;
+    color: #10B981;
+    font-weight: 500;
+}
+
+/* ==========================================================================
+   TAB 2: BEHAVIOR & RISK ANALYTICS DASHBOARD (NATIVE SVG CHARTS)
+   ========================================================================== */
+.analytics-dashboard-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.dashboard-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.dashboard-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.analytics-charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+}
+
+.chart-box {
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.chart-box.full-chart-box {
+    grid-column: 1 / -1;
+}
+
+.chart-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 8px;
+}
+
+.chart-title {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.chart-hint {
+    font-size: 0.74rem;
+    color: var(--accent-primary);
+    font-weight: 500;
+}
+
+.donut-chart-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 150px;
+    position: relative;
+}
+
+.donut-svg {
+    width: 140px;
+    height: 140px;
+    transform: rotate(-90deg);
+}
+
+.donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.78rem;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 10px;
+}
+
+.legend-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.legend-color {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.legend-color.color-safe { background: #10B981; }
+.legend-color.color-warn { background: #F59E0B; }
+.legend-color.color-danger { background: #EF4444; }
+.legend-color.color-upright { background: #06B6D4; }
+.legend-color.color-bent { background: #3B82F6; }
+.legend-color.color-slouched { background: #8B5CF6; }
+
+/* Area Chart Temporal Risk Curve */
+.area-chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 180px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    cursor: crosshair;
+}
+
+.area-chart-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.chart-playhead-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #00E5FF;
+    box-shadow: 0 0 8px #00E5FF;
+    pointer-events: none;
+    z-index: 10;
+    transition: left 0.1s linear;
+}
+
+.chart-hover-tooltip {
+    position: absolute;
+    top: 10px;
+    padding: 4px 8px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid var(--accent-primary);
+    border-radius: 4px;
+    font-size: 0.72rem;
+    color: #F8FAFC;
+    pointer-events: none;
+    z-index: 20;
+    white-space: nowrap;
+}
+
+/* Ergonomic Health Card Layout */
+.ergo-card-layout {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    padding: 8px 4px;
+}
+
+.score-circle-outer {
+    flex-shrink: 0;
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    background: conic-gradient(#10B981 0deg 315deg, var(--border-subtle) 315deg 360deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.18);
+}
+
+.score-circle-inner {
+    width: 86px;
+    height: 86px;
+    border-radius: 50%;
+    background: var(--bg-surface-elevated);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.score-number {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #10B981;
+    line-height: 1.1;
+}
+
+.score-scale {
+    font-size: 0.68rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.ergo-metrics-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-grow: 1;
+}
+
+.ergo-metric-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.82rem;
+}
+
+.metric-label {
+    color: var(--text-secondary);
+}
+
+.ergo-advice-para {
+    font-size: 0.79rem;
+    line-height: 1.45;
+    color: var(--text-tertiary);
+    margin: 4px 0 0 0;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 8px;
+}
+
+@media (max-width: 900px) {
+    .narrative-content-grid {
+        grid-template-columns: 1fr;
+    }
+    .analytics-charts-grid {
+        grid-template-columns: 1fr;
+    }
+    .chart-box.full-chart-box {
+        grid-column: 1;
+    }
+    .ergo-card-layout {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

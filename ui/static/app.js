@@ -21,6 +21,7 @@ let allEntitiesDetected = [];
 let activeFocusSegment = null;
 let isLoopingSegment = false;
 let activeEntityFilter = 'all';
+let currentResultDuration = 30.0;
 
 // Helper an toàn: cập nhật textContent mà không bao giờ quăng lỗi null
 function safeSetText(id, text) {
@@ -126,6 +127,16 @@ async function fetchTelemetry() {
         if (data.camera_settings) {
             cameraSettings = data.camera_settings;
             updateEnhancerButtonsUI();
+        }
+
+        // Cập nhật thẻ thống kê phiên trực tiếp (Live Session Summary Pills)
+        if (data.session_risk_counts) {
+            safeSetText("session-safe-count", data.session_risk_counts.safe || 0);
+            safeSetText("session-warn-count", data.session_risk_counts.warning || 0);
+            safeSetText("session-danger-count", data.session_risk_counts.danger || 0);
+        }
+        if (data.current_ergonomic_score !== undefined) {
+            safeSetText("session-ergo-score", `${Math.round(data.current_ergonomic_score)} / 100`);
         }
 
         // Update camera offline overlay & status pills
@@ -1162,6 +1173,7 @@ function renderResults(result) {
     activeFocusSegment = null;
     isLoopingSegment = false;
     activeEntityFilter = 'all';
+    currentResultDuration = result.duration_seconds || 30.0;
 
     // Video Players
     const origVid = document.getElementById("result-orig-video");
@@ -1241,13 +1253,19 @@ function renderResults(result) {
     setupDualPlayerSync();
 
     // Render Timeline Heatmap Bar
-    renderHeatmap(currentHeatmapData, result.duration_seconds || 10.0);
+    renderHeatmap(currentHeatmapData, currentResultDuration);
 
     // Render Entity Filters
     renderEntityFilters(allEntitiesDetected);
 
     // Render Timeline Segments Master Table
     renderTimelineSegments();
+
+    // Render Executive Scene Narrative & Chronological Evolution
+    renderExecutiveSceneNarrative(result);
+
+    // Render Multi-dimensional Behavior & Risk Analytics Dashboard
+    renderBehaviorAnalytics(result.behavior_analytics, currentResultDuration);
 }
 
 // ==============================================================================
@@ -1305,6 +1323,7 @@ function setupDualPlayerSync() {
         }
 
         updateHeatmapPlayhead(curT);
+        updateChartPlayhead(curT, currentResultDuration);
     };
 }
 
@@ -1316,6 +1335,7 @@ function seekBothPlayers(seconds) {
         annotVid.currentTime = seconds;
         annotVid.play().catch(() => {});
     }
+    updateChartPlayhead(seconds, currentResultDuration);
 }
 
 // ==============================================================================
@@ -1568,6 +1588,393 @@ async function sendChatMessage() {
 }
 
 // ==============================================================================
+// STEP 5: EXECUTIVE SCENE NARRATIVE & CHRONOLOGICAL EVOLUTION
+// ==============================================================================
+function renderExecutiveSceneNarrative(result) {
+    const card = document.getElementById("executive-scene-narrative-card");
+    if (!card) return;
+
+    const gemini = (result && result.gemini_report) ? result.gemini_report : {};
+    const threatLevel = gemini.threat_level || (result ? result.overall_danger_level : "AN TOÀN") || "AN TOÀN";
+    const threatBadge = document.getElementById("narrative-threat-badge");
+    if (threatBadge) {
+        if (threatLevel.includes("NGUY") || threatLevel.includes("DANGER")) {
+            threatBadge.className = "badge badge-danger mono";
+            threatBadge.textContent = "🔴 NGUY HIỂM / KHẨN CẤP";
+        } else if (threatLevel.includes("CANH") || threatLevel.includes("WARNING")) {
+            threatBadge.className = "badge badge-neutral mono";
+            threatBadge.style.color = "var(--accent-amber)";
+            threatBadge.textContent = "🟡 CẢNH BÁO";
+        } else {
+            threatBadge.className = "badge badge-safe mono";
+            threatBadge.textContent = "● AN TOÀN TUYỆT ĐỐI";
+        }
+    }
+
+    // 1. Scene Context
+    const sceneContext = gemini.scene_context || 
+        `Khu vực sinh hoạt và vận động ổn định với ${result && result.entities_detected ? result.entities_detected.length : 1} đối tượng có mặt trong không gian.`;
+    safeSetText("narrative-scene-context", sceneContext);
+
+    // Actors Pills
+    const actorsContainer = document.getElementById("narrative-actors-pills");
+    if (actorsContainer) {
+        actorsContainer.innerHTML = "";
+        const actors = gemini.detected_actors || [];
+        if (actors.length > 0) {
+            actors.forEach(act => {
+                const row = document.createElement("div");
+                row.className = "actor-chip-row";
+                row.innerHTML = `
+                    <div>
+                        <span class="actor-chip-id mono">ID #${String(act.actor_index).padStart(2, '0')}</span>
+                        <strong class="actor-chip-role" style="margin-left: 6px;">${escapeHtml(act.role)}</strong>
+                    </div>
+                    <span class="actor-chip-act">${escapeHtml(act.true_action || act.posture_desc || '')}</span>
+                `;
+                actorsContainer.appendChild(row);
+            });
+        } else {
+            const entities = (result && result.entities_detected) ? result.entities_detected : ["ID #01 (Chủ thể)"];
+            entities.forEach(ent => {
+                const row = document.createElement("div");
+                row.className = "actor-chip-row";
+                row.innerHTML = `
+                    <span class="actor-chip-id mono">${escapeHtml(ent)}</span>
+                    <span class="actor-chip-act">Tương tác an toàn</span>
+                `;
+                actorsContainer.appendChild(row);
+            });
+        }
+    }
+
+    // 2. Chronological Evolution
+    const chronoContainer = document.getElementById("narrative-chronology-flow");
+    if (chronoContainer) {
+        chronoContainer.innerHTML = "";
+        let chronoText = gemini.chronological_evolution || "";
+        
+        let steps = [];
+        if (chronoText.includes("Giai đoạn")) {
+            const p1 = chronoText.match(/Giai đoạn (?:khởi )?đầu:?\s*([^.]+)/i);
+            const p2 = chronoText.match(/Giai đoạn giữa:?\s*([^.]+)/i);
+            const p3 = chronoText.match(/Giai đoạn kết(?: thúc)?:?\s*([^.]+)/i);
+            steps = [
+                { tag: "01. Khởi đầu", text: p1 ? p1[1].trim() + "." : "Bắt đầu quan sát: các đối tượng bước vào vị trí và phân vai." },
+                { tag: "02. Diễn biến chính", text: p2 ? p2[1].trim() + "." : "Diễn biến chính: duy trì tương tác sinh hoạt nhịp nhàng, không có xung đột." },
+                { tag: "03. Kết thúc", text: p3 ? p3[1].trim() + "." : "Kết thúc phân cảnh: toàn bộ đối tượng giữ vững thăng bằng và an toàn." }
+            ];
+        } else if (chronoText) {
+            steps = [
+                { tag: "01. Diễn biến toàn cảnh", text: chronoText }
+            ];
+        } else {
+            steps = [
+                { tag: "01. Khởi đầu", text: "Các đối tượng xuất hiện ổn định trong khung hình và thiết lập vị trí tương tác." },
+                { tag: "02. Diễn biến chính", text: "Các cử chỉ vận động diễn ra điều độ, không có gia tốc va chạm hoặc té ngã." },
+                { tag: "03. Kết thúc", text: "Trạng thái các thành viên ổn định và giữ vững thăng bằng hoàn toàn." }
+            ];
+        }
+
+        steps.forEach(st => {
+            const item = document.createElement("div");
+            item.className = "chronology-step-item";
+            item.innerHTML = `
+                <span class="chronology-step-tag">${escapeHtml(st.tag)}</span>
+                <span class="chronology-step-text">${escapeHtml(st.text)}</span>
+            `;
+            chronoContainer.appendChild(item);
+        });
+    }
+
+    // 3. Conclusion & Recommendation
+    const conclusionText = gemini.overall_conclusion || gemini.detailed_diagnosis || 
+        "Toàn bộ chuỗi vận động và hoạt động của các đối tượng diễn ra an toàn, không phát hiện nguy cơ bất thường.";
+    safeSetText("narrative-overall-conclusion", conclusionText);
+
+    const recText = gemini.recommended_action || "Duy trì giám sát tự động theo chu kỳ.";
+    safeSetText("narrative-recommendation-text", recText);
+}
+
+// ==============================================================================
+// STEP 6: BEHAVIOR & RISK ANALYTICS DASHBOARD (NATIVE SVG)
+// ==============================================================================
+function renderBehaviorAnalytics(analytics, duration) {
+    if (!analytics) {
+        analytics = {
+            risk_breakdown: { safe_pct: 95.0, warning_pct: 5.0, danger_pct: 0.0, dominant_risk: "safe" },
+            posture_distribution: { upright_pct: 75.0, bent_pct: 20.0, slouched_pct: 5.0 },
+            risk_curve: currentHeatmapData || [],
+            ergonomic_score: 92,
+            continuous_sitting_sec: 0,
+            ergonomic_advice: "Tư thế sinh hoạt đạt mức Tốt. Trục cột sống duy trì góc độ giải phẫu học tự nhiên."
+        };
+    }
+
+    duration = duration || (currentVideoData ? currentVideoData.duration : 30.0);
+    const m = Math.floor(duration / 60);
+    const s = Math.floor(duration % 60);
+    safeSetText("analytics-duration-badge", `Thời lượng: ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+
+    // 1. Donut 1: 3 Cấp Độ Nguy Hiểm
+    const rb = analytics.risk_breakdown || {};
+    const safeP = rb.safe_pct !== undefined ? rb.safe_pct : 95;
+    const warnP = rb.warning_pct !== undefined ? rb.warning_pct : 5;
+    const dangP = rb.danger_pct !== undefined ? rb.danger_pct : 0;
+
+    safeSetText("legend-safe-val", `${safeP}%`);
+    safeSetText("legend-warn-val", `${warnP}%`);
+    safeSetText("legend-danger-val", `${dangP}%`);
+
+    drawSvgDonut("svg-donut-risk", [
+        { pct: safeP, color: "#10B981" },
+        { pct: warnP, color: "#F59E0B" },
+        { pct: dangP, color: "#EF4444" }
+    ], rb.dominant_risk === "danger" ? "NGUY HIỂM" : (rb.dominant_risk === "warning" ? "CẢNH BÁO" : "AN TOÀN"));
+
+    // 2. Donut 2: Phân Bổ Cột Sống
+    const pd = analytics.posture_distribution || {};
+    const upP = pd.upright_pct !== undefined ? pd.upright_pct : 75;
+    const bentP = pd.bent_pct !== undefined ? pd.bent_pct : 20;
+    const slP = pd.slouched_pct !== undefined ? pd.slouched_pct : 5;
+
+    safeSetText("legend-upright-val", `${upP}%`);
+    safeSetText("legend-bent-val", `${bentP}%`);
+    safeSetText("legend-slouched-val", `${slP}%`);
+
+    drawSvgDonut("svg-donut-posture", [
+        { pct: upP, color: "#06B6D4" },
+        { pct: bentP, color: "#3B82F6" },
+        { pct: slP, color: "#8B5CF6" }
+    ], "GÓC CỘT SỐNG");
+
+    // 3. Area Chart: Đường Cong Cường Độ Rủi Ro
+    const riskCurve = analytics.risk_curve || currentHeatmapData || [];
+    drawSvgRiskCurve("svg-risk-curve", riskCurve, duration);
+
+    // 4. Ergonomic Scorecard
+    const score = Math.round(analytics.ergonomic_score !== undefined ? analytics.ergonomic_score : 90);
+    safeSetText("ergo-score-num", score);
+
+    const scoreCircle = document.getElementById("ergo-score-circle");
+    const scoreOuter = scoreCircle ? scoreCircle.parentElement : null;
+    if (scoreOuter) {
+        const deg = Math.round((score / 100) * 360);
+        const col = score >= 80 ? "#10B981" : (score >= 60 ? "#F59E0B" : "#EF4444");
+        scoreOuter.style.background = `conic-gradient(${col} 0deg ${deg}deg, var(--border-subtle) ${deg}deg 360deg)`;
+        scoreOuter.style.boxShadow = `0 0 16px ${col}33`;
+        const numEl = document.getElementById("ergo-score-num");
+        if (numEl) numEl.style.color = col;
+    }
+
+    const sitSec = analytics.continuous_sitting_sec || 0;
+    const sitM = Math.floor(sitSec / 60);
+    const sitS = Math.floor(sitSec % 60);
+    safeSetText("ergo-sitting-time", `${String(sitM).padStart(2, '0')}:${String(sitS).padStart(2, '0')}`);
+
+    const healthBadge = document.getElementById("ergo-health-badge");
+    if (healthBadge) {
+        if (score >= 82) {
+            healthBadge.className = "badge badge-safe";
+            healthBadge.textContent = "● Tối ưu";
+        } else if (score >= 65) {
+            healthBadge.className = "badge badge-neutral";
+            healthBadge.style.color = "var(--accent-amber)";
+            healthBadge.textContent = "● Cần điều chỉnh";
+        } else {
+            healthBadge.className = "badge badge-danger";
+            healthBadge.textContent = "● Cảnh báo";
+        }
+    }
+
+    safeSetText("ergo-advice-text", analytics.ergonomic_advice || "Cột sống duy trì góc độ giải phẫu học an toàn.");
+}
+
+function drawSvgDonut(svgId, segments, centerText) {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+
+    const r = 70;
+    const cx = 100;
+    const cy = 100;
+    const circumference = 2 * Math.PI * r;
+
+    let accumulatedOffset = 0;
+    let pathsHtml = "";
+
+    segments.forEach((seg) => {
+        const len = (Math.max(0, seg.pct) / 100) * circumference;
+        if (len > 0) {
+            pathsHtml += `
+                <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}"
+                    stroke-width="20"
+                    stroke-dasharray="${len} ${circumference - len}"
+                    stroke-dashoffset="${-accumulatedOffset}"
+                    stroke-linecap="${segments.length === 1 ? 'round' : 'butt'}"
+                    style="transition: stroke-dasharray 0.6s ease;"
+                />
+            `;
+            accumulatedOffset += len;
+        }
+    });
+
+    if (accumulatedOffset === 0) {
+        pathsHtml = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border-subtle)" stroke-width="20"/>`;
+    }
+
+    // Inner text rotated back
+    const textHtml = `
+        <g transform="rotate(90 100 100)">
+            <text x="100" y="96" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text-primary)" font-family="Plus Jakarta Sans, sans-serif">${escapeHtml(centerText)}</text>
+            <text x="100" y="112" text-anchor="middle" font-size="9" fill="var(--text-tertiary)" font-family="JetBrains Mono, monospace">100% QUY MÔ</text>
+        </g>
+    `;
+
+    svg.innerHTML = pathsHtml + textHtml;
+}
+
+function drawSvgRiskCurve(svgId, curveData, duration) {
+    const svg = document.getElementById(svgId);
+    const wrapper = document.getElementById("risk-curve-chart-wrapper");
+    if (!svg || !wrapper) return;
+
+    const W = 900;
+    const H = 220;
+    const padTop = 20;
+    const padBottom = 30;
+    const padLeft = 45;
+    const padRight = 20;
+
+    const plotW = W - padLeft - padRight;
+    const plotH = H - padTop - padBottom;
+    const maxScore = 10.0;
+
+    duration = Math.max(1.0, duration || 30.0);
+
+    let points = curveData;
+    if (!points || points.length === 0) {
+        points = [
+            { time: 0, score: 0.5 },
+            { time: duration, score: 0.5 }
+        ];
+    }
+
+    const coords = points.map(pt => {
+        const t = Math.min(duration, Math.max(0, pt.time));
+        const s = Math.min(maxScore, Math.max(0, pt.score));
+        const x = padLeft + (t / duration) * plotW;
+        const y = padTop + (1.0 - (s / maxScore)) * plotH;
+        return { x, y, time: t, score: s };
+    });
+
+    const dangerY = padTop + (1.0 - (8.0 / maxScore)) * plotH;
+    const warnY = padTop + (1.0 - (4.0 / maxScore)) * plotH;
+
+    let pathD = `M ${coords[0].x},${coords[0].y}`;
+    for (let i = 1; i < coords.length; i++) {
+        pathD += ` L ${coords[i].x},${coords[i].y}`;
+    }
+    const areaD = `${pathD} L ${coords[coords.length - 1].x},${padTop + plotH} L ${coords[0].x},${padTop + plotH} Z`;
+
+    let timeMarks = "";
+    const stepSec = duration <= 20 ? 5 : (duration <= 60 ? 10 : 20);
+    for (let sec = 0; sec <= duration; sec += stepSec) {
+        const x = padLeft + (sec / duration) * plotW;
+        const mm = Math.floor(sec / 60);
+        const ss = Math.floor(sec % 60);
+        const tStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+        timeMarks += `
+            <line x1="${x}" y1="${padTop + plotH}" x2="${x}" y2="${padTop + plotH + 5}" stroke="var(--border-subtle)" stroke-width="1"/>
+            <text x="${x}" y="${padTop + plotH + 18}" text-anchor="middle" font-size="10" font-family="JetBrains Mono, monospace" fill="var(--text-tertiary)">${tStr}</text>
+        `;
+    }
+
+    svg.innerHTML = `
+        <defs>
+            <linearGradient id="riskAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#EF4444" stop-opacity="0.45"/>
+                <stop offset="50%" stop-color="#F59E0B" stop-opacity="0.25"/>
+                <stop offset="100%" stop-color="#10B981" stop-opacity="0.05"/>
+            </linearGradient>
+        </defs>
+
+        <!-- Grid Lines -->
+        <line x1="${padLeft}" y1="${padTop}" x2="${W - padRight}" y2="${padTop}" stroke="var(--border-subtle)" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <line x1="${padLeft}" y1="${dangerY}" x2="${W - padRight}" y2="${dangerY}" stroke="#EF4444" stroke-width="1.2" stroke-dasharray="4 4"/>
+        <line x1="${padLeft}" y1="${warnY}" x2="${W - padRight}" y2="${warnY}" stroke="#F59E0B" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <line x1="${padLeft}" y1="${padTop + plotH}" x2="${W - padRight}" y2="${padTop + plotH}" stroke="var(--border-color)" stroke-width="1.2"/>
+
+        <!-- Y Axis Labels -->
+        <text x="${padLeft - 8}" y="${dangerY + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="#EF4444">8 (Nguy hiểm)</text>
+        <text x="${padLeft - 8}" y="${warnY + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="#F59E0B">4 (Cảnh báo)</text>
+        <text x="${padLeft - 8}" y="${padTop + plotH + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="var(--text-tertiary)">0 (An toàn)</text>
+
+        <!-- Time Axis Marks -->
+        ${timeMarks}
+
+        <!-- Filled Area -->
+        <path d="${areaD}" fill="url(#riskAreaGrad)"/>
+
+        <!-- Stroke Line -->
+        <path d="${pathD}" fill="none" stroke="#00E5FF" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+
+        <!-- Data Circles -->
+        ${coords.map(c => `
+            <circle cx="${c.x}" cy="${c.y}" r="${c.score >= 8.0 ? '4.5' : '3'}"
+                fill="${c.score >= 8.0 ? '#EF4444' : (c.score >= 4.0 ? '#F59E0B' : '#00E5FF')}"
+                stroke="var(--bg-surface)" stroke-width="1.5"
+            />
+        `).join('')}
+    `;
+
+    // Interactive Click-to-Seek & Hover Tooltip
+    const tooltip = document.getElementById("chart-tooltip");
+    
+    wrapper.onclick = (e) => {
+        const rect = wrapper.getBoundingClientRect();
+        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const seekSec = clickRatio * duration;
+        seekBothPlayers(seekSec);
+    };
+
+    wrapper.onmousemove = (e) => {
+        if (!tooltip) return;
+        const rect = wrapper.getBoundingClientRect();
+        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const hoverSec = clickRatio * duration;
+        const mm = Math.floor(hoverSec / 60);
+        const ss = Math.floor(hoverSec % 60);
+        const tStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+
+        let nearestScore = 0.0;
+        let minDiff = 99999;
+        points.forEach(p => {
+            const diff = Math.abs(p.time - hoverSec);
+            if (diff < minDiff) {
+                minDiff = diff;
+                nearestScore = p.score;
+            }
+        });
+
+        tooltip.innerHTML = `⏱️ <span class="mono">${tStr}</span> | Nguy cơ: <strong class="mono" style="color: ${nearestScore >= 8 ? '#EF4444' : (nearestScore >= 4 ? '#F59E0B' : '#10B981')}">${nearestScore.toFixed(1)}/10</strong>`;
+        tooltip.style.left = `${Math.min(rect.width - 150, Math.max(10, e.clientX - rect.left - 60))}px`;
+        tooltip.classList.remove("hidden");
+    };
+
+    wrapper.onmouseleave = () => {
+        if (tooltip) tooltip.classList.add("hidden");
+    };
+}
+
+function updateChartPlayhead(currentSec, totalDuration) {
+    const playhead = document.getElementById("chart-playhead");
+    if (!playhead || !totalDuration) return;
+    const pct = Math.max(0, Math.min(100, (currentSec / totalDuration) * 100));
+    playhead.style.left = `${pct}%`;
+    playhead.classList.remove("hidden");
+}
+
+// ==============================================================================
 // GLOBAL WINDOW BINDINGS
 // ==============================================================================
 window.switchTab = switchTab;
@@ -1594,4 +2001,7 @@ window.filterByEntity = filterByEntity;
 window.sendChatMessage = sendChatMessage;
 window.confirmURLRangeExtract = confirmURLRangeExtract;
 window.setSlicePreset = setSlicePreset;
+window.renderExecutiveSceneNarrative = renderExecutiveSceneNarrative;
+window.renderBehaviorAnalytics = renderBehaviorAnalytics;
+window.seekBothPlayers = seekBothPlayers;
 

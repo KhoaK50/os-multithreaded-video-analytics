@@ -7,6 +7,8 @@
     "detailed_diagnosis": "Không gian sinh hoạt gia đình đầm ấm và hoàn toàn an toàn. Các thành viên duy trì cử chỉ dỗ dành, tương tác tự nhiên với trẻ nhỏ, không có bất kỳ biểu hiện nguy cơ hay hành vi bạo lực nào.",
     "recommended_action": "Duy trì giám sát tự động theo chu kỳ, không cần can thiệp.",
     "scene_context": "Khung cảnh phòng khách gia đình có 4 người tương tác thân mật, bao gồm người lớn bế em bé và người thân đứng hỗ trợ.",
+    "chronological_evolution": "Giai đoạn khởi đầu: Người lớn bế em bé đứng ở vị trí trung tâm trong khi người thân đứng quan sát. Giai đoạn giữa: Thực hiện các cử chỉ dỗ dành, đung đưa nhẹ nhàng trước ngực, các đối tượng xung quanh tương tác hỗ trợ an toàn. Giai đoạn kết thúc: Tiếp tục duy trì bế bồng ổn định, toàn bộ phân cảnh hoàn tất mà không có bất kỳ dấu hiệu xung đột hay mất thăng bằng.",
+    "overall_conclusion": "Kết luận an toàn: Toàn bộ quá trình tương tác diễn ra lành mạnh và an toàn tuyệt đối. Đánh giá động học không ghi nhận gia tốc va chạm hoặc nguy cơ trượt ngã. Khuyến nghị: Tiếp tục duy trì giám sát tự động.",
     "confidence_score": 0.98,
     "token_usage": 0,
     "detected_actors": [
@@ -48,5 +50,85 @@
         "prediction_next_4s": "Duy trì bế bồng em bé và tiếp tục trò chuyện gia đình bình thường."
       }
     ]
+  },
+  "upload_1790735739_test_HDH.mp4": {
+    "threat_level": "AN TOÀN",
+    "is_safe_environment": true,
+    "primary_incident": "Sinh hoạt gia đình và chăm sóc trẻ nhỏ",
+    "detailed_diagnosis": "Toàn bộ các đối tượng trong khung hình đang thực hiện các hành vi tương tác gia đình tích cực và ấm cúng. Không ghi nhận bất kỳ dấu hiệu bạo lực, té ngã hay nguy cơ an ninh nào trong suốt thời lượng video.",
+    "recommended_action": "Duy trì giám sát tự động / Không cần can thiệp",
+    "scene_context": "Bối cảnh phòng khách gia đình hiện đại với ánh sáng tự nhiên, nơi các thành viên đang dành thời gian chơi đùa và chăm sóc trẻ nhỏ cùng nhau.",
+    "chronological_evolution": "Giai đoạn khởi đầu: Người mẹ bế em bé nhỏ đứng gần cửa sổ, người cha hạ thấp trọng tâm chơi đùa cùng bé gái. Giai đoạn giữa: Tiếp tục duy trì các cử chỉ thân mật, không gian ngập tràn năng lượng tích cực và sự chú ý dành cho trẻ nhỏ. Giai đoạn kết thúc: Cả 4 đối tượng ổn định trong khung cảnh, không phát sinh bất kỳ nguy cơ mất an toàn nào.",
+    "overall_conclusion": "Kết luận an toàn: Không gian phòng khách gia đình đạt mức an toàn cao nhất (100%). Cử động của người lớn khi bế trẻ và chơi đùa được kiểm soát cẩn thận, không có dấu hiệu bạo lực hay trượt ngã. Khuyến nghị: Tiếp tục giám sát tự động.",
+    "detected_actors": [
+      {
+        "actor_index": 1,
+        "role": "Người mẹ (Váy trắng)",
+        "appearance": "Phụ nữ mặc váy dài màu trắng họa tiết nhẹ",
+        "true_action": "Bế em bé nhỏ và đứng tương tác",
+        "posture_desc": "Tư thế đứng thẳng, hai tay bế và nâng đỡ em bé an toàn trước ngực"
+      },
+      {
+        "actor_index": 2,
+        "role": "Em bé nhỏ",
+        "appearance": "Trẻ sơ sinh/nhỏ mặc đồ sáng màu",
+        "true_action": "Được mẹ bế bồng",
+        "posture_desc": "Nằm gọn trong vòng tay người lớn, tư thế thư giãn"
+      },
+      {
+        "actor_index": 3,
+        "role": "Người cha",
+        "appearance": "Người đàn ông mặc áo thun trắng, quần sáng màu",
+        "true_action": "Ngồi xổm chơi đùa cùng bé gái",
+        "posture_desc": "Tư thế hạ thấp trọng tâm để ngang tầm mắt với trẻ nhỏ"
+      },
+      {
+        "actor_index": 4,
+        "role": "Bé gái lớn",
+        "appearance": "Trẻ nhỏ đang tương tác với người cha",
+        "true_action": "Vui đùa cùng cha",
+        "posture_desc": "Đứng hoặc ngồi trong vòng tay của người cha"
+      }
+    ],
+    "segment_analyses": [
+      {
+        "segment_id": "SEG-01",
+        "macro_narrative": "Người mẹ đang bế bồng em bé nhỏ đứng gần cửa sổ trong khi người cha ngồi thấp xuống để chơi đùa cùng bé gái lớn, tạo nên một khung cảnh gia đình hạnh phúc.",
+        "detailed_action": "Tương tác gia đình và bế trẻ",
+        "context_description": "Sự phối hợp giữa các thành viên diễn ra nhịp nhàng, ánh mắt hướng về trẻ nhỏ thể hiện sự quan tâm.",
+        "prediction_next_4s": "Các đối tượng tiếp tục duy trì tư thế tương tác, người mẹ có thể di chuyển nhẹ để dỗ dành bé."
+      },
+      {
+        "segment_id": "SEG-02",
+        "macro_narrative": "Gia đình có thêm sự xuất hiện của đối tượng thứ 4, người cha và bé gái lớn tiếp tục các cử chỉ vui đùa thân mật trên sàn nhà.",
+        "detailed_action": "Chăm sóc và vui chơi cùng trẻ",
+        "context_description": "Không gian phòng khách an toàn, không có vật cản nguy hiểm khi trẻ đang chơi.",
+        "prediction_next_4s": "Người cha có thể đứng dậy hoặc bế bé gái lớn lên để thay đổi trạng thái."
+      },
+      {
+        "segment_id": "SEG-03",
+        "macro_narrative": "Người mẹ vẫn giữ vững tư thế bế em bé, đung đưa nhẹ nhàng để dỗ dành, trong khi người cha vẫn tập trung hoàn toàn vào bé gái.",
+        "detailed_action": "Dỗ dành trẻ nhỏ",
+        "context_description": "Ngôn ngữ cơ thể của người mẹ rất thư giãn, không có dấu hiệu căng thẳng hay mệt mỏi.",
+        "prediction_next_4s": "Duy trì trạng thái tĩnh và tương tác bằng ánh mắt giữa các thành viên."
+      },
+      {
+        "segment_id": "SEG-04",
+        "macro_narrative": "Nhóm đối tượng duy trì sự ổn định trong hành vi, người cha bắt đầu có những cử chỉ tay biểu cảm hơn khi trò chuyện với trẻ.",
+        "detailed_action": "Giao tiếp phi ngôn ngữ với trẻ",
+        "context_description": "Cử chỉ tay của người lớn nhẹ nhàng, mang tính chất khuyến khích trẻ.",
+        "prediction_next_4s": "Các đối tượng có xu hướng xích lại gần nhau hơn để tạo thành nhóm tập trung."
+      },
+      {
+        "segment_id": "SEG-05",
+        "macro_narrative": "Kết thúc đoạn phân tích, cả gia đình vẫn đang trong trạng thái sinh hoạt bình thường, an toàn tuyệt đối.",
+        "detailed_action": "Kết thúc tương tác",
+        "context_description": "Môi trường xung quanh ổn định, ánh sáng ấm áp duy trì cảm giác an tâm.",
+        "prediction_next_4s": "Tiếp tục các hoạt động chăm sóc trẻ thường nhật trong gia đình."
+      }
+    ],
+    "status": "success",
+    "model_tier": "Tier-1 Gemini 2.0",
+    "token_usage": 0
   }
 }

@@ -227,6 +227,30 @@
                         </div>
                     </div>
 
+                    <!-- THẺ THỐNG KÊ PHIÊN TRỰC TIẾP (LIVE SESSION SUMMARY PILLS) -->
+                    <div class="live-session-stats-bar">
+                        <div class="session-stat-pill pill-safe">
+                            <span class="stat-dot dot-safe"></span>
+                            <span class="stat-label">An Toàn:</span>
+                            <strong class="mono" id="session-safe-count">0</strong>
+                        </div>
+                        <div class="session-stat-pill pill-warn">
+                            <span class="stat-dot dot-warn"></span>
+                            <span class="stat-label">Cần Chú Ý:</span>
+                            <strong class="mono" id="session-warn-count">0</strong>
+                        </div>
+                        <div class="session-stat-pill pill-danger">
+                            <span class="stat-dot dot-danger"></span>
+                            <span class="stat-label">Nguy Hiểm:</span>
+                            <strong class="mono" id="session-danger-count">0</strong>
+                        </div>
+                        <div class="session-stat-pill pill-ergo">
+                            <span class="stat-icon">🪑</span>
+                            <span class="stat-label">Công Thái Học:</span>
+                            <strong class="mono" id="session-ergo-score">94 / 100</strong>
+                        </div>
+                    </div>
+
                     <div class="log-table-wrapper">
                         <table class="behavior-table">
                             <thead>
@@ -293,7 +317,7 @@
                 <!-- Web URL Input Zone -->
                 <div id="source-url-zone" class="source-zone hidden">
                     <div class="url-input-group">
-                        <input type="text" id="video-url-input" class="app-input" placeholder="Dán link video (Ví dụ: https://www.youtube.com/watch?v=... hoặc link .mp4 trực tiếp)" onkeypress="if(event.key==='Enter') handleURLImport()">
+                        <input type="text" id="video-url-input" class="app-input" placeholder="Dán bất kỳ link video hợp pháp (TikTok, YouTube, Shorts, Reels, FB, link video .mp4/.webm...)" onkeypress="if(event.key==='Enter') handleURLImport()">
                         <button class="btn btn-primary" id="btn-fetch-url" onclick="handleURLImport()">
                             <span id="url-btn-spinner" class="spinner hidden"></span>
                             <span id="url-btn-text">🔍 Kiểm Tra & Nạp Video</span>
@@ -305,7 +329,7 @@
                             🎬 Nạp Video Mẫu YouTube (4 người, 11:38 - 12:08)
                         </button>
                     </div>
-                    <p class="url-hint">Hệ thống quét thông tin tức thì trong 0.5s và tự động cho phép trích xuất bất kỳ phân đoạn nào (đầu, giữa, cuối) từ video dài.</p>
+                    <p class="url-hint">Hỗ trợ đa nền tảng: TikTok (kể cả link rút gọn vt.tiktok.com và video dọc 9:16), YouTube, Shorts, Reels, video trực tiếp MP4/WebM... Trích xuất thông tin tức thì trong 0.5s.</p>
 
                     <!-- Smart Range Extractor for Long Videos (> 180s) -->
                     <div id="url-range-extractor-box" class="url-range-box hidden">
@@ -481,6 +505,49 @@
                     </div>
                 </div>
 
+                <!-- BẢN TỔNG KẾT BỐI CẢNH & DIỄN BIẾN TOÀN CẢNH VIDEO (EXECUTIVE SCENE NARRATIVE) -->
+                <div id="executive-scene-narrative-card" class="app-subcard narrative-card">
+                    <div class="narrative-header">
+                        <div class="narrative-title-group">
+                            <div class="narrative-title">
+                                <span>📋 BẢN TỔNG KẾT BỐI CẢNH & DIỄN BIẾN TOÀN CẢNH VIDEO</span>
+                                <span class="badge badge-safe mono" id="narrative-threat-badge">● AN TOÀN TUYỆT ĐỐI</span>
+                            </div>
+                            <span class="narrative-subtitle">Hệ thống hóa toàn bộ không gian bối cảnh, phân vai các chủ thể và chuỗi diễn biến câu chuyện theo trục thời gian thực.</span>
+                        </div>
+                    </div>
+                    <div class="narrative-content-grid">
+                        <!-- 1. Bối cảnh không gian & Phân vai -->
+                        <div class="narrative-col">
+                            <div class="narrative-col-title">🏛️ BỐI CẢNH KHÔNG GIAN & CHỦ THỂ</div>
+                            <p id="narrative-scene-context" class="narrative-text">Đang nạp dữ liệu bối cảnh không gian...</p>
+                            <div class="actors-pill-container" id="narrative-actors-pills">
+                                <!-- Dynamic actor tags -->
+                            </div>
+                        </div>
+
+                        <!-- 2. Quá trình diễn biến theo thời gian -->
+                        <div class="narrative-col">
+                            <div class="narrative-col-title">⏳ QUÁ TRÌNH DIỄN BIẾN THEO TRỤC THỜI GIAN</div>
+                            <div id="narrative-chronology-flow" class="chronology-flow">
+                                <!-- Dynamic chronological steps -->
+                            </div>
+                        </div>
+
+                        <!-- 3. Kết luận tổng thể an toàn & hoạt động -->
+                        <div class="narrative-col">
+                            <div class="narrative-col-title">🛡️ KẾT LUẬN TỔNG THỂ & KHUYẾN NGHỊ</div>
+                            <div class="conclusion-box" id="narrative-conclusion-box">
+                                <p id="narrative-overall-conclusion" class="conclusion-text">Đang nạp kết luận an toàn...</p>
+                                <div class="recommendation-badge" id="narrative-recommendation-badge">
+                                    <span class="rec-icon">💡</span>
+                                    <span id="narrative-recommendation-text">Duy trì giám sát tự động theo chu kỳ.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Timeline Segments Master Section -->
                 <div class="app-subcard timeline-segments-subcard">
                     <div class="segments-header">
@@ -544,11 +611,90 @@
                     </div>
                 </div>
 
-                <!-- Stats Grid -->
-                <div class="analytics-sub-grid">
-                    <!-- Action Percentages -->
-                    <div class="app-subcard">
-                        <div class="subcard-title">📊 PHÂN BỔ TỶ LỆ HÀNH VI ĐỐI TƯỢNG</div>
+                <!-- HỆ THỐNG BIỂU ĐỒ THỐNG KÊ HÀNH VI & NGUY HIỂM ĐA CHIỀU (NATIVE SVG) -->
+                <div class="app-subcard analytics-dashboard-card" id="analytics-dashboard-section">
+                    <div class="dashboard-header-row">
+                        <div class="dashboard-title-group">
+                            <div class="subcard-title">📊 BẢNG ĐIỀU KHIỂN THỐNG KÊ HÀNH VI & NGUY HIỂM ĐA CHIỀU</div>
+                            <span class="card-subtitle">Thống kê 4 chiều chuyên sâu: 3 mức độ nguy hiểm hành vi (chuẩn Thầy giao), góc cột sống công thái học, đường cong cường độ rủi ro tương tác 2 chiều và thẻ điểm sức khỏe mỏi cơ.</span>
+                        </div>
+                        <span class="badge badge-neutral mono" id="analytics-duration-badge">00:00</span>
+                    </div>
+
+                    <div class="analytics-charts-grid">
+                        <!-- Chart 1: Donut 3 Cấp Độ Nguy Hiểm -->
+                        <div class="chart-box">
+                            <div class="chart-header-row">
+                                <div class="chart-title">🎯 MỨC ĐỘ NGUY HIỂM HÀNH VI (3 CẤP ĐỘ)</div>
+                            </div>
+                            <div class="donut-chart-container" id="donut-risk-container">
+                                <svg id="svg-donut-risk" viewBox="0 0 200 200" class="donut-svg"></svg>
+                            </div>
+                            <div class="donut-legend" id="donut-risk-legend">
+                                <div class="legend-row"><span class="legend-color color-safe"></span><span>🟢 An toàn / Bình thường</span><strong class="mono" id="legend-safe-val">--%</strong></div>
+                                <div class="legend-row"><span class="legend-color color-warn"></span><span>🟡 Cần chú ý / Cảnh báo</span><strong class="mono" id="legend-warn-val">--%</strong></div>
+                                <div class="legend-row"><span class="legend-color color-danger"></span><span>🔴 Nguy cơ cao / Khẩn cấp</span><strong class="mono" id="legend-danger-val">--%</strong></div>
+                            </div>
+                        </div>
+
+                        <!-- Chart 2: Donut Phân Bổ Cột Sống -->
+                        <div class="chart-box">
+                            <div class="chart-header-row">
+                                <div class="chart-title">📐 PHÂN BỔ TƯ THẾ & CỘT SỐNG</div>
+                            </div>
+                            <div class="donut-chart-container" id="donut-posture-container">
+                                <svg id="svg-donut-posture" viewBox="0 0 200 200" class="donut-svg"></svg>
+                            </div>
+                            <div class="donut-legend" id="donut-posture-legend">
+                                <div class="legend-row"><span class="legend-color color-upright"></span><span>Thân thẳng (&gt; 75°)</span><strong class="mono" id="legend-upright-val">--%</strong></div>
+                                <div class="legend-row"><span class="legend-color color-bent"></span><span>Cúi nghiêng (45° - 75°)</span><strong class="mono" id="legend-bent-val">--%</strong></div>
+                                <div class="legend-row"><span class="legend-color color-slouched"></span><span>Ngả lưng / Cúi sâu</span><strong class="mono" id="legend-slouched-val">--%</strong></div>
+                            </div>
+                        </div>
+
+                        <!-- Chart 3: Area Chart Đường Cong Cường Độ Rủi Ro (Tương Tác 2 Chiều) -->
+                        <div class="chart-box full-chart-box">
+                            <div class="chart-header-row">
+                                <div class="chart-title">📈 ĐƯỜNG CONG CƯỜNG ĐỘ RỦI RO THEO TRỤC THỜI GIAN (CLICK ĐỂ TUA VIDEO)</div>
+                                <span class="chart-hint">💡 Nhấp chuột vào bất kỳ mốc nào trên biểu đồ để tua video đến đúng giây đó</span>
+                            </div>
+                            <div class="area-chart-wrapper" id="risk-curve-chart-wrapper">
+                                <svg id="svg-risk-curve" viewBox="0 0 900 220" preserveAspectRatio="none" class="area-chart-svg"></svg>
+                                <div id="chart-playhead" class="chart-playhead-line hidden"></div>
+                                <div id="chart-tooltip" class="chart-hover-tooltip hidden"></div>
+                            </div>
+                        </div>
+
+                        <!-- Chart 4: Thẻ Điểm Công Thái Học & Cảnh Báo Mỏi Cơ -->
+                        <div class="chart-box ergo-score-box">
+                            <div class="chart-header-row">
+                                <div class="chart-title">🪑 ĐIỂM SỐ CÔNG THÁI HỌC & CẢNH BÁO MỎI CƠ</div>
+                            </div>
+                            <div class="ergo-card-layout">
+                                <div class="score-circle-outer">
+                                    <div class="score-circle-inner" id="ergo-score-circle">
+                                        <span class="score-number mono" id="ergo-score-num">88</span>
+                                        <span class="score-scale">/ 100 Điểm</span>
+                                    </div>
+                                </div>
+                                <div class="ergo-metrics-col">
+                                    <div class="ergo-metric-item">
+                                        <span class="metric-label">Thời gian ngồi liên tục:</span>
+                                        <strong class="mono metric-val" id="ergo-sitting-time">00:00</strong>
+                                    </div>
+                                    <div class="ergo-metric-item">
+                                        <span class="metric-label">Đánh giá vận động:</span>
+                                        <span class="badge badge-safe" id="ergo-health-badge">● Tối ưu</span>
+                                    </div>
+                                    <p class="ergo-advice-para" id="ergo-advice-text">Cột sống và các khớp duy trì góc độ tự nhiên, không ghi nhận tư thế gập sâu bất thường.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Danh sách Phân bổ Tỷ lệ Chi tiết (Bảo lưu cho E2E Tests) -->
+                    <div class="action-bars-wrapper" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                        <div class="subcard-title" style="font-size: 0.9rem; margin-bottom: 10px;">📋 TỶ LỆ CÁC HÀNH VI CHI TIẾT TRONG VIDEO</div>
                         <div id="action-bars-container" class="action-bars">
                             <div class="empty-state-box empty-state-compact">
                                 <span class="empty-icon">📊</span>
