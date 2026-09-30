@@ -130,5 +130,78 @@
     "status": "success",
     "model_tier": "Tier-1 Gemini 2.0",
     "token_usage": 0
+  },
+  "upload_1790739982_test_HDH_2.mp4": {
+    "threat_level": "AN TOÀN",
+    "is_safe_environment": true,
+    "primary_incident": "Sinh hoạt gia đình / Tương tác đa thế hệ",
+    "detailed_diagnosis": "Môi trường hoàn toàn an toàn với sự tương tác tích cực và ấm áp giữa các thành viên trong gia đình. Không ghi nhận bất kỳ dấu hiệu bạo lực, xung đột hay nguy cơ chấn thương nào từ các đối tượng.",
+    "recommended_action": "Duy trì giám sát tự động / Không cần can thiệp",
+    "scene_context": "Bối cảnh ngoài trời tại sân vườn vào ban ngày, một gia đình đa thế hệ gồm người lớn tuổi, phụ nữ và trẻ em đang quây quần vui vẻ bên nhau gần khu vực nướng BBQ.",
+    "chronological_evolution": "Khởi đầu với cảnh người ông mỉm cười hạnh phúc bên cạnh hai đứa cháu đang cười rạng rỡ. Diễn biến tiếp tục với sự tương tác ánh mắt và nụ cười đồng nhất của cả nhóm, thể hiện sự gắn kết gia đình chặt chẽ. Kết thúc trong trạng thái tâm lý tích cực, các đối tượng duy trì vị trí đứng gần nhau một cách an toàn.",
+    "overall_conclusion": "Kết luận an toàn tuyệt đối. Các chỉ số động học cho thấy ngôn ngữ cơ thể thư giãn, biểu cảm gương mặt hạnh phúc, hoàn toàn phù hợp với hoạt động nghỉ ngơi và chăm sóc gia đình.",
+    "detected_actors": [
+      {
+        "actor_index": 1,
+        "role": "Bé trai",
+        "appearance": "Mặc áo thun màu vàng, tóc ngắn",
+        "true_action": "Đang cười đùa vui vẻ",
+        "posture_desc": "Tư thế đứng tự nhiên, gương mặt rạng rỡ hướng về phía trước"
+      },
+      {
+        "actor_index": 2,
+        "role": "Người phụ nữ",
+        "appearance": "Mặc áo hoa, đeo kính, tóc đỏ",
+        "true_action": "Đang mỉm cười quan sát các thành viên",
+        "posture_desc": "Đứng thẳng, gương mặt biểu hiện sự hạnh phúc"
+      },
+      {
+        "actor_index": 3,
+        "role": "Người ông",
+        "appearance": "Người lớn tuổi, đeo kính, có râu trắng, mặc áo sơ mi kẻ",
+        "true_action": "Đang ôm nhẹ và tương tác với các cháu",
+        "posture_desc": "Hơi cúi đầu về phía các cháu, cánh tay đặt sau lưng trẻ để che chở"
+      },
+      {
+        "actor_index": 4,
+        "role": "Bé gái",
+        "appearance": "Mặc áo yếm denim bên ngoài áo thun xanh",
+        "true_action": "Đang cười tươi cùng gia đình",
+        "posture_desc": "Đứng cạnh người ông, tư thế thoải mái và an tâm"
+      }
+    ],
+    "segment_analyses": [
+      {
+        "segment_id": "SEG-01",
+        "macro_narrative": "Người ông đang đứng giữa hai đứa cháu, cả ba cùng nở nụ cười rạng rỡ trong khi người phụ nữ bên cạnh cũng đang chia sẻ niềm vui này.",
+        "detailed_action": "Tương tác gia đình hạnh phúc",
+        "context_description": "Các đối tượng đứng sát nhau, tạo thành một nhóm gắn kết, biểu cảm gương mặt đồng nhất là vui vẻ.",
+        "prediction_next_4s": "Các đối tượng sẽ tiếp tục trò chuyện và duy trì trạng thái vui vẻ hiện tại."
+      },
+      {
+        "segment_id": "SEG-02",
+        "macro_narrative": "Sự tương tác giữa người ông và các cháu trở nên thân thiết hơn qua ánh mắt và cử chỉ che chở nhẹ nhàng.",
+        "detailed_action": "Duy trì tương tác tích cực",
+        "context_description": "Không gian xung quanh ổn định, không có vật cản nguy hiểm hay hành động bất thường.",
+        "prediction_next_4s": "Có thể có sự thay đổi nhẹ về vị trí đứng khi họ tiếp tục câu chuyện."
+      },
+      {
+        "segment_id": "SEG-03",
+        "macro_narrative": "Người phụ nữ phía bên phải tham gia sâu hơn vào cuộc hội thoại bằng nụ cười và ánh mắt trìu mến hướng về phía trẻ nhỏ.",
+        "detailed_action": "Giao tiếp phi ngôn ngữ tích cực",
+        "context_description": "Ngôn ngữ cơ thể của tất cả các đối tượng đều thả lỏng, không có dấu hiệu căng thẳng.",
+        "prediction_next_4s": "Nhóm đối tượng vẫn giữ nguyên đội hình quây quần."
+      },
+      {
+        "segment_id": "SEG-04",
+        "macro_narrative": "Phân đoạn kết thúc với hình ảnh gia đình hạnh phúc, người ông vẫn giữ vai trò trung tâm kết nối các thành viên.",
+        "detailed_action": "Kết thúc phân đoạn an toàn",
+        "context_description": "Trạng thái an ninh hoàn hảo, môi trường sinh hoạt gia đình lành mạnh.",
+        "prediction_next_4s": "Tiếp tục các hoạt động sinh hoạt ngoài trời bình thường."
+      }
+    ],
+    "status": "success",
+    "model_tier": "Tier-1 Gemini 2.0",
+    "token_usage": 0
   }
 }

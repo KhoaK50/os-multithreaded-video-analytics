@@ -392,6 +392,18 @@ async function fetchCameraLogs() {
     }
 }
 
+function getModelTierBadge(tierKey) {
+    const key = (tierKey || "").toLowerCase();
+    if (key.includes("tier_1") || key.includes("2.5") || key.includes("2.0")) {
+        return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● Tier-1 Gemini 2.5</span>`;
+    } else if (key.includes("tier_2") || key.includes("1.5")) {
+        return `<span class="badge badge-warning mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● Tier-2 Gemini 1.5</span>`;
+    } else if (key.includes("local") || key.includes("heuristic") || key.includes("tier_3")) {
+        return `<span class="badge badge-outline mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● AI Tự Hành</span>`;
+    }
+    return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● Tier-1 Gemini 2.5</span>`;
+}
+
 function renderBehaviorTable(logs) {
     const tbody = document.getElementById("behavior-log-tbody");
     if (!tbody) return;
@@ -399,7 +411,7 @@ function renderBehaviorTable(logs) {
     if (!logs || logs.length === 0) {
         tbody.innerHTML = `
             <tr class="empty-row">
-                <td colspan="6" class="empty-cell">
+                <td colspan="7" class="empty-cell">
                     <div class="empty-state-box">
                         <span class="empty-icon">🤖</span>
                         <p class="empty-title">Đang kết nối luồng phân tích hành vi Gemini AI chu kỳ 4s...</p>
@@ -425,6 +437,9 @@ function renderBehaviorTable(logs) {
                     <span class="log-code-badge">${escapeHtml(item.code || item.id)}</span>
                 </td>
                 <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
+                <td>
+                    ${getModelTierBadge(item.model_tier)}
+                </td>
                 <td>
                     <span class="badge ${badgeClass}">${escapeHtml(item.action)}</span>
                 </td>

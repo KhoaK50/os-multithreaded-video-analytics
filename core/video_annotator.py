@@ -27,15 +27,17 @@ from PIL import Image, ImageDraw, ImageFont
 from core.cyber_hud import CyberHUDRenderer
 from core.config import CONFIG
 
-try:
-    import yt_dlp
-    YTDLP_AVAILABLE = True
-except ImportError:
-    YTDLP_AVAILABLE = False
-
-
+import json
 import urllib.request
 import urllib.parse
+
+try:
+    import yt_dlp
+    import yt_dlp.utils
+    YTDLP_AVAILABLE = True
+except ImportError:
+    yt_dlp = None
+    YTDLP_AVAILABLE = False
 
 def format_time(seconds: float) -> str:
     m = int(seconds) // 60
@@ -123,6 +125,48 @@ def download_direct_video(url: str, output_path: str, max_size_mb: int = 150) ->
         return False
 
 
+def fetch_tiktok_direct_info(url: str) -> Optional[Dict[str, Any]]:
+    """
+    Trích xuất metadata và link direct stream MP4 của video TikTok qua TikWM API.
+    Khắc phục hiện tượng chặn captcha/challenge từ phía TikTok khi dùng yt-dlp thông thường.
+    """
+    try:
+        clean_url = resolve_redirect_url(url)
+        base_clean = clean_url.split("?")[0] if "tiktok.com" in clean_url else clean_url
+        api_url = f"https://www.tikwm.com/api/?url={urllib.parse.quote(base_clean, safe='')}"
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "application/json"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("code") == 0 and "data" in data:
+                d = data["data"]
+                play_url = d.get("play") or d.get("wmplay")
+                if play_url:
+                    duration = float(d.get("duration", 30))
+                    title = d.get("title") or "Video TikTok"
+                    cover = d.get("cover") or ""
+                    vid_id = str(d.get("id") or "tiktok_vid")
+                    author = d.get("author", {}).get("nickname") or "TikTok Creator"
+                    return {
+                        "id": vid_id,
+                        "title": f"TikTok: {title[:70]}",
+                        "duration": duration,
+                        "duration_str": format_time(duration),
+                        "thumbnail": cover,
+                        "uploader": author,
+                        "is_long": duration > 180.0,
+                        "direct_stream_url": play_url
+                    }
+    except Exception:
+        pass
+    return None
+
+
 def probe_web_video(url: str) -> Dict[str, Any]:
     """
     Quét nhanh thông tin video (Metadata) từ URL mà KHÔNG tải video.
@@ -142,7 +186,13 @@ def probe_web_video(url: str) -> Dict[str, Any]:
             "is_long": False
         }
 
-    if not YTDLP_AVAILABLE:
+    # 1. Nếu là link TikTok / Douyin: Ưu tiên dùng TikWM API siêu tốc (vượt qua Captcha/Anti-bot)
+    if "tiktok.com" in resolved_url.lower() or "douyin.com" in resolved_url.lower():
+        tt_info = fetch_tiktok_direct_info(resolved_url)
+        if tt_info:
+            return tt_info
+
+    if not YTDLP_AVAILABLE or yt_dlp is None:
         raise RuntimeError("Thư viện yt-dlp chưa được cài đặt trên hệ thống.")
 
     probe_opts = {
@@ -244,9 +294,6 @@ def download_web_video(
                 "has_audio": check_video_has_audio(dest_path)
             }
 
-    if not YTDLP_AVAILABLE:
-        raise RuntimeError("Thư viện yt-dlp chưa được cài đặt trên hệ thống.")
-
     info = probe_web_video(resolved_url)
     total_duration = info["duration"]
 
@@ -269,6 +316,58 @@ def download_web_video(
         s_end = 90.0
         is_range = True
 
+    # 1. Nếu có direct_stream_url (từ TikWM API cho TikTok hoặc direct stream): Tải trực tiếp siêu tốc!
+    if info.get("direct_stream_url"):
+        direct_url = info["direct_stream_url"]
+        raw_dl_path = os.path.join(output_dir, f"raw_{clean_id}_{int(time.time())}.mp4")
+        ok = download_direct_video(direct_url, raw_dl_path, max_size_mb=250)
+        if ok and os.path.exists(raw_dl_path) and os.path.getsize(raw_dl_path) > 1000:
+            dest_path = os.path.join(output_dir, f"web_{clean_id}{suffix}.mp4")
+            if is_range and s_end > s_start:
+                cmd_cut = [
+                    get_ffmpeg_bin(), "-y",
+                    "-ss", str(s_start),
+                    "-to", str(s_end),
+                    "-i", raw_dl_path,
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-c:a", "aac",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    dest_path
+                ]
+                subprocess.run(cmd_cut, capture_output=True, text=True, timeout=120)
+                try:
+                    os.remove(raw_dl_path)
+                except Exception:
+                    pass
+            else:
+                if raw_dl_path != dest_path:
+                    if os.path.exists(dest_path):
+                        os.remove(dest_path)
+                    os.rename(raw_dl_path, dest_path)
+
+            if os.path.exists(dest_path) and os.path.getsize(dest_path) > 1000:
+                cap_check = cv2.VideoCapture(dest_path)
+                actual_dur = total_duration
+                if cap_check.isOpened():
+                    f_fps = cap_check.get(cv2.CAP_PROP_FPS) or 30.0
+                    f_count = cap_check.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+                    if f_count > 0:
+                        actual_dur = round(f_count / f_fps, 2)
+                    cap_check.release()
+                return {
+                    "file_path": os.path.abspath(dest_path),
+                    "title": info["title"],
+                    "duration": actual_dur,
+                    "thumbnail": info.get("thumbnail", ""),
+                    "uploader": info.get("uploader", "Web Source"),
+                    "is_clipped": is_range,
+                    "has_audio": check_video_has_audio(dest_path)
+                }
+
+    if not YTDLP_AVAILABLE or yt_dlp is None:
+        raise RuntimeError("Thư viện yt-dlp chưa được cài đặt trên hệ thống.")
+
     common_extractor_args = {
         'youtube': {'player_client': ['ios', 'android', 'web']},
         'tiktok': {'app_version': 'v2.8.0'}
@@ -289,8 +388,7 @@ def download_web_video(
         'extractor_args': common_extractor_args,
     }
 
-    if is_range:
-        import yt_dlp.utils
+    if is_range and hasattr(yt_dlp, 'utils') and hasattr(yt_dlp.utils, 'download_range_func'):
         ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [(s_start, s_end)])
 
     final_file = None
