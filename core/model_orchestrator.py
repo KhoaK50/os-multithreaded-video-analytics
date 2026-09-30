@@ -22,11 +22,13 @@ import time
 import os
 import json
 import logging
+import warnings
 import numpy as np
 from PIL import Image
 
 from core.config import CONFIG, parse_gemini_api_keys
 
+warnings.filterwarnings("ignore", message=".*automatic function calling.*")
 logger = logging.getLogger(__name__)
 
 

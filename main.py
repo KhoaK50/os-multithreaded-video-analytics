@@ -26,6 +26,8 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import urllib.request
 import urllib.error
+import warnings
+warnings.filterwarnings("ignore", message=".*automatic function calling.*")
 
 from dotenv import load_dotenv
 load_dotenv()

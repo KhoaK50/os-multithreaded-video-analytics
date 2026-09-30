@@ -805,6 +805,19 @@ _warmup_cancel_event = threading.Event()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Khử ngoại lệ ngắt kết nối WinError 10054 trên Windows khi browser refresh / đóng stream
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        def _silence_windows_disconnect(loop, context):
+            exc = context.get("exception")
+            if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)) or (exc and "10054" in str(exc)):
+                return
+            loop.default_exception_handler(context)
+        loop.set_exception_handler(_silence_windows_disconnect)
+    except Exception:
+        pass
+
     # Kích hoạt luồng nạp trước AI model dưới nền, không cản trở uvicorn mở cổng 8000
     _warmup_cancel_event.clear()
 
