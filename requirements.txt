@@ -1,6 +1,6 @@
 # ==============================================================================
 # ĐỒ ÁN HỆ ĐIỀU HÀNH - HỆ THỐNG GIÁM SÁT HÀNH VI VIDEO THỜI GIAN THỰC ĐA LUỒNG
-# GVHD: Thầy Nguyễn Tấn Duẩn
+# KIẾN TRÚC ĐIỀU PHỐI ĐA TẦNG & GIÁM SÁT ĐA LUỒNG
 # ==============================================================================
 
 # --- [PYTORCH CHO CARD ĐỒ HỌA NVIDIA RTX 5060 (CUDA 13.2)] ---

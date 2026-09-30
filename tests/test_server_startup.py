@@ -1,6 +1,6 @@
 """
 Unit test for Web Server Startup (<1s), Health Readiness Probe, and Browser Launcher.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 """
 import os
 import sys

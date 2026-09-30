@@ -1,6 +1,6 @@
 """
 Hierarchical Model Orchestrator & Rolling Context Memory Engine.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Đặc tả kiến trúc (Milestone 1 - R1):
 1. Phân tầng mô hình ưu tiên chất lượng cao (Hierarchical Model Tiers):

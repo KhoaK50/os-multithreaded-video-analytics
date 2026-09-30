@@ -1,6 +1,6 @@
 """
 System Resource Monitor for OS Video Analytics Project.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Chức năng:
 - Đo đạc phần trăm CPU (% CPU) toàn hệ thống và tiến trình hiện tại qua psutil

@@ -1,6 +1,6 @@
 """
 Human-Level Intelligent Video Surveillance System (Chẩn đoán hành vi tự do như người thật).
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Kiến trúc Đa Luồng môn Hệ Điều Hành:
 1. Luồng Producer (Thread 1): Đọc Webcam liên tục ở tốc độ 30 FPS, cơ chế Drop-frame chống tràn buffer.

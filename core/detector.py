@@ -1,6 +1,6 @@
 """
 X-CLIP Zero-Shot Video Action Recognition Engine.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Mô hình sử dụng: microsoft/xclip-base-patch32-16-frames
 Tối ưu hóa:

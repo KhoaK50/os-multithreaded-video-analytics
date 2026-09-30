@@ -1,6 +1,6 @@
 """
-FastAPI Cyber Web Server: Trung tâm Giám sát Điều hành & Phân tích Hành vi Video Đa Luồng.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+FastAPI Web Server: Trung tâm Giám sát Điều hành & Phân tích Hành vi Video Đa Luồng.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng Thời gian thực.
 
 Tính năng:
 - Endpoint 1: /api/stream/live (MJPEG 30 FPS trực tiếp trong trình duyệt với Cyber HUD & 17-point Skeleton).
@@ -92,6 +92,9 @@ class LiveCameraPipeline:
     def __init__(self, video_source=0):
         self.video_source = video_source
         self.running = False
+        self.is_starting = False
+        self.start_lock = threading.Lock()
+        self.camera_device_available = True
         self.cap = None
         self.threads = []
 
@@ -219,52 +222,91 @@ class LiveCameraPipeline:
         return entry
 
     def start(self):
-        if self.running:
-            return
-        print("[*] Khoi dong Live Camera Pipeline da luong...")
-        try:
-            device = CONFIG.DEVICE
+        with self.start_lock:
+            if self.running or self.is_starting:
+                return
+            self.is_starting = True
 
-            # Nạp model YOLOv8-Pose
-            if self.yolo_model is None:
-                from ultralytics import YOLO
-                self.yolo_model = YOLO(CONFIG.YOLO_MODEL_NAME)
-                dummy = np.zeros((480, 640, 3), dtype=np.uint8)
-                self.yolo_model(dummy, device=device, verbose=False)
+            print("[*] Khoi dong Live Camera Pipeline da luong...")
+            try:
+                device = CONFIG.DEVICE
 
-            # Mở Camera
-            self.cap = cv2.VideoCapture(self.video_source, cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY)
-            cam_w = getattr(CONFIG, "CAMERA_WIDTH", 640)
-            cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 480)
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_w)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_h)
-            self.cap.set(cv2.CAP_PROP_FPS, 30)
+                # Nạp model YOLOv8-Pose
+                if self.yolo_model is None:
+                    from ultralytics import YOLO
+                    self.yolo_model = YOLO(CONFIG.YOLO_MODEL_NAME)
+                    dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+                    self.yolo_model(dummy, device=device, verbose=False)
 
-            self.running = True
+                # Mở Camera an toàn với cơ chế dò đa backend trên Windows
+                self.cap = None
+                self.camera_device_available = False
+                cam_w = getattr(CONFIG, "CAMERA_WIDTH", 640)
+                cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 480)
 
-            # Khởi động các luồng
-            t_capture = threading.Thread(target=self._capture_worker, name="CamProducer", daemon=True)
-            t_ai = threading.Thread(target=self._ai_worker, name="CamEdgeAI", daemon=True)
-            t_render = threading.Thread(target=self._render_worker, name="CamCompositor", daemon=True)
-            t_gemini = threading.Thread(target=self._gemini_worker, name="CamGeminiAI", daemon=True)
+                if isinstance(self.video_source, int):
+                    backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if sys.platform == "win32" else [cv2.CAP_ANY]
+                    for backend in backends:
+                        backend_name = "DSHOW" if backend == cv2.CAP_DSHOW else ("MSMF" if backend == cv2.CAP_MSMF else "ANY")
+                        try:
+                            cap_test = cv2.VideoCapture(self.video_source, backend)
+                            if cap_test is not None and cap_test.isOpened():
+                                cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, cam_w)
+                                cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_h)
+                                cap_test.set(cv2.CAP_PROP_FPS, 30)
+                                ret, test_frame = cap_test.read()
+                                if ret and test_frame is not None and test_frame.size > 0:
+                                    self.cap = cap_test
+                                    self.camera_device_available = True
+                                    print(f"[+] Mo webcam thanh cong qua backend {backend_name} (index {self.video_source})!")
+                                    break
+                                else:
+                                    cap_test.release()
+                            else:
+                                if cap_test:
+                                    cap_test.release()
+                        except Exception as e_back:
+                            print(f"[!] Thu backend {backend_name} gap loi: {e_back}")
+                else:
+                    try:
+                        self.cap = cv2.VideoCapture(self.video_source)
+                        if self.cap and self.cap.isOpened():
+                            self.camera_device_available = True
+                    except Exception as e_file:
+                        print(f"[!] Loi mo nguon video: {e_file}")
 
-            self.threads = [t_capture, t_ai, t_render, t_gemini]
-            for t in self.threads:
-                t.start()
-            print("[+] Live Camera Pipeline da san sang!")
-        except Exception as e:
-            print(f"[!] Loi khi khoi dong Live Camera: {e}")
-            self.running = False
+                if not self.camera_device_available:
+                    print(f"[!] Luu y: Khong the mo camera vat ly index {self.video_source}. He thong san sang tiep nhan luong Webcam Trinh Duyet (Browser Ingest).")
+
+                self.running = True
+
+                # Khởi động các luồng
+                t_capture = threading.Thread(target=self._capture_worker, name="CamProducer", daemon=True)
+                t_ai = threading.Thread(target=self._ai_worker, name="CamEdgeAI", daemon=True)
+                t_render = threading.Thread(target=self._render_worker, name="CamCompositor", daemon=True)
+                t_gemini = threading.Thread(target=self._gemini_worker, name="CamGeminiAI", daemon=True)
+
+                self.threads = [t_capture, t_ai, t_render, t_gemini]
+                for t in self.threads:
+                    t.start()
+                print("[+] Live Camera Pipeline da san sang!")
+            except Exception as e:
+                print(f"[!] Loi khi khoi dong Live Camera: {e}")
+                self.running = False
+            finally:
+                self.is_starting = False
 
     def stop(self):
-        if not self.running:
-            return
-        print("[*] Dung Live Camera Pipeline...")
-        self.running = False
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
-        self.latest_hud_frame = None
-        print("[+] Live Camera Pipeline da giai phong camera an toan.")
+        with self.start_lock:
+            if not self.running:
+                return
+            print("[*] Dung Live Camera Pipeline...")
+            self.running = False
+            if self.cap and self.cap.isOpened():
+                self.cap.release()
+            self.cap = None
+            self.latest_hud_frame = None
+            print("[+] Live Camera Pipeline da giai phong camera an toan.")
 
     def ingest_client_frame(self, raw_frame):
         """
@@ -888,8 +930,10 @@ def stream_live():
                         )
                 else:
                     standby = np.zeros((720, 1280, 3), dtype=np.uint8)
-                    cv2.putText(standby, "CYBER COMMAND CENTER - DANG KHOI DONG CAMERA...", (300, 360),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 229, 255), 2, cv2.LINE_AA)
+                    cv2.putText(standby, "HE THONG GIAM SAT VIDEO DA LUONG - CHO NGUON KHUNG HINH...", (260, 340),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 229, 255), 2, cv2.LINE_AA)
+                    cv2.putText(standby, "Bam [Bat Webcam Trinh Duyet] hoac kiem tra ket noi camera", (310, 390),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (148, 163, 184), 1, cv2.LINE_AA)
                     ret, jpeg = cv2.imencode(".jpg", standby, [cv2.IMWRITE_JPEG_QUALITY, 60])
                     if ret:
                         yield (
@@ -1382,7 +1426,7 @@ THÔNG SỐ PHÂN TÍCH TỪ RTX 5060:
         # Nếu hỏi về luồng Live Camera, lấy ngữ cảnh từ RollingContextMemory
         context_str = MODEL_ORCHESTRATOR.context_memory.get_context_summary_for_prompt()
 
-    prompt = f"""Bạn là Trợ lý AI Giám sát An ninh & Y tế (Học phần Hệ Điều Hành - GVHD: Thầy Nguyễn Tấn Duẩn).
+    prompt = f"""Bạn là Trợ lý AI Giám sát An ninh & Y tế (Học phần Hệ Điều Hành — Báo cáo Tổng hợp Video Trực quan).
 Hãy trả lời câu hỏi của người dùng một cách chính xác, ngắn gọn, súc tích dựa trên bằng chứng dữ liệu dưới đây:
 
 DỮ LIỆU BẰNG CHỨNG TỪ HỆ THỐNG:

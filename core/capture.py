@@ -1,6 +1,6 @@
 """
 Multi-threaded Camera Capture Producer with Drop-frame Flow Control.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Nguyên lý HĐH áp dụng:
 1. Producer - Consumer Pattern: Luồng Producer liên tục đọc frame từ Camera ở tốc độ 30 FPS.

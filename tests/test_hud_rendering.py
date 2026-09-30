@@ -1,6 +1,6 @@
 """
 Unit & Integration Tests for Video HUD Rendering, Hardware Detection & Unicode Vietnamese Font Fallback.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 Milestone 2 (R2 Specification).
 """
 

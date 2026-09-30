@@ -1,6 +1,6 @@
 """
 Bộ Kiểm Thử Toàn Diện Cho Camera Pipeline & Visual Enhancement (Milestone 2 - Requirement R3).
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Mục tiêu kiểm thử:
 1. Xác minh lật gương ngang (Horizontal Mirroring): Đảo trục hoành cv2.flip(frame, 1) chính xác từng tọa độ điểm ảnh.

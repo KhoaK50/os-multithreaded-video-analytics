@@ -17,7 +17,7 @@
                 <span class="logo-icon">🛡️</span>
                 <div class="brand-text">
                     <span class="brand-title">HỆ THỐNG GIÁM SÁT VIDEO ĐA LUỒNG</span>
-                    <span class="brand-sub">ĐỒ ÁN HỆ ĐIỀU HÀNH — GVHD: THẦY NGUYỄN TẤN DUẨN</span>
+                    <span class="brand-sub">HỆ ĐIỀU HÀNH — KIẾN TRÚC PHÂN TÍCH VIDEO ĐA LUỒNG THỜI GIAN THỰC</span>
                 </div>
             </div>
         </div>
@@ -57,7 +57,7 @@
                     <div class="card-header">
                         <div class="card-title">
                             <span class="indicator-pulse"></span>
-                            <span>LUỒNG CAMERA THỜI GIAN THỰC — VIỄN TRẮC HỆ ĐIỀU HÀNH (1280×720)</span>
+                            <span>LUỒNG CAMERA THỜI GIAN THỰC — GIÁM SÁT HỆ THỐNG ĐA LUỒNG (1280×720)</span>
                         </div>
                         <div class="header-status-badge">
                             <span id="live-alert-text" class="badge badge-safe mono">Trạng thái: An toàn</span>
@@ -98,6 +98,9 @@
                             <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-denoise" onclick="toggleCameraEnhancer('denoise')" title="Khử nhiễu hạt khi thiếu sáng">
                                 🧹 Khử nhiễu: BẬT
                             </button>
+                            <button class="btn btn-sm btn-outline" id="btn-toggle-telemetry" onclick="toggleTelemetryPanel()" title="Bật/Tắt Bảng Điều Khiển Viễn Trắc Hệ Thống (Phím tắt: Esc để đóng)">
+                                📊 Viễn Trắc Hệ Thống <span class="badge badge-neutral mono" id="btn-telemetry-status" style="font-size: 10px; padding: 1px 5px; margin-left: 3px;">ẨN</span>
+                            </button>
                         </div>
                         <div class="control-group-right">
                             <button class="btn btn-sm btn-danger-outline" id="btn-toggle-cam" onclick="toggleCamera()">
@@ -107,15 +110,17 @@
                     </div>
                 </div>
 
-                <!-- BẢNG ĐIỀU KHIỂN VIỄN TRẮC HỆ ĐIỀU HÀNH (OS TELEMETRY DASHBOARD GRID) -->
-                <div class="app-card os-telemetry-card">
+                <!-- BẢNG ĐIỀU KHIỂN VIỄN TRẮC HỆ ĐIỀU HÀNH TRÔI NỔI (FLOATING OS TELEMETRY PANEL) -->
+                <div id="telemetry-backdrop" class="telemetry-backdrop hidden" onclick="closeTelemetryPanel()"></div>
+                <div id="telemetry-floating-panel" class="app-card os-telemetry-card telemetry-floating-panel hidden" role="dialog" aria-modal="true" aria-labelledby="telemetry-modal-title">
                     <div class="card-header">
                         <div class="card-title">
                             <span class="indicator-pulse"></span>
-                            <span>BẢNG ĐIỀU KHIỂN VIỄN TRẮC HỆ ĐIỀU HÀNH (OS TELEMETRY DASHBOARD)</span>
+                            <span id="telemetry-modal-title">BẢNG ĐIỀU KHIỂN VIỄN TRẮC HỆ ĐIỀU HÀNH (OS TELEMETRY DASHBOARD)</span>
                         </div>
-                        <div class="header-status-badge">
+                        <div class="header-status-badge" style="display:flex; align-items:center; gap:8px;">
                             <span id="model-tier-badge" class="badge badge-safe mono">● Tier-1 Gemini 2.5</span>
+                            <button class="modal-close-btn" onclick="closeTelemetryPanel()" title="Đóng bảng viễn trắc (Esc)" aria-label="Đóng bảng viễn trắc">✕</button>
                         </div>
                     </div>
 

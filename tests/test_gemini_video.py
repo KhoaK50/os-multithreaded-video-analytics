@@ -1,8 +1,8 @@
 """
 Deep Video Diagnosis & Semantic Q&A with Google Gemini 2.0 Flash.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
-Đáp ứng 100% yêu cầu của Thầy Nguyễn Tấn Duẩn:
+Đặc tả mục tiêu học phần:
 1. Nhận dạng tự do mọi hành vi trong video (không bị gò bó danh mục).
 2. Phân loại theo nhóm: Hành vi làm việc, Thể thao, Sinh hoạt, Nguy hiểm.
 3. Đánh giá Mức độ nguy hiểm (AN TOÀN / CẢNH BÁO / NGUY HIỂM) kèm thang điểm và lý do.
@@ -34,7 +34,7 @@ def main():
 
     print("=" * 70)
     print("  HỆ THỐNG AI CHẨN ĐOÁN VIDEO TỰ DO & ĐÁNH GIÁ NGUY HIỂM (GEMINI 2.0 FLASH)")
-    print("  Đề tài HĐH - GVHD: Thầy Nguyễn Tấn Duẩn")
+    print("  Đề tài HĐH — Kiến trúc Phân tích Video Đa luồng")
     print("=" * 70)
 
     analyzer = GeminiVideoAnalyzer(api_key=args.api_key)

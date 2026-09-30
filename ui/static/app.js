@@ -547,9 +547,76 @@ function closeSnapshotModal(e) {
     if (modal) modal.classList.add("hidden");
 }
 
+function toggleTelemetryPanel() {
+    const panel = document.getElementById("telemetry-floating-panel");
+    const backdrop = document.getElementById("telemetry-backdrop");
+    const statusBadge = document.getElementById("btn-telemetry-status");
+    const toggleBtn = document.getElementById("btn-toggle-telemetry");
+
+    if (!panel) return;
+    const isHidden = panel.classList.contains("hidden");
+
+    if (isHidden) {
+        panel.classList.remove("hidden");
+        if (backdrop) backdrop.classList.remove("hidden");
+        if (statusBadge) {
+            statusBadge.textContent = "HIỆN";
+            statusBadge.className = "badge badge-safe mono";
+        }
+        if (toggleBtn) {
+            toggleBtn.classList.add("active-toggle");
+        }
+    } else {
+        panel.classList.add("hidden");
+        if (backdrop) backdrop.classList.add("hidden");
+        if (statusBadge) {
+            statusBadge.textContent = "ẨN";
+            statusBadge.className = "badge badge-neutral mono";
+        }
+        if (toggleBtn) {
+            toggleBtn.classList.remove("active-toggle");
+        }
+    }
+}
+
+function closeTelemetryPanel() {
+    const panel = document.getElementById("telemetry-floating-panel");
+    const backdrop = document.getElementById("telemetry-backdrop");
+    const statusBadge = document.getElementById("btn-telemetry-status");
+    const toggleBtn = document.getElementById("btn-toggle-telemetry");
+
+    if (panel) panel.classList.add("hidden");
+    if (backdrop) backdrop.classList.add("hidden");
+    if (statusBadge) {
+        statusBadge.textContent = "ẨN";
+        statusBadge.className = "badge badge-neutral mono";
+    }
+    if (toggleBtn) {
+        toggleBtn.classList.remove("active-toggle");
+    }
+}
+
+function openTelemetryPanel() {
+    const panel = document.getElementById("telemetry-floating-panel");
+    const backdrop = document.getElementById("telemetry-backdrop");
+    const statusBadge = document.getElementById("btn-telemetry-status");
+    const toggleBtn = document.getElementById("btn-toggle-telemetry");
+
+    if (panel) panel.classList.remove("hidden");
+    if (backdrop) backdrop.classList.remove("hidden");
+    if (statusBadge) {
+        statusBadge.textContent = "HIỆN";
+        statusBadge.className = "badge badge-safe mono";
+    }
+    if (toggleBtn) {
+        toggleBtn.classList.add("active-toggle");
+    }
+}
+
 document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         closeSnapshotModal();
+        closeTelemetryPanel();
     }
 });
 

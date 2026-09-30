@@ -1,6 +1,6 @@
 """
 Empirical Stress Test Suite: Network & Failure Modes for open_browser_when_ready
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 Challenger: challenger_m1_2 (Milestone 1 Network & Failure Modes Stress Verification)
 
 Tests:

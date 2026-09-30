@@ -1,6 +1,6 @@
 """
 Video Annotator Engine: Phân tích & Dán nhãn Video Quy mô lớn bằng YOLOv8-Pose đa nền tảng.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Chức năng:
 1. Nhập file video từ Local (.mp4, .avi, .mov) hoặc Web URL (YouTube, mạng xã hội) qua yt-dlp.

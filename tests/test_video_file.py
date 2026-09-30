@@ -1,6 +1,6 @@
 """
 Process & Annotate Video File / Camera Feed with X-CLIP & System Analytics.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Chức năng:
 1. Nhận đầu vào là 1 File Video (.mp4, .avi, .mov...) HOẶC Live Webcam.

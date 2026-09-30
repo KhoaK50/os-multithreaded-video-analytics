@@ -120,7 +120,7 @@ def main():
 
     print("=" * 80)
     print("  OS MULTITHREADED VIDEO ANALYTICS - E2E TEST SUITE RUNNER")
-    print("  Academic Standard: Operating Systems | GVHD: Thay Nguyen Tan Duan")
+    print("  Academic Standard: Operating Systems | Multithreaded Architecture")
     print("=" * 80)
     print(f"  Python Version: {sys.version.split()[0]}")
     print(f"  Project Root:   {PROJECT_ROOT}")

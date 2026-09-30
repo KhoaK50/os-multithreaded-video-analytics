@@ -1,6 +1,6 @@
 """
 Module Tiền Xử Lý Hình Ảnh Camera Trực Tiếp (CameraEnhancer).
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Tính năng kỹ thuật:
 1. Lật gương ngang (Horizontal Mirroring): cv2.flip(frame, 1) mặc định bật để cử động tay người dùng thuận tự nhiên như nhìn gương soi.

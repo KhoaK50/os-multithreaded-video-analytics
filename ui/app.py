@@ -1,6 +1,6 @@
 """
 Unified Web Dashboard: Giám Sát Hành Vi Video Thời Gian Thực & Phân Tích AI Đa Luồng.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Thiết kế giao diện chuẩn Radix Dark Theme, phân tách rõ 2 chế độ:
 - Chế độ 1: 🎥 Giám Sát Trực Tiếp (Live Camera Cyber Command Center 1280x720).
@@ -157,7 +157,7 @@ def get_live_hardware_metrics():
 
 # --- HEADER DASHBOARD ---
 st.markdown("## 🛡️ Hệ Thống Giám Sát Hành Vi Video & Phân Tích AI Đa Luồng")
-st.caption("Đồ án môn học: **Hệ Điều Hành** — GVHD: **Thầy Nguyễn Tấn Duẩn** | Kiến trúc Đa tầng: **RTX 5060 Edge + Gemini 3.5 Flash Lite**")
+st.caption("Đồ án môn học: **Hệ Điều Hành** — Kiến trúc Đa tầng: **RTX 5060 Edge + Gemini 3.5 Flash Lite**")
 
 # --- HÀNG METRICS HỆ ĐIỀU HÀNH ---
 hw = get_live_hardware_metrics()

@@ -1,6 +1,6 @@
 """
 Enhanced Real-Time X-CLIP Action Recognition with Temporal Striding & Prompt Engineering.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Các nâng cấp chuyên sâu (Senior Engineering Optimizations):
 1. Temporal Striding (Lấy mẫu thời gian mở rộng): Cứ mỗi 3-4 frame camera mới trích 1 frame vào buffer 16-frame.

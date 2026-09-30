@@ -1,6 +1,6 @@
 """
 Benchmark & Unit Test for Producer - Consumer & Drop-Frame Flow Control.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Mục tiêu kiểm thử:
 1. Chứng minh tính đúng đắn của mô hình Producer - Consumer sử dụng queue.Queue thread-safe.

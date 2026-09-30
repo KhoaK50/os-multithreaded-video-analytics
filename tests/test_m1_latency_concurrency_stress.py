@@ -1,7 +1,7 @@
 """
 Adversarial Challenge & Empirical Stress Test Suite: Milestone 1
 Focus: Startup Latency, Concurrent Readiness, Engine Warmup Concurrency/Deadlock, and Leak Analysis.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 Challenger: challenger_m1_1 (Milestone 1 Latency & Concurrency Stress Verification)
 """
 

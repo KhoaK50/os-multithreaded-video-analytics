@@ -1,6 +1,6 @@
 """
 Cyber Surveillance Command Center (1280x720 Widescreen).
-Đồ án môn: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Kiến trúc Đa Luồng Đột Phá: Biomechanical Threat Engine (Khung Xương AI 113 FPS Trên RTX 5060):
 - Thread 1 (Producer): Đọc camera liên tục 30 FPS phần cứng, cập nhật Shared Frame Buffer có Lock.

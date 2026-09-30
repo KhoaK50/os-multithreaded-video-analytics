@@ -312,11 +312,78 @@ body {
 }
 
 /* ==========================================================================
-   OS TELEMETRY DASHBOARD GRID
+   FLOATING OS TELEMETRY HUD MODAL / DRAWER
    ========================================================================== */
+.telemetry-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(10, 15, 29, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1050;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.telemetry-backdrop.hidden {
+    opacity: 0;
+    pointer-events: none;
+    display: none !important;
+}
+
+.telemetry-floating-panel {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    width: min(940px, calc(100vw - 48px));
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    z-index: 1100;
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    margin: 0;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+.telemetry-floating-panel.hidden {
+    display: none !important;
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+    pointer-events: none;
+}
+
+.modal-close-btn {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.modal-close-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--accent-rose);
+    color: var(--accent-rose);
+}
+
 .os-telemetry-card {
-    margin-top: 16px;
-    margin-bottom: 20px;
+    padding: 0;
 }
 
 .telemetry-grid {
@@ -2165,6 +2232,14 @@ tr.active-segment-row {
     }
     .telemetry-grid {
         grid-template-columns: 1fr;
+    }
+    .telemetry-floating-panel {
+        bottom: 0;
+        right: 0;
+        left: 0;
+        width: 100vw;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        max-height: 82vh;
     }
     .log-table-wrapper,
     .table-responsive {

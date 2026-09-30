@@ -1,7 +1,7 @@
 """
 Unit Test Suite for Hierarchical Model Failover, Preemptive Cooldown Reversion,
 and Rolling Context Memory Engine.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Bộ kiểm thử đạt chuẩn 100% không phụ thuộc kết nối mạng / tiêu tốn API Key thật.
 Sử dụng unittest.mock mô phỏng chính xác hành vi của SDK Google GenAI v2.19.0.

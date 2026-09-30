@@ -1,6 +1,6 @@
 """
 Quick Webcam Clip Recorder (Tạo video mẫu 5-10 giây để test dán nhãn).
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 """
 
 import sys

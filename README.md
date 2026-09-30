@@ -1,7 +1,6 @@
 # Cyber Surveillance Command Center: Hệ Thống Giám Sát Hành Vi Video Thời Gian Thực & Kiểm Soát Đa Luồng
 
-> **Học phần**: Hệ Điều Hành  
-> **Giảng viên hướng dẫn**: Thầy Nguyễn Tấn Duẩn  
+> **Học phần**: Hệ Điều Hành — Báo cáo Đồ án Thực nghiệm  
 > **Đề tài**: *Hệ thống giám sát hành vi video thời gian thực & Phân tích bằng AI kết hợp kiểm soát đa luồng*  
 > **Chạy 1-Click trên GPU Cloud**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/KhoaK50/os-multithreaded-video-analytics/blob/main/run_on_colab.ipynb)
 

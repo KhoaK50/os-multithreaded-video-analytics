@@ -1,6 +1,6 @@
 """
 Hệ Thống Giám Sát Thị Giác Đa Luồng - OS Video Surveillance HUD Renderer.
-Học phần: Hệ điều hành - GVHD: Thầy Nguyễn Tấn Duẩn.
+Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng Thời gian thực.
 Khung hiển thị viễn trắc HĐH thời gian thực chuẩn học thuật (1280x720 Widescreen).
 Hỗ trợ Unicode tiếng Việt đầy đủ bằng Pillow, loại bỏ lỗi font và hiện tượng đè che mặt.
 """
@@ -345,7 +345,7 @@ class CyberHUDRenderer:
         # --- SECTION 0: HEADER ---
         draw.text((pad_x, y), "HỆ THỐNG GIÁM SÁT THỊ GIÁC ĐA LUỒNG", font=self.font_title, fill=self.COLORS["neon_cyan"])
         y += 24
-        draw.text((pad_x, y), "ĐỒ ÁN HỆ ĐIỀU HÀNH - GVHD: NGUYỄN TẤN DUẨN", font=self.font_caption, fill=self.COLORS["text_muted"])
+        draw.text((pad_x, y), "HỆ ĐIỀU HÀNH - PIPELINE ĐIỀU PHỐI ĐA LUỒNG", font=self.font_caption, fill=self.COLORS["text_muted"])
         y += 18
 
         # Status Pill: Producer Thread Active
