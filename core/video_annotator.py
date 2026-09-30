@@ -651,10 +651,10 @@ class SpatialTrackStabilizer:
 
         max_h = max(avg_heights.values()) if avg_heights else frame_h * 0.5
         for c_id, h in avg_heights.items():
-            if (h <= 0.48 * max_h) or (h < frame_h * 0.26):
-                self.canonical_roles[c_id] = "Trẻ nhỏ / Em bé"
+            if h <= 0.40 * max_h:
+                self.canonical_roles[c_id] = "Chủ thể quan sát / Ở xa"
             else:
-                self.canonical_roles[c_id] = "Người lớn"
+                self.canonical_roles[c_id] = "Chủ thể chính"
 
     def apply_gemini_actors(self, detected_actors: List[Dict[str, Any]]):
         """Áp dụng Visual Grounding từ Gemini Vision vào các canonical IDs thực tế."""
@@ -664,7 +664,7 @@ class SpatialTrackStabilizer:
         for idx, c_id in enumerate(dominant_ids):
             if idx < len(detected_actors):
                 actor = detected_actors[idx]
-                role_name = actor.get("role") or self.canonical_roles.get(c_id, "Thành viên gia đình")
+                role_name = actor.get("role") or self.canonical_roles.get(c_id, f"Chủ thể #{c_id:02d}")
                 self.canonical_roles[c_id] = role_name
                 act = actor.get("true_action")
                 if act:
@@ -674,7 +674,7 @@ class SpatialTrackStabilizer:
                     self.canonical_postures[c_id] = posture
 
     def get_role(self, c_id: int) -> str:
-        return self.canonical_roles.get(c_id, "Người lớn")
+        return self.canonical_roles.get(c_id, f"Chủ thể #{c_id:02d}")
 
     def get_custom_action(self, c_id: int) -> Optional[str]:
         return self.canonical_custom_actions.get(c_id)
@@ -1155,28 +1155,58 @@ class VideoAnnotatorEngine:
                                 has_frame_danger = True
                                 frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
 
-                            # 2. Phân loại Tư thế Sinh cơ học Thực tế (Xóa bỏ hoàn toàn đoán mò ngồi/khoanh tay)
-                            if not person_danger:
-                                sh_w = math.hypot(l_sh[0] - r_sh[0], l_sh[1] - r_sh[1]) if l_sh[2] > 0.25 and r_sh[2] > 0.25 else 50.0
-                                bbox_h = max(1, y2 - y1)
-                                bbox_w = max(1, x2 - x1)
-                                aspect_ratio = bbox_h / bbox_w
-                                sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
-                                hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
-                                if l_sh[2] > 0.30 and r_sh[2] > 0.30:
-                                    sh_x = (l_sh[0] + r_sh[0]) / 2.0
-                                    sh_y = (l_sh[1] + r_sh[1]) / 2.0
-                                if l_hip[2] > 0.25 and r_hip[2] > 0.25:
-                                    hip_x = (l_hip[0] + r_hip[0]) / 2.0
-                                    hip_y = (l_hip[1] + r_hip[1]) / 2.0
+                            kinetic_spike = cand.get("kinetic_spike", 0.0)
+                            interaction_score = cand.get("interaction_score", 0.0)
 
+                            sh_w = math.hypot(l_sh[0] - r_sh[0], l_sh[1] - r_sh[1]) if l_sh[2] > 0.25 and r_sh[2] > 0.25 else 50.0
+                            bbox_h = max(1, y2 - y1)
+                            bbox_w = max(1, x2 - x1)
+                            aspect_ratio = bbox_h / bbox_w
+                            sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
+                            hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
+                            if l_sh[2] > 0.30 and r_sh[2] > 0.30:
+                                sh_x = (l_sh[0] + r_sh[0]) / 2.0
+                                sh_y = (l_sh[1] + r_sh[1]) / 2.0
+                            if l_hip[2] > 0.25 and r_hip[2] > 0.25:
+                                hip_x = (l_hip[0] + r_hip[0]) / 2.0
+                                hip_y = (l_hip[1] + r_hip[1]) / 2.0
+
+                            # 2. Xung đột Thể xác / Giằng co Áp sát (Physical Altercation / Clash)
+                            if not person_danger and (interaction_score >= 3.0 and kinetic_spike >= 1.2):
+                                person_danger = True
+                                person_action = "Xung đột thể xác / Giằng co va chạm"
+                                person_threat_score = 8.5
+                                has_frame_danger = True
+                                frame_alert = f"CẢNH BÁO: XUNG ĐỘT THỂ XÁC ({id_label})"
+
+                            # 3. Vung tay ra đòn / Tấn công đột biến (Striking / Rapid Sudden Strike)
+                            elif not person_danger and (kinetic_spike >= 2.5):
+                                person_danger = True
+                                person_action = "Vung tay ra đòn / Tấn công đột biến"
+                                person_threat_score = 8.0
+                                has_frame_danger = True
+                                frame_alert = f"CẢNH BÁO: VUNG TAY ĐỘT BIẾN ({id_label})"
+
+                            # 4. Thủ thế đối đầu / Căng thẳng (Boxing Guard / Confrontation Stance)
+                            elif not person_danger and (interaction_score >= 1.5 and
+                                  l_wrist[2] > 0.25 and r_wrist[2] > 0.25 and
+                                  l_wrist[1] < hip_y - 10 and r_wrist[1] < hip_y - 10 and
+                                  abs(l_wrist[0] - r_wrist[0]) < 1.0 * sh_w):
+                                person_danger = False
+                                person_action = "Thủ thế đối đầu / Căng thẳng"
+                                person_threat_score = 6.5
+
+                            # 5. Phân loại Tư thế Sinh cơ học Thực tế (Khách quan, không đoán mò)
+                            elif not person_danger:
                                 # A. Đưa 2 tay lên đầu / Căng thẳng
                                 if l_wrist[2] > 0.30 and r_wrist[2] > 0.30 and l_wrist[1] < nose[1] + 25 and r_wrist[1] < nose[1] + 25:
                                     person_action = "Đưa tay lên đầu / Căng thẳng"
+                                    person_threat_score = 3.0
 
                                 # B. Giơ tay phát biểu / Vẫy tay chào
                                 elif (l_wrist[2] > 0.30 and l_wrist[1] < l_sh[1] - 25) or (r_wrist[2] > 0.30 and r_wrist[1] < r_sh[1] - 25):
                                     person_action = "Giơ tay / Vẫy tay chào"
+                                    person_threat_score = 0.5
 
                                 # C. Chống cằm / Đỡ má suy nghĩ
                                 elif (l_wrist[2] > 0.30 and math.hypot(l_wrist[0] - nose[0], l_wrist[1] - nose[1]) < 0.60 * sh_w) or \
@@ -1191,12 +1221,13 @@ class VideoAnnotatorEngine:
                                       l_wrist[1] < hip_y - 15 and r_wrist[1] < hip_y - 15):
                                     person_action = "Khoanh tay trước ngực"
 
-                                # E. Bế em bé / Ôm giữ vật thể trước ngực (hai tay khum lại nâng đỡ trước ngực/bụng)
-                                elif (l_wrist[2] > 0.20 and r_wrist[2] > 0.20 and 
+                                # E. Tương tác trước ngực / Ôm giữ vật thể (Tuyệt đối KHÔNG gán nhầm khi có xung đột)
+                                elif (kinetic_spike < 0.6 and interaction_score < 1.0 and
+                                      l_wrist[2] > 0.20 and r_wrist[2] > 0.20 and 
                                       abs(l_wrist[0] - r_wrist[0]) < max(50.0, 0.85 * sh_w) and 
                                       l_wrist[1] > sh_y + 0.15 * sh_w and l_wrist[1] < hip_y + 40 and 
                                       r_wrist[1] > sh_y + 0.15 * sh_w and r_wrist[1] < hip_y + 40):
-                                    person_action = "Bế em bé / Tương tác trước ngực"
+                                    person_action = "Tương tác trước ngực / Ôm giữ vật thể"
 
                                 # F. Ngồi làm việc: Chỉ kết luận khi khớp gối gập rõ ràng và hông thấp sát đùi
                                 elif (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35 and l_hip[2] > 0.35 and

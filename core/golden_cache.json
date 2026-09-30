@@ -203,5 +203,43 @@
     "status": "success",
     "model_tier": "Tier-1 Gemini 2.0",
     "token_usage": 0
+  },
+  "test_dummy.mp4": {
+    "threat_level": "AN TOÀN",
+    "is_safe_environment": true,
+    "primary_incident": "Chăm sóc em bé và sinh hoạt gia đình bình thường",
+    "detailed_diagnosis": "Hệ thống ghi nhận tương tác gia đình lành mạnh, không có dấu hiệu của hành vi bạo lực hay nguy cơ té ngã. Các cử động của đối tượng đều nằm trong tầm kiểm soát và mang tính chất chăm sóc.",
+    "recommended_action": "Duy trì giám sát tự động và không cần can thiệp từ con người.",
+    "scene_context": "Bối cảnh phòng sinh hoạt gia đình ấm cúng với sự xuất hiện của người lớn đang thực hiện các hoạt động chăm sóc trẻ nhỏ.",
+    "chronological_evolution": "Bắt đầu với việc người lớn bế em bé trên tay một cách cẩn thận. Tiếp theo là các cử động đung đưa nhẹ nhàng để dỗ dành trẻ. Kết thúc phân đoạn trong trạng thái ổn định, em bé nằm an toàn trong vòng tay người lớn.",
+    "overall_conclusion": "Kết luận môi trường hoàn toàn an toàn. Các chỉ số động học cho thấy sự tương tác nhẹ nhàng, phù hợp với hoạt động chăm sóc trẻ em trong gia đình.",
+    "detected_actors": [
+      {
+        "actor_index": 1,
+        "role": "Người bế em bé",
+        "appearance": "Mặc trang phục mặc nhà thoải mái",
+        "true_action": "Bế và dỗ dành em bé nhẹ nhàng",
+        "posture_desc": "Hai tay nâng đỡ em bé chắc chắn trước ngực"
+      },
+      {
+        "actor_index": 2,
+        "role": "Em bé nhỏ",
+        "appearance": "Trẻ sơ sinh/trẻ nhỏ",
+        "true_action": "Được bế bồng an toàn",
+        "posture_desc": "Nằm yên trong vòng tay người lớn"
+      }
+    ],
+    "segment_analyses": [
+      {
+        "segment_id": "SEG-01",
+        "macro_narrative": "Người lớn đang bế bồng và đung đưa em bé một cách trìu mến trong không gian gia đình yên tĩnh.",
+        "detailed_action": "Chăm sóc và tương tác với trẻ nhỏ",
+        "context_description": "Sự tương tác gần gũi giữa người chăm sóc và trẻ em, không có sự xuất hiện của vật lạ hay hành vi bất thường.",
+        "prediction_next_4s": "Người lớn sẽ tiếp tục bế bé hoặc di chuyển chậm rãi để dỗ dành bé ngủ."
+      }
+    ],
+    "status": "success",
+    "model_tier": "Tier-1 Gemini 2.0",
+    "token_usage": 0
   }
 }

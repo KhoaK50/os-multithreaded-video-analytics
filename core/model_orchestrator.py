@@ -336,12 +336,11 @@ class HierarchicalModelOrchestrator:
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
-        """Gọi client.models.generate_content kèm cơ chế tự động chuyển sang model tương thích nếu gặp lỗi 404 Deprecated."""
+        """Gọi client.models.generate_content kèm cơ chế tự động chuyển sang model tương thích nếu gặp lỗi 404 Deprecated hoặc 503 Spike."""
         candidates = [model]
-        if "2.0" in model or "2.5" in model:
-            candidates.extend(["gemini-3-flash-preview", "gemini-3.5-flash-lite"])
-        elif "1.5" in model:
-            candidates.extend(["gemini-3.5-flash-lite", "gemini-3-flash-preview"])
+        for verified_m in ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash"]:
+            if verified_m not in candidates:
+                candidates.append(verified_m)
 
         last_err = None
         for m in candidates:
@@ -354,8 +353,8 @@ class HierarchicalModelOrchestrator:
             except Exception as e:
                 last_err = e
                 err_msg = str(e).upper()
-                if "404" in err_msg or "NOT_FOUND" in err_msg or "NO LONGER AVAILABLE" in err_msg:
-                    logger.warning(f"Mô hình '{m}' báo 404 Not Found / Deprecated. Tự động chuyển tiếp sang mô hình '{candidates[-1]}'...")
+                if "404" in err_msg or "NOT_FOUND" in err_msg or "NO LONGER AVAILABLE" in err_msg or "503" in err_msg or "UNAVAILABLE" in err_msg:
+                    logger.warning(f"Mô hình '{m}' gặp lỗi tạm thời ({err_msg[:60]}). Tự động thử mô hình tiếp theo...")
                     continue
                 raise e
         if last_err:
