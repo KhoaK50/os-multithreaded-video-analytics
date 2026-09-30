@@ -2882,3 +2882,482 @@ tr.active-segment-row {
         align-items: flex-start;
     }
 }
+
+/* ==========================================================================
+   FLOATING ACTION BUBBLE & REALTIME QUOTA DRAWER
+   ========================================================================== */
+.floating-bubble-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+}
+
+.floating-telemetry-bubble {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    color: var(--text-primary);
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    transition: all 0.2s ease;
+    backdrop-filter: blur(8px);
+}
+
+.floating-telemetry-bubble:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-primary);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.bubble-pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-emerald);
+    box-shadow: 0 0 8px var(--accent-emerald);
+    animation: bubblePulse 2s infinite;
+}
+
+@keyframes bubblePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+.bubble-icon {
+    font-size: 14px;
+}
+
+.bubble-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.bubble-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+
+.badge-tier1 {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10B981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-tier2 {
+    background: rgba(245, 158, 11, 0.15);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-tier3 {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60A5FA;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* Telemetry & Quota Drawer (Chat-like Flyout Window) */
+.telemetry-quota-drawer {
+    position: absolute;
+    bottom: 54px;
+    right: 0;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    max-height: 540px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: drawerSlideUp 0.22s ease-out;
+    z-index: 1001;
+}
+
+@keyframes drawerSlideUp {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--bg-surface-elevated);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.drawer-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.drawer-icon {
+    font-size: 15px;
+    color: var(--accent-primary);
+}
+
+.drawer-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.04em;
+}
+
+.drawer-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    font-size: 15px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.drawer-close-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-base);
+}
+
+.drawer-body {
+    padding: 14px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-height: 480px;
+}
+
+.drawer-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.drawer-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    letter-spacing: 0.05em;
+}
+
+.drawer-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.drawer-metric-card {
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.drawer-metric-card.full-span {
+    grid-column: 1 / -1;
+}
+
+.dm-label {
+    font-size: 10.5px;
+    color: var(--text-tertiary);
+}
+
+.dm-val {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Quota Matrix List & Cards */
+.quota-matrix-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.quota-matrix-card {
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: all 0.15s ease;
+}
+
+.quota-matrix-card.quota-card-active {
+    border-color: rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.04);
+}
+
+.qmc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.qmc-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.qmc-name {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.qmc-model {
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
+.qmc-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 6px;
+    font-size: 11px;
+}
+
+.qmc-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.qmc-label {
+    color: var(--text-tertiary);
+}
+
+.qmc-val {
+    color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   MULTI-TRACK ACTOR TIMELINE (GANTT RIBBONS)
+   ========================================================================== */
+.multi-track-wrapper {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    overflow-x: auto;
+}
+
+.tracks-stream-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 600px;
+}
+
+.actor-track-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.actor-track-header {
+    width: 80px;
+    flex-shrink: 0;
+}
+
+.actor-track-badge {
+    font-size: 11.5px;
+    font-weight: 700;
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    padding: 3px 8px;
+    border-radius: 4px;
+    color: var(--accent-primary);
+    display: inline-block;
+    text-align: center;
+    width: 100%;
+}
+
+.actor-track-ribbon {
+    position: relative;
+    height: 26px;
+    flex-grow: 1;
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.ribbon-block {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+    padding: 0 4px;
+    transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.ribbon-block:hover {
+    filter: brightness(1.2);
+    z-index: 5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.ribbon-safe {
+    background: rgba(16, 185, 129, 0.85);
+    border: 1px solid #10B981;
+}
+
+.ribbon-warn {
+    background: rgba(245, 158, 11, 0.85);
+    border: 1px solid #F59E0B;
+}
+
+.ribbon-danger {
+    background: rgba(239, 68, 68, 0.9);
+    border: 1px solid #EF4444;
+}
+
+.ribbon-text {
+    font-size: 10px;
+    font-weight: 700;
+    color: #FFFFFF;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.actor-track-axis-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.actor-track-axis {
+    position: relative;
+    height: 20px;
+    flex-grow: 1;
+}
+
+.ribbon-axis-tick {
+    position: absolute;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.ribbon-axis-line {
+    width: 1px;
+    height: 4px;
+    background: var(--border-color);
+}
+
+.ribbon-axis-label {
+    font-size: 9.5px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+/* ==========================================================================
+   SEGMENT TABLE: EXPLAINABLE TELEMETRY BREAKDOWN & CLEAN ROLE BADGES
+   ========================================================================== */
+.threat-header-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.threat-score-pill {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--text-primary);
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.threat-scale {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.telemetry-breakdown-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    font-size: 10.5px;
+}
+
+.tb-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tb-k {
+    color: var(--text-tertiary);
+}
+
+.tb-v {
+    color: var(--text-secondary);
+}
+
+.entity-role-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 10px;
+    display: inline-block;
+}
+
+.entity-role-badge.role-danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: #EF4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.entity-role-badge.role-warn {
+    background: rgba(245, 158, 11, 0.15);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.entity-role-badge.role-safe {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10B981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+

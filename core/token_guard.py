@@ -144,10 +144,10 @@ class TokenGuard:
             overall_concl = f"Kết luận an ninh: Ghi nhận tình huống đe dọa thể xác / biến động động năng nguy hiểm ({max_threat_score:.1f}/10.0). Yêu cầu lực lượng giám sát lưu tâm xử lý."
             
             base_roles = [
-                {"role": "Chủ thể chính (Tham gia xung đột)", "action": "Vung tay ra đòn / Tấn công áp sát", "posture": "Thủ thế và va chạm cường độ cao", "appearance": "Đối tượng tiêu điểm quan sát"},
-                {"role": "Chủ thể đối kháng / Tiếp xúc", "action": "Giằng co va chạm / Đỡ đòn", "posture": "Thủ thế đối đầu áp sát", "appearance": "Đối tượng tương tác trực tiếp"},
-                {"role": "Chủ thể quan sát #03", "action": "Đứng quan sát hiện trường", "posture": "Tư thế đứng thẳng quan sát", "appearance": "Đối tượng xung quanh"},
-                {"role": "Chủ thể quan sát #04", "action": "Đang di chuyển / Đứng gần", "posture": "Quan sát bối cảnh", "appearance": "Đối tượng xung quanh"}
+                {"role": "Kẻ tấn công / Gây hấn", "action": "Vung tay ra đòn / Tấn công áp sát", "posture": "Thủ thế và va chạm cường độ cao", "appearance": "Đối tượng tiêu điểm quan sát"},
+                {"role": "Nạn nhân / Phòng thủ", "action": "Giằng co va chạm / Đỡ đòn", "posture": "Thủ thế đối đầu né đòn", "appearance": "Đối tượng tương tác trực tiếp"},
+                {"role": "Người quan sát #03", "action": "Đứng quan sát hiện trường", "posture": "Tư thế đứng thẳng quan sát", "appearance": "Đối tượng xung quanh"},
+                {"role": "Người quan sát #04", "action": "Đang di chuyển / Đứng gần", "posture": "Quan sát bối cảnh", "appearance": "Đối tượng xung quanh"}
             ]
         elif max_threat_score >= 5.0:
             threat_level = "CẢNH BÁO"
@@ -159,10 +159,10 @@ class TokenGuard:
             scene_ctx = f"Khu vực ghi nhận {max_entities} đối tượng với tương tác căng thẳng ở cự ly gần."
             overall_concl = "Kết luận: Tình huống tiềm ẩn bất ổn hoặc tranh chấp, cần theo dõi sát sao."
             base_roles = [
-                {"role": "Chủ thể #01", "action": "Thủ thế / Căng thẳng", "posture": "Co tay trước ngực", "appearance": "Đối tượng trong tiêu điểm"},
-                {"role": "Chủ thể #02", "action": "Đối diện / Tương tác căng thẳng", "posture": "Tư thế đối kháng", "appearance": "Đối tượng đối diện"},
-                {"role": "Chủ thể quan sát #03", "action": "Đứng quan sát", "posture": "Tư thế đứng", "appearance": "Người xung quanh"},
-                {"role": "Chủ thể quan sát #04", "action": "Đang di chuyển", "posture": "Tư thế tự nhiên", "appearance": "Người xung quanh"}
+                {"role": "Đối tượng #01", "action": "Thủ thế / Căng thẳng", "posture": "Co tay trước ngực", "appearance": "Đối tượng trong tiêu điểm"},
+                {"role": "Đối tượng #02", "action": "Đối diện / Tương tác căng thẳng", "posture": "Tư thế đối kháng", "appearance": "Đối tượng đối diện"},
+                {"role": "Người quan sát #03", "action": "Đứng quan sát", "posture": "Tư thế đứng", "appearance": "Người xung quanh"},
+                {"role": "Người quan sát #04", "action": "Đang di chuyển", "posture": "Tư thế tự nhiên", "appearance": "Người xung quanh"}
             ]
         else:
             threat_level = "AN TOÀN"
@@ -174,10 +174,10 @@ class TokenGuard:
             scene_ctx = f"Khu vực ghi nhận {max_entities} đối tượng tham gia hoạt động ổn định, không gian an toàn."
             overall_concl = "Đánh giá an toàn tổng thể: Toàn bộ quá trình vận động của các đối tượng hoàn toàn an toàn và lành mạnh. Không phát hiện bất kỳ dấu hiệu nguy cơ nào."
             base_roles = [
-                {"role": "Chủ thể chính #01", "action": "Đang đứng và tương tác", "posture": "Thẳng lưng bình thường", "appearance": "Trang phục thường nhật"},
-                {"role": "Chủ thể #02", "action": "Đang di chuyển / Hoạt động trong phòng", "posture": "Tự nhiên", "appearance": "Trang phục thường nhật"},
-                {"role": "Chủ thể #03", "action": "Đứng quan sát không gian", "posture": "Tư thế đứng quan sát", "appearance": "Đối tượng trong khung cảnh"},
-                {"role": "Chủ thể #04", "action": "Sinh hoạt bình thường", "posture": "Tư thế ổn định", "appearance": "Đối tượng trong khung cảnh"}
+                {"role": "Đối tượng #01", "action": "Đang đứng và tương tác", "posture": "Thẳng lưng bình thường", "appearance": "Trang phục thường nhật"},
+                {"role": "Đối tượng #02", "action": "Đang di chuyển / Hoạt động trong phòng", "posture": "Tự nhiên", "appearance": "Trang phục thường nhật"},
+                {"role": "Người quan sát #03", "action": "Đứng quan sát không gian", "posture": "Tư thế đứng quan sát", "appearance": "Đối tượng trong khung cảnh"},
+                {"role": "Người quan sát #04", "action": "Sinh hoạt bình thường", "posture": "Tư thế ổn định", "appearance": "Đối tượng trong khung cảnh"}
             ]
 
         detected_actors = []

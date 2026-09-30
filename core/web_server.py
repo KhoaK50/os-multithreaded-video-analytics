@@ -347,12 +347,33 @@ class LiveCameraPipeline:
 
         while self.running:
             t_start = time.time()
+
+            # 1. Kiểm tra xem có client web nào đang xem trực tiếp luồng camera không
+            with self.clients_lock:
+                clients = self.active_clients
+            if clients <= 0:
+                time.sleep(1.0)
+                continue
+
             frame = None
             with self.frame_lock:
                 if self.latest_raw_frame is not None:
                     frame = self.latest_raw_frame.copy()
 
             if frame is not None and frame.size > 0:
+                # 2. Khử ảnh nhiễu/đen: Nếu webcam chưa mở cảm biến hoặc bị che tối (độ sáng < 18), bỏ qua
+                mean_brightness = float(np.mean(frame))
+                if mean_brightness < 18.0:
+                    time.sleep(1.0)
+                    continue
+
+                # 3. Chỉ kích hoạt Gemini Cloud AI khi Edge AI thực sự phát hiện có người trong khung hình
+                with self.ai_lock:
+                    has_person = len(self.latest_boxes) > 0 or len(self.latest_kpts) > 0
+                if not has_person:
+                    time.sleep(1.0)
+                    continue
+
                 try:
                     self.action_counter += 1
                     snap_name = f"snap_gemini_{self.action_counter:04d}_{int(t_start)}.jpg"
@@ -1208,8 +1229,45 @@ def get_telemetry():
     else:
         curr_ergo = 58.0
 
+    tier1_m = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
+    tier2_m = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-3.1-flash-lite")
+    quota_matrix = {
+        "tier_1": {
+            "name": "Tier 1: Cloud Vision Cao Cấp",
+            "model": tier1_m,
+            "status": "Đang hoạt động" if not tier_info.get("is_cooldown") else f"Hồi hạn mức ({round(tier_info.get('cooldown_remaining', 0), 1)}s)",
+            "limit": "1,500 RPD / 15 RPM",
+            "badge": "● Sẵn sàng",
+            "is_active": (tier_info.get("active_tier") == "tier_1")
+        },
+        "tier_2": {
+            "name": "Tier 2: Cloud Vision Kế Cận",
+            "model": tier2_m,
+            "status": "Đang hoạt động (Dự phòng)" if (tier_info.get("active_tier") == "tier_2") else "Sẵn sàng dự phòng",
+            "limit": "1,500 RPD / 15 RPM",
+            "badge": "● Dự phòng",
+            "is_active": (tier_info.get("active_tier") == "tier_2")
+        },
+        "tier_2_5": {
+            "name": "Tier 2.5: Cloud Lite Fallback",
+            "model": "gemini-flash-lite-latest",
+            "status": "Sẵn sàng dự phòng",
+            "limit": "1,500 RPD / 15 RPM",
+            "badge": "● Dự phòng phụ",
+            "is_active": False
+        },
+        "tier_3": {
+            "name": "Tier 3: Cỗ Máy Động Học Cục Bộ",
+            "model": "Local Kinematic Engine (RTX 5060)",
+            "status": "Vĩnh viễn sẵn sàng (Offline 0 Token)",
+            "limit": "Vô hạn (0 Token)",
+            "badge": "● Ngoại tuyến",
+            "is_active": (tier_info.get("active_tier") == "tier_3")
+        }
+    }
+
     return {
-        # Academic OS Telemetry (PROJECT.md)
+        # Thông số hệ thống & Tiến trình Đa luồng (Hệ điều hành)
         "producer_running": LIVE_CAMERA.running,
         "producer_fps": round(LIVE_CAMERA.current_fps, 1),
         "consumer_status": LIVE_CAMERA.gemini_status,
@@ -1227,6 +1285,8 @@ def get_telemetry():
         "tier_badge": tier_info.get("tier_badge", "● Tier-1 Gemini 2.0"),
         "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
         "is_cooldown": tier_info.get("is_cooldown", False),
+        "quota_matrix": quota_matrix,
+        "active_clients": LIVE_CAMERA.active_clients,
 
         # Tương thích ngược với UI và test suite hiện hành
         "camera_running": LIVE_CAMERA.running,

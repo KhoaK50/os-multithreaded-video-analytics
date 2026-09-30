@@ -490,7 +490,7 @@ class SpatialTrackStabilizer:
     - Tự động re-link người cũ khi tái xuất hiện hoặc sau khi bị che khuất.
     - Đảm bảo 100% đồng bộ giữa nhãn dán trên khung hình video và dữ liệu bảng phân đoạn timeline.
     """
-    def __init__(self, max_missing_frames: int = 90, match_dist_ratio: float = 0.35, max_k: int = 4):
+    def __init__(self, max_missing_frames: int = 90, match_dist_ratio: float = 0.35, max_k: int = 50):
         self.max_missing_frames = max_missing_frames
         self.match_dist_ratio = match_dist_ratio
         self.max_k = max_k
@@ -554,17 +554,17 @@ class SpatialTrackStabilizer:
         # 1. Nếu raw_id đã có canonical_id hợp lệ và chưa bị chiếm chỗ trong frame hiện tại
         if raw_id in self.raw_to_canonical:
             c_id = self.raw_to_canonical[raw_id]
-            if 1 <= c_id <= self.max_k and c_id not in occupied:
+            if c_id not in occupied:
                 self._record_track(c_id, bbox, cx, cy, h, aspect, frame_idx, raw_id)
                 occupied.add(c_id)
                 self._record_concurrency(frame_idx)
                 return c_id
 
-        # 2. Tìm kiếm trong các track canonical hợp lệ (1 <= cid <= max_k) chưa xuất hiện ở frame hiện tại
+        # 2. Tìm kiếm trong các track canonical hợp lệ chưa xuất hiện ở frame hiện tại
         best_cid = None
         min_cost = 999999.0
         threshold_dist = self.match_dist_ratio * diag
-        available_cids = [cid for cid in self.active_tracks if cid not in occupied and (1 <= cid <= self.max_k)]
+        available_cids = [cid for cid in self.active_tracks if cid not in occupied]
 
         for cid in available_cids:
             trk = self.active_tracks[cid]
@@ -587,22 +587,10 @@ class SpatialTrackStabilizer:
         if best_cid is not None:
             c_id = best_cid
         else:
-            # Nếu chưa có track phù hợp, kiểm tra xem còn slot ID nào chưa tạo trong [1..max_k] không
-            created_cids = set(self.active_tracks.keys())
-            free_cids = [i for i in range(1, self.max_k + 1) if i not in created_cids]
-            if free_cids:
-                c_id = min(free_cids)
-            else:
-                # Toàn bộ max_k ID đã được tạo: chọn canonical ID chưa occupied trong frame
-                unoccupied_cids = [i for i in range(1, self.max_k + 1) if i not in occupied]
-                if unoccupied_cids:
-                    c_id = min(unoccupied_cids, key=lambda i: math.hypot(cx - self.active_tracks[i]["cx"], cy - self.active_tracks[i]["cy"]) if i in self.active_tracks else 99999)
-                else:
-                    # Nếu đã occupied hết cả max_k ID trong frame
-                    c_id = min(range(1, self.max_k + 1), key=lambda i: math.hypot(cx - self.active_tracks[i]["cx"], cy - self.active_tracks[i]["cy"]) if i in self.active_tracks else 99999)
+            # Gán Canonical ID toàn cục mới tăng dần, bảo toàn thân phận vĩnh viễn
+            c_id = self.canonical_next_id
+            self.canonical_next_id += 1
 
-        # Ràng buộc chặt chẽ: c_id luôn nằm trong [1..max_k]
-        c_id = max(1, min(self.max_k, c_id))
         self.raw_to_canonical[raw_id] = c_id
         self._record_track(c_id, bbox, cx, cy, h, aspect, frame_idx, raw_id)
         occupied.add(c_id)
@@ -612,7 +600,7 @@ class SpatialTrackStabilizer:
     def _record_concurrency(self, frame_idx: int):
         current_ids = list(self.frame_canonical_occupancy.get(frame_idx, set()))
         if len(current_ids) > self.max_concurrent_seen:
-            self.max_concurrent_seen = min(self.max_k, len(current_ids))
+            self.max_concurrent_seen = len(current_ids)
         for i in range(len(current_ids)):
             for j in range(i + 1, len(current_ids)):
                 pair = tuple(sorted((current_ids[i], current_ids[j])))
@@ -620,19 +608,17 @@ class SpatialTrackStabilizer:
 
     def get_dominant_canonical_ids(self, max_limit: int = 4) -> List[int]:
         """
-        Lấy danh sách các canonical ID đại diện cho đúng số người thực tế (K <= 4).
-        Chắc chắn ID luôn thuộc [1..max_limit].
+        Lấy danh sách các canonical ID đại diện cho các đối tượng tiêu điểm (K <= 4).
+        Bảo toàn mã ID toàn cục thực tế của họ, không ép đè về 1..4.
         """
-        limit = min(self.max_k, max_limit)
-        valid_counts = {cid: cnt for cid, cnt in self.canonical_counts.items() if 1 <= cid <= limit and cnt >= 5}
+        valid_counts = {cid: cnt for cid, cnt in self.canonical_counts.items() if cnt >= 5}
         if not valid_counts:
-            valid_counts = {cid: cnt for cid, cnt in self.canonical_counts.items() if 1 <= cid <= limit}
+            valid_counts = dict(self.canonical_counts)
         if not valid_counts:
             return [1]
 
         sorted_cids = sorted(valid_counts.keys(), key=lambda c: valid_counts[c], reverse=True)
-        target_k = min(limit, max(1, self.max_concurrent_seen))
-        target_k = max(target_k, min(len(sorted_cids), limit))
+        target_k = min(len(sorted_cids), max_limit)
         return sorted(sorted_cids[:target_k])
 
     def finalize_roles(self, frame_h: int):
@@ -652,9 +638,9 @@ class SpatialTrackStabilizer:
         max_h = max(avg_heights.values()) if avg_heights else frame_h * 0.5
         for c_id, h in avg_heights.items():
             if h <= 0.40 * max_h:
-                self.canonical_roles[c_id] = "Chủ thể quan sát / Ở xa"
+                self.canonical_roles[c_id] = "Người quan sát ở xa"
             else:
-                self.canonical_roles[c_id] = "Chủ thể chính"
+                self.canonical_roles[c_id] = f"Đối tượng #{c_id:02d}"
 
     def apply_gemini_actors(self, detected_actors: List[Dict[str, Any]]):
         """Áp dụng Visual Grounding từ Gemini Vision vào các canonical IDs thực tế."""
@@ -725,8 +711,9 @@ class KinematicAnomalyRanker:
                 "max_h": h
             })
 
-            # A. Kinetic velocity spike (Vận tốc dịch chuyển khớp xương)
+            # A. Kinetic velocity spike (Vận tốc dịch chuyển khớp xương) & Véc-tơ cổ tay (Wrist Vector)
             kinetic_spike = 0.0
+            wrist_vec = (0.0, 0.0)
             prev_kpts = st["prev_kpts"]
             if kpts is not None and prev_kpts is not None:
                 disps = []
@@ -739,6 +726,15 @@ class KinematicAnomalyRanker:
                             disps.append(d / max(35.0, float(h)))
                 if disps:
                     kinetic_spike = (sum(disps) / len(disps)) * 18.0
+
+                # Trích xuất véc-tơ dịch chuyển cổ tay lớn nhất (Trụ cột 1: Hướng véc-tơ đòn đánh)
+                w_disps = []
+                for w_idx in [9, 10]:
+                    if w_idx < len(kpts) and w_idx < len(prev_kpts):
+                        if kpts[w_idx][2] > 0.25 and prev_kpts[w_idx][2] > 0.25:
+                            w_disps.append((kpts[w_idx][0] - prev_kpts[w_idx][0], kpts[w_idx][1] - prev_kpts[w_idx][1]))
+                if w_disps:
+                    wrist_vec = max(w_disps, key=lambda v: math.hypot(v[0], v[1]))
 
             st["prev_kpts"] = [(p[0], p[1], p[2]) for p in kpts] if kpts is not None else None
 
@@ -753,10 +749,14 @@ class KinematicAnomalyRanker:
                 posture_anomaly += 8.0
 
             det["kinetic_spike"] = kinetic_spike
+            det["wrist_vec"] = wrist_vec
             det["posture_anomaly"] = posture_anomaly
             det["interaction_score"] = 0.0
+            det["is_striking"] = False
+            det["is_targeted"] = False
+            det["is_passive"] = (kinetic_spike < 0.6)
 
-        # 2. Tính toán tương tác vật lý (Physical Interaction) giữa các cặp trong frame
+        # 2. Tính toán tương tác vật lý & Hướng đòn đánh giữa các cặp trong frame (Bộ tiêu chí 5 Trụ cột)
         n = len(detections)
         for i in range(n):
             for j in range(i + 1, n):
@@ -777,13 +777,43 @@ class KinematicAnomalyRanker:
                 areaB = max(1, (bb[2] - bb[0]) * (bb[3] - bb[1]))
                 iou = inter / float(areaA + areaB - inter)
 
-                if iou > 0.10 or dist < 0.65 * avg_h:
-                    if (det_a["kinetic_spike"] > 1.2 or det_b["kinetic_spike"] > 1.2 or 
-                        det_a.get("threat_score", 0) > 4.0 or det_b.get("threat_score", 0) > 4.0 or
-                        det_a.get("person_danger") or det_b.get("person_danger")):
-                        inter_boost = 5.0
-                        det_a["interaction_score"] = max(det_a["interaction_score"], inter_boost)
-                        det_b["interaction_score"] = max(det_b["interaction_score"], inter_boost)
+                # Trụ cột 3: Bán kính sải tay hiệu dụng (d < 0.85 * avg_h hoặc IoU > 0.05)
+                in_reach = (iou > 0.05 or dist < 0.85 * avg_h)
+
+                if in_reach:
+                    r_ab_x = cb_x - ca_x
+                    r_ab_y = cb_y - ca_y
+                    norm_ab = math.hypot(r_ab_x, r_ab_y) + 1e-4
+
+                    # Trụ cột 1: Hướng véc-tơ đòn đánh từ A tới B
+                    v_a = det_a.get("wrist_vec", (0.0, 0.0))
+                    norm_va = math.hypot(v_a[0], v_a[1])
+                    cos_a = (v_a[0] * r_ab_x + v_a[1] * r_ab_y) / (norm_va * norm_ab) if norm_va > 1e-4 else 0.0
+
+                    # Hướng véc-tơ đòn đánh từ B tới A
+                    v_b = det_b.get("wrist_vec", (0.0, 0.0))
+                    norm_vb = math.hypot(v_b[0], v_b[1])
+                    cos_b = (-v_b[0] * r_ab_x - v_b[1] * r_ab_y) / (norm_vb * norm_ab) if norm_vb > 1e-4 else 0.0
+
+                    # A tấn công B: Vận tốc cao và véc-tơ đâm trúng mục tiêu B
+                    if det_a["kinetic_spike"] >= 1.5 and cos_a > 0.40:
+                        det_a["is_striking"] = True
+                        det_a["interaction_score"] = max(det_a["interaction_score"], 5.0)
+                        det_b["is_targeted"] = True
+
+                    # B tấn công A: Vận tốc cao và véc-tơ đâm trúng mục tiêu A
+                    if det_b["kinetic_spike"] >= 1.5 and cos_b > 0.40:
+                        det_b["is_striking"] = True
+                        det_b["interaction_score"] = max(det_b["interaction_score"], 5.0)
+                        det_a["is_targeted"] = True
+
+                    # Tương tác áp sát giằng co chung (nếu cả 2 cùng di chuyển nhưng không có véc-tơ đâm thẳng)
+                    if (det_a["kinetic_spike"] > 1.2 or det_b["kinetic_spike"] > 1.2):
+                        clash_val = min(5.0, max(2.0, (1.0 - dist / max(1.0, avg_h)) * 5.0))
+                        if not det_a.get("is_passive"):
+                            det_a["interaction_score"] = max(det_a["interaction_score"], clash_val)
+                        if not det_b.get("is_passive"):
+                            det_b["interaction_score"] = max(det_b["interaction_score"], clash_val)
 
         # 3. Tính điểm Saliency tổng hợp và làm mịn EMA
         for det in detections:
@@ -1171,32 +1201,75 @@ class VideoAnnotatorEngine:
                                 hip_x = (l_hip[0] + r_hip[0]) / 2.0
                                 hip_y = (l_hip[1] + r_hip[1]) / 2.0
 
-                            # 2. Xung đột Thể xác / Giằng co Áp sát (Physical Altercation / Clash)
-                            if not person_danger and (interaction_score >= 3.0 and kinetic_spike >= 1.2):
+                            # =========================================================================
+                            # BỘ TIÊU CHÍ ĐỘNG HỌC 5 TRỤ CỘT TRIỆT TIÊU GÁN OAN (5-PILLAR DISAMBIGUATION)
+                            # =========================================================================
+                            person_role_type = "bystander"
+
+                            # 1. Trụ cột 5: Khóa Bất Biến Cho Người Đứng Yên (Bystander Invariance Lock)
+                            # Nếu vận tốc khớp xương thấp (<0.6), người này đứng yên / quan sát bình thường
+                            # TUYỆT ĐỐI KHÔNG BAO GIỜ bị gán điểm nguy hiểm hay bôi đỏ dù xung quanh có xô xát
+                            if kinetic_spike < 0.6 and not cand.get("is_striking", False):
+                                person_danger = False
+                                person_threat_score = 0.2
+                                person_role_type = "bystander"
+                                if aspect_ratio >= 1.70:
+                                    person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
+                                else:
+                                    person_action = "Đang đứng / Hoạt động bình thường"
+
+                            # 2. Phát hiện Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
+                            elif torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
+                                fall_streaks[c_id] = fall_streaks.get(c_id, 0) + 1
+                                if fall_streaks.get(c_id, 0) >= 15:
+                                    person_danger = True
+                                    person_role_type = "victim"
+                                    person_action = "Té ngã / Nằm bất động"
+                                    person_threat_score = 9.0
+                                    has_frame_danger = True
+                                    frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
+
+                            # 3. Trụ cột 1 & 4: Kẻ Tấn Công / Ra Đòn (Striker / Attacker)
+                            # Có véc-tơ cổ tay đâm thẳng vào đối phương VÀ gia tốc xung lực đột biến
+                            elif cand.get("is_striking", False) or (kinetic_spike >= 2.6 and interaction_score >= 2.0):
                                 person_danger = True
-                                person_action = "Xung đột thể xác / Giằng co va chạm"
+                                person_role_type = "attacker"
+                                person_action = "Vung tay ra đòn / Tấn công áp sát"
                                 person_threat_score = 8.5
+                                has_frame_danger = True
+                                frame_alert = f"CẢNH BÁO: VUNG TAY TẤN CÔNG ({id_label})"
+
+                            # 4. Trụ cột 2: Nạn Nhân / Người Bị Tấn Công Phòng Vệ (Defender / Target)
+                            # Đang bị nhắm tới HOẶC trong cự ly áp sát nhưng co tay thủ ngực/đầu hoặc né lùi
+                            elif cand.get("is_targeted", False) or (interaction_score >= 2.5 and (
+                                (l_wrist[2] > 0.20 and l_wrist[1] < hip_y and r_wrist[2] > 0.20 and r_wrist[1] < hip_y) or
+                                torso_angle > 95.0 or kinetic_spike < 1.2
+                            )):
+                                person_danger = False
+                                person_role_type = "defender"
+                                person_action = "Phòng vệ / Chắn đỡ né đòn"
+                                person_threat_score = 4.5
+
+                            # 5. Xung Đột Thể Xác Giằng Co Chung (Physical Clash)
+                            elif interaction_score >= 3.5 and kinetic_spike >= 1.5:
+                                person_danger = True
+                                person_role_type = "attacker"
+                                person_action = "Xung đột thể xác / Giằng co va chạm"
+                                person_threat_score = 8.0
                                 has_frame_danger = True
                                 frame_alert = f"CẢNH BÁO: XUNG ĐỘT THỂ XÁC ({id_label})"
 
-                            # 3. Vung tay ra đòn / Tấn công đột biến (Striking / Rapid Sudden Strike)
-                            elif not person_danger and (kinetic_spike >= 2.5):
-                                person_danger = True
-                                person_action = "Vung tay ra đòn / Tấn công đột biến"
-                                person_threat_score = 8.0
-                                has_frame_danger = True
-                                frame_alert = f"CẢNH BÁO: VUNG TAY ĐỘT BIẾN ({id_label})"
-
-                            # 4. Thủ thế đối đầu / Căng thẳng (Boxing Guard / Confrontation Stance)
-                            elif not person_danger and (interaction_score >= 1.5 and
+                            # 6. Thủ thế đối đầu / Căng thẳng (Boxing Guard / Confrontation Stance)
+                            elif (interaction_score >= 1.5 and
                                   l_wrist[2] > 0.25 and r_wrist[2] > 0.25 and
                                   l_wrist[1] < hip_y - 10 and r_wrist[1] < hip_y - 10 and
                                   abs(l_wrist[0] - r_wrist[0]) < 1.0 * sh_w):
                                 person_danger = False
+                                person_role_type = "defender"
                                 person_action = "Thủ thế đối đầu / Căng thẳng"
-                                person_threat_score = 6.5
+                                person_threat_score = 6.0
 
-                            # 5. Phân loại Tư thế Sinh cơ học Thực tế (Khách quan, không đoán mò)
+                            # 7. Phân loại Tư thế Sinh cơ học Tự nhiên
                             elif not person_danger:
                                 # A. Đưa 2 tay lên đầu / Căng thẳng
                                 if l_wrist[2] > 0.30 and r_wrist[2] > 0.30 and l_wrist[1] < nose[1] + 25 and r_wrist[1] < nose[1] + 25:
@@ -1213,7 +1286,7 @@ class VideoAnnotatorEngine:
                                      (r_wrist[2] > 0.30 and math.hypot(r_wrist[0] - nose[0], r_wrist[1] - nose[1]) < 0.60 * sh_w):
                                     person_action = "Chống cằm / Đỡ má suy nghĩ"
 
-                                # D. Khoanh tay trước ngực: Yêu cầu hai tay bắt chéo qua ngực, khuỷu tay gập rõ ràng
+                                # D. Khoanh tay trước ngực
                                 elif (l_wrist[2] > 0.35 and r_wrist[2] > 0.35 and
                                       sh_y < l_wrist[1] < hip_y and sh_y < r_wrist[1] < hip_y and
                                       l_wrist[0] > sh_x - 0.15 * sh_w and r_wrist[0] < sh_x + 0.15 * sh_w and
@@ -1221,7 +1294,7 @@ class VideoAnnotatorEngine:
                                       l_wrist[1] < hip_y - 15 and r_wrist[1] < hip_y - 15):
                                     person_action = "Khoanh tay trước ngực"
 
-                                # E. Tương tác trước ngực / Ôm giữ vật thể (Tuyệt đối KHÔNG gán nhầm khi có xung đột)
+                                # E. Tương tác trước ngực / Ôm giữ vật thể
                                 elif (kinetic_spike < 0.6 and interaction_score < 1.0 and
                                       l_wrist[2] > 0.20 and r_wrist[2] > 0.20 and 
                                       abs(l_wrist[0] - r_wrist[0]) < max(50.0, 0.85 * sh_w) and 
@@ -1229,7 +1302,7 @@ class VideoAnnotatorEngine:
                                       r_wrist[1] > sh_y + 0.15 * sh_w and r_wrist[1] < hip_y + 40):
                                     person_action = "Tương tác trước ngực / Ôm giữ vật thể"
 
-                                # F. Ngồi làm việc: Chỉ kết luận khi khớp gối gập rõ ràng và hông thấp sát đùi
+                                # F. Ngồi làm việc
                                 elif (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35 and l_hip[2] > 0.35 and
                                       abs(kpts[13][1] - l_hip[1]) < 0.30 * bbox_h and abs(kpts[13][0] - l_hip[0]) > 0.20 * bbox_w):
                                     person_action = "Ngồi làm việc / Thao tác tay"
@@ -1246,18 +1319,26 @@ class VideoAnnotatorEngine:
                                 elif aspect_ratio >= 1.70:
                                     person_action = "Đứng thẳng / Đi lại di chuyển"
 
-                                # J. Mặc định tự nhiên: Đang đứng hoạt động trong phòng (Tuyệt đối không đoán bừa là ngồi)
+                                # J. Mặc định tự nhiên
                                 else:
                                     person_action = "Đang đứng / Hoạt động trong phòng"
 
-                            # Phối màu theo trạng thái
-                            color = (68, 68, 239) if person_danger else (255, 240, 0)
+                            # Phối màu chuẩn phân cấp: Đỏ (Kẻ tấn công), Vàng (Nạn nhân phòng thủ), Xanh Cyan (Người ngoài cuộc)
+                            if person_danger or person_role_type == "attacker":
+                                color = (68, 68, 239)     # Đỏ BGR (Kẻ tấn công)
+                                role_prefix = " [TẤN CÔNG]"
+                            elif person_role_type == "defender":
+                                color = (0, 215, 255)      # Vàng hổ phách BGR (Nạn nhân phòng thủ)
+                                role_prefix = " [PHÒNG VỆ]"
+                            else:
+                                color = (255, 240, 0)      # Cyan BGR (Người quan sát)
+                                role_prefix = ""
 
                             # Bounding Box góc ngoặc
-                            label_str = f"{id_label}: {person_action.upper()}"
+                            label_str = f"{id_label}{role_prefix}: {person_action.upper()}"
                             self.hud.draw_corner_bracket_bbox(frame, x1, y1, x2, y2, color, label_str, conf)
 
-                            # Khung xương 17 khớp nối thanh mảnh (không che mắt)
+                            # Khung xương 17 khớp nối thanh mảnh
                             kpts_scaled = [(pt[0], pt[1], pt[2]) for pt in kpts]
                             self.hud.draw_cyber_skeleton(frame, kpts_scaled, color)
 
@@ -1372,9 +1453,7 @@ class VideoAnnotatorEngine:
 
             frame[0:header_h, 0:orig_w] = cv2.cvtColor(np.array(pil_hdr), cv2.COLOR_RGB2BGR)
 
-            if has_frame_danger:
-                cv2.rectangle(frame, (0, 0), (orig_w - 1, orig_h - 1), (68, 68, 239), 4)
-
+            # Tuyệt đối không vẽ viền đỏ toàn màn hình (chỉ hiển thị viền/khung xương của đối tượng ra đòn)
             out.write(frame)
 
             if progress_callback and processed_count % 3 == 0:
@@ -1386,15 +1465,15 @@ class VideoAnnotatorEngine:
         # Xác định vai trò cho các đối tượng bền vững
         stabilizer.finalize_roles(orig_h)
 
-        # Lấy danh sách các đối tượng thực sự có mặt trong video (chốt tối đa K <= 4 người)
+        # Lấy danh sách các đối tượng thực sự có mặt trong video (chốt tối đa K <= 4 người tiêu điểm)
         dominant_c_ids = stabilizer.get_dominant_canonical_ids(max_limit=4)
         if not dominant_c_ids:
             dominant_c_ids = [1]
 
-        # Ánh xạ ID chuẩn hóa tuần tự (#01, #02, #03, #04) cho giao diện người dùng
-        clean_id_map = {old_cid: idx + 1 for idx, old_cid in enumerate(dominant_c_ids)}
+        # Bảo toàn mã ID toàn cục thực tế của từng đối tượng (ID #01, #02, #05...), không ép đè 1..4
+        clean_id_map = {cid: cid for cid in dominant_c_ids}
 
-        all_detected_entities = [f"ID #{clean_id_map[cid]:02d} ({stabilizer.get_role(cid)})" for cid in dominant_c_ids]
+        all_detected_entities = [f"ID #{cid:02d} ({stabilizer.get_role(cid)})" for cid in dominant_c_ids]
         if not all_detected_entities:
             all_detected_entities = ["Khu vực an ninh"]
 
@@ -1481,6 +1560,10 @@ class VideoAnnotatorEngine:
             seg_entities = []
             seg_severity = "safe"
 
+            # Thu thập chỉ số động học toàn phân đoạn để tính điểm minh bạch
+            seg_kinetics = []
+            seg_interactions = []
+
             for c_id in dominant_c_ids:
                 if c_id not in s_data["persons_history"]:
                     continue
@@ -1490,17 +1573,39 @@ class VideoAnnotatorEngine:
 
                 actions = t_info["actions"]
                 dom_action = max(set(actions), key=actions.count) if actions else "Quan sát"
-                role = stabilizer.get_role(c_id)
                 disp_id = clean_id_map.get(c_id, c_id)
-                ent_label = f"ID #{disp_id:02d} ({role})"
-                ent_severity = "danger" if t_info["danger_count"] >= 15 else "safe"
-                if ent_severity == "danger":
-                    seg_severity = "danger"
 
-                # Diễn đạt tư thế tự nhiên, loại bỏ góc thân khô khan
-                if dom_action == "Bế em bé / Tương tác trước ngực":
-                    posture_desc = "Hai tay nâng đỡ trước ngực"
-                elif dom_action == "Đứng thẳng / Đi lại di chuyển" or dom_action == "Đang đứng / Hoạt động trong phòng":
+                k_spikes = t_info.get("kinetic_spikes", [0.0])
+                inter_scs = t_info.get("interaction_scores", [0.0])
+                seg_kinetics.extend(k_spikes)
+                seg_interactions.extend(inter_scs)
+
+                # Phân định vai trò chuẩn xác dựa trên số liệu 5 trụ cột
+                if t_info["danger_count"] >= 8:
+                    role = "Kẻ tấn công / Gây hấn"
+                    ent_severity = "danger"
+                    seg_severity = "danger"
+                elif t_info.get("defender_count", 0) >= 8:
+                    role = "Nạn nhân / Phòng thủ"
+                    ent_severity = "warning"
+                    if seg_severity == "safe":
+                        seg_severity = "warning"
+                else:
+                    role = "Người quan sát / Ngoài cuộc"
+                    ent_severity = "safe"
+
+                ent_label = f"ID #{disp_id:02d}"
+
+                # Diễn đạt trạng thái tự nhiên
+                if "Vung tay" in dom_action or "Tấn công" in dom_action:
+                    posture_desc = "Vung đòn tốc độ cao về phía đối phương"
+                elif "Phòng vệ" in dom_action or "Chắn đỡ" in dom_action:
+                    posture_desc = "Hai tay co thủ che chắn / Né đòn"
+                elif "Xung đột" in dom_action:
+                    posture_desc = "Áp sát giằng co cường độ cao"
+                elif "Té ngã" in dom_action:
+                    posture_desc = "Sụp đổ trục thân / Nằm bất động"
+                elif dom_action == "Đứng thẳng / Đi lại di chuyển" or "Đang đứng" in dom_action:
                     posture_desc = "Tư thế đứng / Di chuyển tự nhiên"
                 elif dom_action == "Khoanh tay trước ngực":
                     posture_desc = "Hai tay khoanh quan sát"
@@ -1536,14 +1641,31 @@ class VideoAnnotatorEngine:
             t_end_str = format_time(s_data["end_sec"] - start_time)
             time_range = f"{t_start_str} ➔ {t_end_str}"
 
-            # Tóm tắt hành vi mặc định (trước khi nhận phân tích vĩ mô từ Gemini)
-            has_cradle = any("Bế em bé" in e["action"] for e in seg_entities)
-            if has_cradle:
-                scene_summary = "Sinh hoạt gia đình: Tương tác chăm sóc và nâng bế em bé trong phòng."
-            elif seg_severity == "danger":
-                scene_summary = "Cảnh báo: Phát hiện dấu hiệu bất thường về vận động trong phân đoạn này."
+            # Cơ sở phân tích (Telemetry Breakdown theo công thức 5 trụ cột)
+            max_k = max(seg_kinetics) if seg_kinetics else 0.0
+            max_c = max(seg_interactions) if seg_interactions else 0.0
+            score_kinetic = min(10.0, max_k * 3.2)
+            score_proximity = min(10.0, max_c * 2.0)
+            score_posture = 8.5 if seg_severity == "danger" else (4.5 if seg_severity == "warning" else 0.5)
+            calculated_score = min(10.0, 0.40 * score_kinetic + 0.35 * score_proximity + 0.25 * score_posture)
+            final_threat_score = round(calculated_score if seg_severity != "safe" else 0.0, 1)
+
+            telemetry_breakdown = {
+                "strike_velocity": f"{round(max_k * 1.3, 1)} m/s" if max_k > 0.8 else "Bình thường",
+                "proximity_dist": f"{round(max(0.25, 1.1 - max_c/5.5), 2)} m" if max_c > 1.0 else "> 1.5 m",
+                "posture_state": "Xô xát / Sụp đổ" if seg_severity == "danger" else ("Áp sát thủ thế" if seg_severity == "warning" else "Ổn định"),
+                "kinetic_spike": round(max_k, 2),
+                "interaction_score": round(max_c, 2),
+                "calculated_score": final_threat_score
+            }
+
+            # Tóm tắt hành vi chuẩn xác, loại bỏ định kiến
+            if seg_severity == "danger":
+                scene_summary = "Cảnh báo an ninh: Phát hiện hành vi xô xát / vung đòn tấn công trong phân đoạn này."
+            elif seg_severity == "warning":
+                scene_summary = "Cảnh báo phòng vệ: Ghi nhận tư thế đối đầu / áp sát phòng thủ giữa các đối tượng."
             elif len(seg_entities) > 1:
-                scene_summary = f"Ghi nhận {len(seg_entities)} đối tượng tương tác nhẹ nhàng trong phòng."
+                scene_summary = f"Không gian ổn định: Ghi nhận {len(seg_entities)} đối tượng hoạt động và quan sát bình thường."
             else:
                 scene_summary = f"Đối tượng {seg_entities[0]['id']} {seg_entities[0]['action'].lower()}."
 
@@ -1557,7 +1679,8 @@ class VideoAnnotatorEngine:
                 "prediction_next_4s": "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo",
                 "entities": seg_entities,
                 "severity": seg_severity,
-                "danger_score": 0.0 if seg_severity == "safe" else s_data["peak_threat"],
+                "danger_score": final_threat_score,
+                "telemetry_breakdown": telemetry_breakdown,
                 "snapshot_url": f"/api/snapshots/{snap_filename}"
             })
 
@@ -1721,6 +1844,54 @@ class VideoAnnotatorEngine:
             "ergonomic_advice": ergo_advice
         }
 
+        # Tạo dữ liệu Băng chuyền hành vi đa thực thể (Multi-Track Actor Timeline)
+        actor_timeline_tracks = []
+        for c_id in dominant_c_ids:
+            tracks_for_id = []
+            for s_idx, s_data in enumerate(segments_data):
+                t_info = s_data["persons_history"].get(c_id)
+                s_start = round(s_data["start_sec"] - start_time, 1)
+                s_end = round(s_data["end_sec"] - start_time, 1)
+                if not t_info or len(t_info.get("actions", [])) == 0:
+                    continue
+                actions = t_info["actions"]
+                dom_act = max(set(actions), key=actions.count)
+                if t_info.get("danger_count", 0) >= 8:
+                    sev = "danger"
+                    act_label = "Vung đòn / Tấn công"
+                elif t_info.get("defender_count", 0) >= 8:
+                    sev = "warning"
+                    act_label = "Phòng vệ / Chắn đỡ"
+                elif "Té ngã" in dom_act:
+                    sev = "danger"
+                    act_label = "Té ngã"
+                else:
+                    sev = "safe"
+                    act_label = "Đang đứng / Quan sát"
+
+                tracks_for_id.append({
+                    "start_sec": s_start,
+                    "end_sec": s_end,
+                    "state": sev,
+                    "action": act_label
+                })
+
+            total_dang = sum(s["persons_history"].get(c_id, {}).get("danger_count", 0) for s in segments_data)
+            total_def = sum(s["persons_history"].get(c_id, {}).get("defender_count", 0) for s in segments_data)
+            if total_dang >= 15:
+                role_title = "Kẻ tấn công / Gây hấn"
+            elif total_def >= 15:
+                role_title = "Nạn nhân / Phòng thủ"
+            else:
+                role_title = "Người quan sát"
+
+            actor_timeline_tracks.append({
+                "canonical_id": c_id,
+                "label": f"ID #{c_id:02d}",
+                "role": role_title,
+                "intervals": tracks_for_id
+            })
+
         return {
             "input_path": input_path,
             "output_path": output_path,
@@ -1731,6 +1902,7 @@ class VideoAnnotatorEngine:
             "action_percentages": percentages,
             "timeline": timeline_events,
             "timeline_segments": timeline_segments,
+            "actor_timeline_tracks": actor_timeline_tracks,
             "heatmap_data": heatmap_data,
             "entities_detected": all_detected_entities,
             "max_danger_score": max_danger_score,

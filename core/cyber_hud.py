@@ -359,11 +359,7 @@ class CyberHUDRenderer:
                 padding=0
             )
 
-        # 5. Viền cảnh báo động toàn màn hình nếu nguy cơ cao
-        if "NGUY" in danger_level:
-            cv2.rectangle(frame_vp, (0, 0), (w - 1, h - 1), (0, 0, 239), 4)
-        elif "CANH" in danger_level:
-            cv2.rectangle(frame_vp, (0, 0), (w - 1, h - 1), (11, 158, 245), 3)
+        # Tuyệt đối không vẽ viền đỏ nhấp nháy toàn màn hình (chỉ hiển thị màu sắc trên khung xương cá nhân)
 
     def render_sidebar_pil(self, diagnosis, entities, metrics, danger_score, danger_level, biomechanics=None):
         """Render toàn bộ cột bên phải (380x720) với font tiếng Việt Unicode mượt mà bằng Pillow."""

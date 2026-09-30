@@ -241,5 +241,36 @@
     "status": "success",
     "model_tier": "Tier-1 Gemini 2.0",
     "token_usage": 0
+  },
+  "web_7592552534489713928.mp4": {
+    "threat_level": "NGUY HIỂM",
+    "is_safe_environment": false,
+    "primary_incident": "Bạo lực học đường / Xung đột thể xác",
+    "detailed_diagnosis": "Các đối tượng đang thực hiện hành vi xô xát, tấn công trực tiếp trong không gian lớp học. Mức độ nguy hiểm cao do có sự va chạm vật lý và hành vi gây hấn rõ rệt.",
+    "recommended_action": "Can thiệp giải tán xung đột ngay lập tức và báo cáo cho bộ phận quản lý an ninh trường học.",
+    "scene_context": "Bối cảnh là một lớp học nơi các học sinh đang có hành vi xô xát, gây rối trật tự. Sự tương tác giữa các đối tượng mang tính đối đầu và bạo lực.",
+    "chronological_evolution": "Khởi đầu bằng việc các đối tượng tiếp cận và gây hấn trong lớp học. Diễn biến chính là các hành vi xô đẩy, tấn công vật lý giữa các học sinh. Kết thúc với trạng thái căng thẳng cao độ và các đối tượng vẫn đang trong tình trạng xung đột.",
+    "overall_conclusion": "Môi trường không an toàn do xảy ra bạo lực học đường. Cần sự can thiệp kịp thời để ngăn chặn các tổn thương thể chất cho các đối tượng liên quan.",
+    "detected_actors": [
+      {
+        "actor_index": 1,
+        "role": "Học sinh áo trắng/đen",
+        "appearance": "Mặc đồng phục học sinh, áo trắng hoặc áo khoác thể thao",
+        "true_action": "Đang thực hiện hành vi xô đẩy, tấn công hoặc thủ thế đối đầu",
+        "posture_desc": "Tư thế căng thẳng, tay chân vung vẩy, cơ thể nghiêng về phía đối phương"
+      }
+    ],
+    "segment_analyses": [
+      {
+        "segment_id": "SEG-01",
+        "macro_narrative": "Các học sinh bắt đầu có những cử chỉ gây hấn và tiếp cận nhau trong lớp học.",
+        "detailed_action": "Xô đẩy và tranh chấp",
+        "context_description": "Không gian lớp học với sự hiện diện của 4 học sinh đang trong trạng thái đối đầu.",
+        "prediction_next_4s": "Xung đột thể xác có khả năng leo thang mạnh hơn."
+      }
+    ],
+    "status": "success",
+    "model_tier": "Tier-2 Gemini 1.5",
+    "token_usage": 0
   }
 }

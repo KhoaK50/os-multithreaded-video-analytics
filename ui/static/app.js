@@ -83,7 +83,6 @@ function initTelemetry() {
 }
 
 async function fetchTelemetry() {
-    if (currentTab !== "live") return;
     try {
         const res = await fetch("/api/telemetry");
         if (!res.ok) return;
@@ -93,6 +92,14 @@ async function fetchTelemetry() {
             isServerOnline = true;
             console.info("[+] Đã kết nối lại máy chủ FastAPI thành công.");
         }
+
+        // Cập nhật Floating Action Bubble & Realtime Quota Matrix Drawer (hoạt động trên cả 2 Tab)
+        if (data.quota_matrix) {
+            updateQuotaDrawerUI(data.quota_matrix, data);
+        }
+
+        // Nếu không ở Tab Trực Tiếp, bỏ qua cập nhật các thành phần dành riêng cho Camera
+        if (currentTab !== "live") return;
 
         // Cập nhật OS Metrics an toàn tuyệt đối
         safeSetText("live-fps", `${data.fps || 0} FPS`);
@@ -1345,13 +1352,23 @@ function setupDualPlayerSync() {
     };
 }
 
-function seekBothPlayers(seconds) {
+function seekBothPlayers(seconds, autoPlay = false) {
     const origVid = document.getElementById("result-orig-video");
     const annotVid = document.getElementById("result-annotated-video");
+    const wasPlaying = (annotVid && !annotVid.paused) || (origVid && !origVid.paused);
+    
     if (origVid) origVid.currentTime = seconds;
     if (annotVid) {
         annotVid.currentTime = seconds;
-        annotVid.play().catch(() => {});
+        if (autoPlay || wasPlaying) {
+            annotVid.play().catch(() => {});
+        }
+    }
+    
+    // Cuộn màn hình mượt mà đến trình phát video để người dùng quan sát trực tiếp
+    const playerSec = document.getElementById("result-annotated-video") || document.getElementById("result-orig-video");
+    if (playerSec) {
+        playerSec.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     updateChartPlayhead(seconds, currentResultDuration);
 }
@@ -1482,10 +1499,19 @@ function renderTimelineSegments() {
         }
         entitiesHtml += `<div class="seg-entities-list">`;
         (seg.entities || []).forEach(ent => {
+            const rawId = String(ent.id || "");
+            const cleanId = rawId.replace(/\(Chủ thể chính\)/g, "").trim();
             const entBadgeClass = ent.severity === "danger" ? "tag-danger" : (ent.severity === "warning" ? "tag-warning" : "tag-safe");
+            let roleBadge = "";
+            if (ent.role) {
+                const rLow = ent.role.toLowerCase();
+                const rClass = (rLow.includes("tấn công") || rLow.includes("gây hấn")) ? "role-danger" : ((rLow.includes("nạn nhân") || rLow.includes("phòng thủ")) ? "role-warn" : "role-safe");
+                roleBadge = `<span class="entity-role-badge ${rClass}">${escapeHtml(ent.role)}</span>`;
+            }
             entitiesHtml += `
                 <div class="entity-item-row">
-                    <span class="entity-tag ${entBadgeClass}">👤 ${escapeHtml(ent.id)}</span>
+                    <span class="entity-tag ${entBadgeClass}">👤 ${escapeHtml(cleanId)}</span>
+                    ${roleBadge}
                     <strong class="entity-action-text">${escapeHtml(ent.action)}</strong>
                     <span class="entity-posture-text">(${escapeHtml(ent.posture)})</span>
                 </div>
@@ -1493,6 +1519,18 @@ function renderTimelineSegments() {
         });
         entitiesHtml += `</div>`;
 
+        // Cơ sở đánh giá động học (Telemetry Breakdown)
+        const tb = seg.telemetry_breakdown;
+        let breakdownHtml = "";
+        if (tb) {
+            breakdownHtml = `
+                <div class="telemetry-breakdown-box">
+                    <div class="tb-item" title="Vận tốc cử động tay/chân lớn nhất trong đoạn"><span class="tb-k">Vận tốc:</span> <strong class="tb-v mono">${tb.max_velocity || 0} px/s</strong></div>
+                    ${(tb.min_distance !== null && tb.min_distance !== undefined) ? `<div class="tb-item" title="Khoảng cách tiếp cận gần nhất"><span class="tb-k">Tiếp cận:</span> <strong class="tb-v mono">${tb.min_distance} px</strong></div>` : ''}
+                    <div class="tb-item" title="Tư thế phân đoạn"><span class="tb-k">Tư thế:</span> <span class="tb-v">${escapeHtml(tb.dominant_posture || 'Bình thường')}</span></div>
+                </div>
+            `;
+        }
 
         const summaryEscaped = escapeHtml(seg.scene_summary || "");
         const descEscaped = escapeHtml(seg.context_description || seg.scene_summary || "Phân đoạn ghi nhận đối tượng hoạt động");
@@ -1513,8 +1551,11 @@ function renderTimelineSegments() {
                     ${entitiesHtml}
                 </td>
                 <td>
-                    <span class="${badgeClass}">${badgeText}</span>
-                    <div class="threat-sub mono">Điểm: ${seg.danger_score || 0}</div>
+                    <div class="threat-header-row">
+                        <span class="${badgeClass}">${badgeText}</span>
+                        <div class="threat-score-pill mono">${seg.danger_score || 0} <span class="threat-scale">/ 10</span></div>
+                    </div>
+                    ${breakdownHtml}
                 </td>
                 <td style="text-align: center;">
                     ${snapThumb}
@@ -1750,62 +1791,68 @@ function renderBehaviorAnalytics(analytics, duration) {
         { pct: dangP, color: "#EF4444" }
     ], rb.dominant_risk === "danger" ? "NGUY HIỂM" : (rb.dominant_risk === "warning" ? "CẢNH BÁO" : "AN TOÀN"));
 
-    // 2. Donut 2: Phân Bổ Cột Sống
-    const pd = analytics.posture_distribution || {};
-    const upP = pd.upright_pct !== undefined ? pd.upright_pct : 75;
-    const bentP = pd.bent_pct !== undefined ? pd.bent_pct : 20;
-    const slP = pd.slouched_pct !== undefined ? pd.slouched_pct : 5;
+    // 2. Donut 2: Phân Bổ Cột Sống (nếu có trong DOM)
+    if (document.getElementById("svg-donut-posture")) {
+        const pd = analytics.posture_distribution || {};
+        const upP = pd.upright_pct !== undefined ? pd.upright_pct : 75;
+        const bentP = pd.bent_pct !== undefined ? pd.bent_pct : 20;
+        const slP = pd.slouched_pct !== undefined ? pd.slouched_pct : 5;
 
-    safeSetText("legend-upright-val", `${upP}%`);
-    safeSetText("legend-bent-val", `${bentP}%`);
-    safeSetText("legend-slouched-val", `${slP}%`);
+        safeSetText("legend-upright-val", `${upP}%`);
+        safeSetText("legend-bent-val", `${bentP}%`);
+        safeSetText("legend-slouched-val", `${slP}%`);
 
-    drawSvgDonut("svg-donut-posture", [
-        { pct: upP, color: "#06B6D4" },
-        { pct: bentP, color: "#3B82F6" },
-        { pct: slP, color: "#8B5CF6" }
-    ], "GÓC CỘT SỐNG");
+        drawSvgDonut("svg-donut-posture", [
+            { pct: upP, color: "#06B6D4" },
+            { pct: bentP, color: "#3B82F6" },
+            { pct: slP, color: "#8B5CF6" }
+        ], "GÓC CỘT SỐNG");
+    }
 
     // 3. Area Chart: Đường Cong Cường Độ Rủi Ro
     const riskCurve = analytics.risk_curve || currentHeatmapData || [];
     drawSvgRiskCurve("svg-risk-curve", riskCurve, duration);
 
-    // 4. Ergonomic Scorecard
-    const score = Math.round(analytics.ergonomic_score !== undefined ? analytics.ergonomic_score : 90);
-    safeSetText("ergo-score-num", score);
+    // 4. Multi-Track Actor Timeline (Băng Chuyền Hành Vi Đa Thực Thể)
+    const actorTracks = analytics.actor_timeline_tracks || (currentVideoData ? currentVideoData.actor_timeline_tracks : null);
+    drawMultiTrackActorTimeline(actorTracks, duration);
 
+    // 5. Ergonomic Scorecard (nếu có trong DOM)
     const scoreCircle = document.getElementById("ergo-score-circle");
-    const scoreOuter = scoreCircle ? scoreCircle.parentElement : null;
-    if (scoreOuter) {
-        const deg = Math.round((score / 100) * 360);
-        const col = score >= 80 ? "#10B981" : (score >= 60 ? "#F59E0B" : "#EF4444");
-        scoreOuter.style.background = `conic-gradient(${col} 0deg ${deg}deg, var(--border-subtle) ${deg}deg 360deg)`;
-        scoreOuter.style.boxShadow = `0 0 16px ${col}33`;
-        const numEl = document.getElementById("ergo-score-num");
-        if (numEl) numEl.style.color = col;
-    }
-
-    const sitSec = analytics.continuous_sitting_sec || 0;
-    const sitM = Math.floor(sitSec / 60);
-    const sitS = Math.floor(sitSec % 60);
-    safeSetText("ergo-sitting-time", `${String(sitM).padStart(2, '0')}:${String(sitS).padStart(2, '0')}`);
-
-    const healthBadge = document.getElementById("ergo-health-badge");
-    if (healthBadge) {
-        if (score >= 82) {
-            healthBadge.className = "badge badge-safe";
-            healthBadge.textContent = "● Tối ưu";
-        } else if (score >= 65) {
-            healthBadge.className = "badge badge-neutral";
-            healthBadge.style.color = "var(--accent-amber)";
-            healthBadge.textContent = "● Cần điều chỉnh";
-        } else {
-            healthBadge.className = "badge badge-danger";
-            healthBadge.textContent = "● Cảnh báo";
+    if (scoreCircle) {
+        const score = Math.round(analytics.ergonomic_score !== undefined ? analytics.ergonomic_score : 90);
+        safeSetText("ergo-score-num", score);
+        const scoreOuter = scoreCircle.parentElement;
+        if (scoreOuter) {
+            const deg = Math.round((score / 100) * 360);
+            const col = score >= 80 ? "#10B981" : (score >= 60 ? "#F59E0B" : "#EF4444");
+            scoreOuter.style.background = `conic-gradient(${col} 0deg ${deg}deg, var(--border-subtle) ${deg}deg 360deg)`;
+            scoreOuter.style.boxShadow = `0 0 16px ${col}33`;
+            const numEl = document.getElementById("ergo-score-num");
+            if (numEl) numEl.style.color = col;
         }
-    }
 
-    safeSetText("ergo-advice-text", analytics.ergonomic_advice || "Cột sống duy trì góc độ giải phẫu học an toàn.");
+        const sitSec = analytics.continuous_sitting_sec || 0;
+        const sitM = Math.floor(sitSec / 60);
+        const sitS = Math.floor(sitSec % 60);
+        safeSetText("ergo-sitting-time", `${String(sitM).padStart(2, '0')}:${String(sitS).padStart(2, '0')}`);
+
+        const healthBadge = document.getElementById("ergo-health-badge");
+        if (healthBadge) {
+            if (score >= 82) {
+                healthBadge.className = "badge badge-safe";
+                healthBadge.textContent = "● Tối ưu";
+            } else if (score >= 65) {
+                healthBadge.className = "badge badge-neutral";
+                healthBadge.style.color = "var(--accent-amber)";
+                healthBadge.textContent = "● Cần điều chỉnh";
+            } else {
+                healthBadge.className = "badge badge-danger";
+                healthBadge.textContent = "● Cảnh báo";
+            }
+        }
+        safeSetText("ergo-advice-text", analytics.ergonomic_advice || "Cột sống duy trì góc độ giải phẫu học an toàn.");
+    }
 }
 
 function drawSvgDonut(svgId, segments, centerText) {
@@ -1860,7 +1907,7 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
     const H = 220;
     const padTop = 20;
     const padBottom = 30;
-    const padLeft = 45;
+    const padLeft = 85;
     const padRight = 20;
 
     const plotW = W - padLeft - padRight;
@@ -1950,16 +1997,18 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
     
     wrapper.onclick = (e) => {
         const rect = wrapper.getBoundingClientRect();
-        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const seekSec = clickRatio * duration;
+        const svgX = ((e.clientX - rect.left) / rect.width) * W;
+        const plotX = Math.max(0, Math.min(plotW, svgX - padLeft));
+        const seekSec = (plotX / plotW) * duration;
         seekBothPlayers(seekSec);
     };
 
     wrapper.onmousemove = (e) => {
         if (!tooltip) return;
         const rect = wrapper.getBoundingClientRect();
-        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const hoverSec = clickRatio * duration;
+        const svgX = ((e.clientX - rect.left) / rect.width) * W;
+        const plotX = Math.max(0, Math.min(plotW, svgX - padLeft));
+        const hoverSec = (plotX / plotW) * duration;
         const mm = Math.floor(hoverSec / 60);
         const ss = Math.floor(hoverSec % 60);
         const tStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
@@ -1987,9 +2036,181 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
 function updateChartPlayhead(currentSec, totalDuration) {
     const playhead = document.getElementById("chart-playhead");
     if (!playhead || !totalDuration) return;
-    const pct = Math.max(0, Math.min(100, (currentSec / totalDuration) * 100));
+    const W = 900;
+    const padLeft = 85;
+    const plotW = 900 - 85 - 20; // 795
+    const ratio = Math.max(0, Math.min(1, currentSec / totalDuration));
+    const pct = ((padLeft + ratio * plotW) / W) * 100;
     playhead.style.left = `${pct}%`;
     playhead.classList.remove("hidden");
+}
+
+function drawMultiTrackActorTimeline(tracksData, duration) {
+    const container = document.getElementById("multi-track-actor-timeline");
+    if (!container) return;
+    duration = Math.max(1.0, duration || 30.0);
+
+    let tracks = tracksData;
+    if (!tracks || Object.keys(tracks).length === 0) {
+        tracks = {};
+        if (currentSegments && currentSegments.length > 0) {
+            currentSegments.forEach(seg => {
+                (seg.entities || []).forEach(ent => {
+                    const rawId = String(ent.id || "ID #01").replace(/\(Chủ thể chính\)/g, "").trim();
+                    if (!tracks[rawId]) tracks[rawId] = [];
+                    tracks[rawId].push({
+                        start_sec: seg.start_sec,
+                        end_sec: seg.end_sec,
+                        state: ent.severity || seg.severity || "safe",
+                        action: ent.action || "Bình thường",
+                        posture: ent.posture || "Đứng thẳng",
+                        role: ent.role || "",
+                        score: seg.danger_score || 0
+                    });
+                });
+            });
+        }
+    }
+
+    const actorKeys = Object.keys(tracks || {});
+    if (actorKeys.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state-box empty-state-compact">
+                <span class="empty-icon">👥</span>
+                <p class="empty-title">Chưa có dữ liệu hành vi từng đối tượng</p>
+                <span class="empty-sub">Băng chuyền hành vi sẽ hiển thị trực quan dải thời gian của từng ID sau khi phân tích video.</span>
+            </div>
+        `;
+        return;
+    }
+
+    let html = `<div class="tracks-stream-wrapper">`;
+    actorKeys.forEach(actorId => {
+        const segs = tracks[actorId] || [];
+        html += `
+            <div class="actor-track-row">
+                <div class="actor-track-header">
+                    <span class="actor-track-badge mono">👤 ${escapeHtml(actorId)}</span>
+                </div>
+                <div class="actor-track-ribbon">
+        `;
+
+        segs.forEach(s => {
+            const startSec = Math.max(0, s.start_sec);
+            const endSec = Math.min(duration, s.end_sec);
+            const leftPct = Math.max(0, Math.min(100, (startSec / duration) * 100));
+            const widthPct = Math.max(1.5, Math.min(100 - leftPct, ((endSec - startSec) / duration) * 100));
+            const stateClass = s.state === 'danger' ? 'ribbon-danger' : (s.state === 'warning' ? 'ribbon-warn' : 'ribbon-safe');
+            const stateLabel = s.state === 'danger' ? '🔴 Tấn công / Nguy cơ cao' : (s.state === 'warning' ? '🟡 Phòng vệ / Cảnh báo' : '🟢 Bình thường / An toàn');
+            const roleStr = s.role ? ` [${escapeHtml(s.role)}]` : "";
+
+            html += `
+                <div class="ribbon-block ${stateClass}"
+                     style="left: ${leftPct.toFixed(2)}%; width: ${widthPct.toFixed(2)}%;"
+                     title="[${escapeHtml(actorId)}${roleStr}] ${formatTime(startSec)} - ${formatTime(endSec)}: ${escapeHtml(s.action)} (${stateLabel})"
+                     onclick="seekBothPlayers(${startSec})">
+                    <span class="ribbon-text">${escapeHtml(s.action)}</span>
+                </div>
+            `;
+        });
+
+        html += `
+                </div>
+            </div>
+        `;
+    });
+
+    // Time Axis along bottom of multi-track
+    let ticksHtml = "";
+    const stepSec = duration <= 20 ? 5 : (duration <= 60 ? 10 : 20);
+    for (let sec = 0; sec <= duration; sec += stepSec) {
+        const leftPct = (sec / duration) * 100;
+        ticksHtml += `
+            <div class="ribbon-axis-tick mono" style="left: ${leftPct.toFixed(2)}%;">
+                <span class="ribbon-axis-line"></span>
+                <span class="ribbon-axis-label">${formatTime(sec)}</span>
+            </div>
+        `;
+    }
+
+    html += `
+            <div class="actor-track-axis-row">
+                <div class="actor-track-header"></div>
+                <div class="actor-track-axis">
+                    ${ticksHtml}
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function toggleTelemetryDrawer() {
+    const drawer = document.getElementById("telemetry-quota-drawer");
+    if (!drawer) return;
+    drawer.classList.toggle("hidden");
+}
+
+function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
+    if (!quotaMatrix) return;
+
+    // Update floating bubble badge
+    const bubbleBadge = document.getElementById("bubble-tier-badge");
+    const tierInfo = telemetryData.model_orchestrator || {};
+    const activeTier = tierInfo.active_tier || "tier_1";
+    if (bubbleBadge) {
+        if (activeTier === "tier_1") {
+            bubbleBadge.textContent = "Tier-1";
+            bubbleBadge.className = "bubble-badge mono badge-tier1";
+        } else if (activeTier === "tier_2") {
+            bubbleBadge.textContent = "Tier-2";
+            bubbleBadge.className = "bubble-badge mono badge-tier2";
+        } else {
+            bubbleBadge.textContent = "Tier-3";
+            bubbleBadge.className = "bubble-badge mono badge-tier3";
+        }
+    }
+
+    // Update hardware metrics in drawer
+    safeSetText("drawer-fps", `${telemetryData.fps || 0} FPS`);
+    safeSetText("drawer-queue", `${telemetryData.bounded_queue_size || 1} / ${telemetryData.bounded_queue_capacity || 5} frames`);
+    safeSetText("drawer-cpu", `${telemetryData.cpu_percent || 0}%`);
+    safeSetText("drawer-ram", `${telemetryData.ram_percent || 0}%`);
+    safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0} / ${telemetryData.gpu_vram_total_mb || 8192} MB (${telemetryData.gpu_name || 'GPU'})`);
+
+    // Render Quota Matrix cards
+    const listEl = document.getElementById("drawer-quota-list");
+    if (!listEl) return;
+
+    let itemsHtml = "";
+    Object.keys(quotaMatrix).forEach(key => {
+        const item = quotaMatrix[key];
+        const isActive = item.is_active;
+        const activeClass = isActive ? "quota-card-active" : "";
+        itemsHtml += `
+            <div class="quota-matrix-card ${activeClass}">
+                <div class="qmc-header">
+                    <div class="qmc-title-group">
+                        <strong class="qmc-name">${escapeHtml(item.name)}</strong>
+                        <span class="qmc-model mono">${escapeHtml(item.model)}</span>
+                    </div>
+                    <span class="badge ${isActive ? 'badge-safe' : 'badge-neutral'} mono">${escapeHtml(item.badge)}</span>
+                </div>
+                <div class="qmc-details">
+                    <div class="qmc-detail-row">
+                        <span class="qmc-label">Trạng thái:</span>
+                        <strong class="qmc-val" style="color: ${isActive ? 'var(--accent-emerald)' : 'var(--text-secondary)'}">${escapeHtml(item.status)}</strong>
+                    </div>
+                    <div class="qmc-detail-row">
+                        <span class="qmc-label">Hạn mức:</span>
+                        <span class="qmc-val mono">${escapeHtml(item.limit)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    listEl.innerHTML = itemsHtml;
 }
 
 // ==============================================================================
@@ -2022,4 +2243,5 @@ window.setSlicePreset = setSlicePreset;
 window.renderExecutiveSceneNarrative = renderExecutiveSceneNarrative;
 window.renderBehaviorAnalytics = renderBehaviorAnalytics;
 window.seekBothPlayers = seekBothPlayers;
-
+window.toggleTelemetryDrawer = toggleTelemetryDrawer;
+window.drawMultiTrackActorTimeline = drawMultiTrackActorTimeline;

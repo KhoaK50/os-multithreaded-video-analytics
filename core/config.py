@@ -34,13 +34,11 @@ def parse_gemini_api_keys(raw_keys: Optional[str] = None) -> List[str]:
 
 
 def sanitize_gemini_model(model_name: Optional[str], default: str) -> str:
-    """Tự động nâng cấp model nếu cấu hình chứa tên model cũ bị Google thu hồi (404 Not Found)."""
+    """Tự động nâng cấp model nếu cấu hình chứa tên model rỗng."""
     if not model_name or not model_name.strip():
         return default
-    m = model_name.strip()
-    if any(dep in m for dep in ["2.0", "1.5", "2.5-flash-lite"]):
-        return default
-    return m
+    return model_name.strip()
+
 
 
 @dataclass
@@ -104,15 +102,15 @@ class SystemConfig:
     SIDEBAR_WIDTH: int = 380
 
     # --- Cloud LLM Hierarchical Tiers & Rate Limiting (R1 Specification) ---
-    GEMINI_TIER1_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER1_MODEL"), "gemini-3.8-flash"))
-    GEMINI_TIER2_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER2_MODEL"), "gemini-3.1-flash-lite"))
+    GEMINI_TIER1_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER1_MODEL"), "gemini-2.0-flash"))
+    GEMINI_TIER2_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER2_MODEL"), "gemini-1.5-flash"))
     GEMINI_TIER3_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER3_MODEL"), "gemini-flash-lite-latest"))
     GEMINI_COOLDOWN_SECONDS: float = field(default_factory=lambda: float(os.getenv("GEMINI_COOLDOWN_SECONDS", "60.0")))
     GEMINI_API_KEYS: List[str] = field(default_factory=parse_gemini_api_keys)
     GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
 
     # Tương thích ngược với mã nguồn cũ
-    GEMINI_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_MODEL"), "gemini-3.8-flash"))
+    GEMINI_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_MODEL"), os.getenv("GEMINI_TIER1_MODEL", "gemini-2.0-flash")))
     GEMINI_INTERVAL_SECONDS: float = field(default_factory=lambda: float(os.getenv("GEMINI_INTERVAL_SECONDS", "4.2")))
     API_PACE_SECONDS: float = 4.2  # Nhịp độ khống chế >= 4.2s giữa Live Camera và Video Upload (< 15 RPM)
 
