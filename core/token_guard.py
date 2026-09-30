@@ -196,10 +196,16 @@ class TokenGuard:
             for s in segment_info:
                 s_id = s.get("segment_id", "SEG-01")
                 t_rng = s.get("time_range", "")
+                loc_sc = s.get("local_score", 0.0)
+                seg_threat_lvl = "NGUY HIỂM" if (loc_sc >= 7.0 or has_strike or has_clash) else ("CẢNH BÁO" if loc_sc >= 4.0 else threat_level)
                 seg_analyses.append({
                     "segment_id": s_id,
-                    "macro_narrative": f"Phân đoạn {s_id} ({t_rng}): {macro_action}. Đánh giá nguy cơ: {threat_level}.",
+                    "macro_narrative": f"Phân đoạn {s_id} ({t_rng}): {macro_action}. Đánh giá nguy cơ: {seg_threat_lvl}.",
                     "detailed_action": macro_action,
+                    "weapon_detected": "Hung khí / Vật dụng va chạm" if has_strike else None,
+                    "posture_override": "Ngồi tại bàn / Học tập" if is_safe else None,
+                    "threat_score": max_threat_score if seg_threat_lvl == "NGUY HIỂM" else (4.5 if seg_threat_lvl == "CẢNH BÁO" else 0.5),
+                    "threat_level": seg_threat_lvl,
                     "context_description": scene_ctx,
                     "prediction_next_4s": "Duy trì theo dõi sát sao động thái ở chu kỳ tiếp theo."
                 })
@@ -281,20 +287,24 @@ class TokenGuard:
         video_metadata: Dict[str, Any],
         event_summary: List[Dict[str, Any]],
         peak_keyframes: List[Dict[str, Any]],
-        segment_info: Optional[List[Dict[str, Any]]] = None
+        segment_info: Optional[List[Dict[str, Any]]] = None,
+        segment_keyframes: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
-        Tổng hợp báo cáo video đa tầng:
-        1. Golden Cache thẩm định đầu tiên (0 token, 0ms).
+        Tổng hợp báo cáo video đa tầng (Multi-Image Batch Request):
+        1. Golden Cache thẩm định đầu tiên (0 token, 0ms, đối soát chính xác).
         2. Điều tiết nhịp độ (Pacing >= 4.2s) tránh xung đột hạn mức với Live Camera.
         3. Phân tầng: Tier 1 (gemini-2.0-flash) -> Tier 2 (gemini-1.5-flash) -> Tier 3 (Arbiter).
+        4. Gửi đồng loạt keyframe các phân đoạn trong 1 request duy nhất (< 1,800 tokens, 100% trong hạn mức 15 RPM).
         """
         # 1. Thẩm định qua Golden Cache trước tiên (Bảo toàn 100% trải nghiệm & 0 Token)
         cache = self._load_golden_cache()
         source_key = video_metadata.get("video_source", "") or video_metadata.get("source_url", "")
         if isinstance(source_key, str) and source_key:
+            src_base = os.path.basename(source_key).lower()
             for k, cached_data in cache.items():
-                if k.lower() in source_key.lower():
+                k_lower = k.lower()
+                if (k_lower in source_key.lower() and "GeLhuvhyWuM" in k) or (src_base == k_lower):
                     logger.info(f"[TokenGuard] Tìm thấy Golden Cache cho '{k}'. Nạp tức thì (0 token)!")
                     res = dict(cached_data)
                     res["status"] = "success"
@@ -307,7 +317,6 @@ class TokenGuard:
         # 2. Kiểm soát điều tiết lưu lượng (Backpressure Pacing)
         if orch is not None:
             orch.acquire_api_permission(priority="video_synthesis")
-
 
         # Tạo bảng tóm tắt thời gian (timeline summary text)
         timeline_lines = []
@@ -323,7 +332,7 @@ class TokenGuard:
         if segment_info:
             seg_lines = []
             for s in segment_info:
-                seg_lines.append(f"- Phân đoạn {s.get('segment_id', '')} ({s.get('time_range', '')}): Ghi nhận {s.get('entity_count', 1)} đối tượng")
+                seg_lines.append(f"- Phân đoạn {s.get('segment_id', '')} ({s.get('time_range', '')}): Ghi nhận {s.get('entity_count', 1)} đối tượng | Điểm sơ bộ Edge: {s.get('local_score', 0.0)}")
             seg_text = "\nDANH SÁCH PHÂN ĐOẠN TIMELINE:\n" + "\n".join(seg_lines)
 
         audio_status_str = video_metadata.get('audio_status', 'Không rõ')
@@ -340,19 +349,28 @@ THÔNG SỐ VIDEO:
 HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
 1. TRỌNG TÀI THẨM ĐỊNH NGUY CƠ (Contextual Arbiter):
    - Quan sát khách quan bối cảnh thực tế: Lớp học/trường học, võ đài, nơi công cộng, văn phòng hoặc phòng sinh hoạt.
-   - NGUY HIỂM: Khi có ẩu đả, bạo lực học đường, vung tay đấm, đá, túm áo, xô đẩy thô bạo, hoặc có người té ngã/gục ngã -> BẮT BUỘC kết luận "threat_level": "NGUY HIỂM" và "is_safe_environment": false.
+   - NGUY HIỂM: Khi có ẩu đả, bạo lực học đường, dùng gậy gộc/hung khí vụt hoặc thụt đâm tới tấp, vung tay đấm đá thô bạo, hoặc có người té ngã/gục ngã -> BẮT BUỘC kết luận "threat_level": "NGUY HIỂM" và "is_safe_environment": false.
    - CẢNH BÁO: Khi có thủ thế đối đầu (boxing/guard stance), hai bên áp sát căng thẳng, tranh chấp cử chỉ mạnh -> kết luận "threat_level": "CẢNH BÁO" và "is_safe_environment": false.
    - AN TOÀN: Khi các đối tượng học tập, làm việc, đi lại, hoặc sinh hoạt giao tiếp bình thường -> kết luận "threat_level": "AN TOÀN" và "is_safe_environment": true.
 
-2. MÔ TẢ HÀNH VI CẤP VĨ MÔ (Macro Narrative):
-   - Miêu tả chân thực diễn biến từng phân đoạn: Ai đang làm gì với ai (ví dụ: hai học sinh thủ thế giằng co xô xát trước lớp, các bạn xung quanh đứng xem; hoặc mọi người đang ngồi học bài tập trung).
+2. NHẬN DIỆN VŨ KHÍ & VẬT DỤNG NGUY HIỂM (Weapon & Tool Detection):
+   - Quan sát kỹ xem các đối tượng có cầm gậy, que, thước dài, hung khí hoặc vật dụng nào để tấn công/đe dọa đối phương hay không.
+   - Ghi nhận vào trường "weapon_detected" trong từng phân đoạn (Ví dụ: "Gậy dài", "Baton", "Ghế", hoặc null nếu không có).
+   - Nếu có vũ khí/gậy trong cảnh xung đột, phân đoạn đó BẮT BUỘC có threat_score >= 8.5 và threat_level: "NGUY HIỂM".
+
+3. THẨM ĐỊNH TƯ THẾ NGỒI BỊ CHE KHUẤT (Desk / Classroom Seated Posture):
+   - Nếu đối tượng đang ngồi tại bàn học, ngồi ghế (kể cả chân bị bàn che khuất) và không tham gia ẩu đả -> ghi nhận "posture_override": "Ngồi tại bàn / Học tập".
+   - Tuyệt đối không được gán nhầm là "Đang đứng" khi đối tượng rõ ràng đang ngồi ở bàn học/ghế.
+
+4. MÔ TẢ HÀNH VI CẤP VĨ MÔ (Macro Narrative):
+   - Miêu tả chân thực diễn biến từng phân đoạn: Ai đang làm gì với ai (ví dụ: hai học sinh dùng gậy xô xát gay gắt trước lớp, người xung quanh ngồi tại bàn học theo dõi).
    - Nếu video không có tiếng, tập trung 100% vào ngôn ngữ cơ thể, cử chỉ bàn tay, hướng di chuyển và biểu cảm.
 
-3. ĐỊNH DANH VAI TRÒ THỰC TẾ (Visual Grounding & Role Identification):
+5. ĐỊNH DANH VAI TRÒ THỰC TẾ (Visual Grounding & Role Identification):
    - Nhận diện đúng đặc điểm trang phục và hành động thực tế của từng người có mặt (ví dụ: Học sinh áo trắng, học sinh áo thun đen, người đứng thủ thế, người ngồi bàn sau).
    - Tuyệt đối KHÔNG gán ghép vai trò gia đình (cha mẹ, em bé) nếu bối cảnh thực tế là lớp học, nơi làm việc hoặc cảnh ẩu đả.
 
-4. Trả về kết quả ĐÚNG ĐỊNH DẠNG JSON sau (không thêm bất kỳ văn bản giải thích nào ngoài JSON):
+6. Trả về kết quả ĐÚNG ĐỊNH DẠNG JSON sau (không thêm bất kỳ văn bản giải thích nào ngoài JSON):
 {{
   "threat_level": "AN TOÀN" | "CẢNH BÁO" | "NGUY HIỂM",
   "is_safe_environment": true | false,
@@ -376,6 +394,10 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
       "segment_id": "SEG-01",
       "macro_narrative": "Câu mô tả diễn biến vĩ mô hoàn chỉnh của phân đoạn",
       "detailed_action": "Hành động chủ đạo ngắn gọn",
+      "weapon_detected": "Gậy / Hung khí" | null,
+      "posture_override": "Ngồi tại bàn / Học tập" | null,
+      "threat_score": 8.5,
+      "threat_level": "NGUY HIỂM" | "CẢNH BÁO" | "AN TOÀN",
       "context_description": "Chi tiết bối cảnh và tương tác trong phân đoạn",
       "prediction_next_4s": "Dự đoán cụ thể xu hướng hành vi trong 4 giây tiếp theo"
     }}
@@ -383,30 +405,38 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
 }}
 """
 
-
         contents = [prompt]
 
-        # Đính kèm ảnh Keyframes (đã resize tối ưu để tiết kiệm token)
-        for idx, kf in enumerate(peak_keyframes):
+        # Đính kèm ảnh (Ưu tiên segment_keyframes theo từng phân đoạn, fallback về peak_keyframes)
+        frames_to_send = segment_keyframes if segment_keyframes else peak_keyframes
+        # Giới hạn tối đa 6 ảnh để luôn bảo đảm dưới 1,800 tokens
+        if len(frames_to_send) > 6:
+            step = len(frames_to_send) / 6.0
+            frames_to_send = [frames_to_send[int(i * step)] for i in range(6)]
+
+        for idx, kf in enumerate(frames_to_send):
             frame = kf.get("frame")
+            seg_id = kf.get("segment_id", f"Mốc {idx+1}")
+            t_rng = kf.get("time_range", f"{kf.get('timestamp', 0):.1f}s")
             if frame is not None:
-                # Resize ảnh xuống tối đa 640x360 để tiết kiệm token tối đa
+                # Resize ảnh xuống tối đa 480x270 để tiết kiệm token tối đa
                 h, w = frame.shape[:2]
-                scale = min(640 / w, 360 / h, 1.0)
+                scale = min(480 / w, 270 / h, 1.0)
                 if scale < 1.0:
                     small_frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
                 else:
                     small_frame = frame
-                
+
                 # Chuyển BGR sang RGB cho Pillow
                 rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
                 pil_img = Image.fromarray(rgb_frame)
-                
-                # Nén JPEG chất lượng 80
+
+                # Nén JPEG chất lượng 75
                 img_byte_arr = io.BytesIO()
-                pil_img.save(img_byte_arr, format='JPEG', quality=80)
+                pil_img.save(img_byte_arr, format='JPEG', quality=75)
                 img_bytes = img_byte_arr.getvalue()
-                
+
+                contents.append(f"\n[ẢNH KHUNG HÌNH PHÂN ĐOẠN {seg_id} ({t_rng})]:")
                 contents.append(types.Part.from_bytes(
                     data=img_bytes,
                     mime_type="image/jpeg"

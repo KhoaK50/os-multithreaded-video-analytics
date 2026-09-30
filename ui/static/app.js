@@ -1354,30 +1354,44 @@ function setupDualPlayerSync() {
 
 let lastScrollOriginElement = null;
 let lastScrollOriginLabel = "";
+let isSmoothScrollingToPlayer = false;
 
 function showScrollBackAssistant(originElement, label = "") {
     lastScrollOriginElement = originElement;
     lastScrollOriginLabel = label;
     const btn = document.getElementById("floating-scroll-back-btn");
     const labelEl = document.getElementById("scroll-back-label");
-    if (!btn) return;
-    if (labelEl) {
-        labelEl.textContent = label ? `Quay lại: ${label}` : "Quay lại Phân Đoạn";
+    const quickBtn = document.getElementById("btn-quick-scroll-back");
+    const quickLabelEl = document.getElementById("btn-quick-scroll-back-text");
+
+    const displayText = label ? `Quay lại: ${label}` : "Quay lại Phân Đoạn";
+    if (labelEl) labelEl.textContent = displayText;
+    if (quickLabelEl) quickLabelEl.textContent = displayText;
+
+    if (btn) {
+        btn.classList.remove("hidden");
+        void btn.offsetWidth;
+        btn.classList.add("visible");
     }
-    btn.classList.remove("hidden");
-    void btn.offsetWidth;
-    btn.classList.add("visible");
+    if (quickBtn) {
+        quickBtn.classList.remove("hidden");
+    }
 }
 
 function hideScrollBackAssistant() {
     const btn = document.getElementById("floating-scroll-back-btn");
-    if (!btn) return;
-    btn.classList.remove("visible");
-    setTimeout(() => {
-        if (!btn.classList.contains("visible")) {
-            btn.classList.add("hidden");
-        }
-    }, 280);
+    const quickBtn = document.getElementById("btn-quick-scroll-back");
+    if (btn) {
+        btn.classList.remove("visible");
+        setTimeout(() => {
+            if (!btn.classList.contains("visible")) {
+                btn.classList.add("hidden");
+            }
+        }, 280);
+    }
+    if (quickBtn) {
+        quickBtn.classList.add("hidden");
+    }
 }
 
 function scrollToLastOrigin() {
@@ -1386,17 +1400,21 @@ function scrollToLastOrigin() {
         lastScrollOriginElement.classList.add("highlight-pulse");
         setTimeout(() => {
             if (lastScrollOriginElement) lastScrollOriginElement.classList.remove("highlight-pulse");
-        }, 2200);
+        }, 2500);
     }
     hideScrollBackAssistant();
 }
 
 window.addEventListener("scroll", () => {
+    // Không tự động ẩn nếu đang trong quá trình cuộn mượt lên player
+    if (isSmoothScrollingToPlayer) return;
     if (!lastScrollOriginElement) return;
     const btn = document.getElementById("floating-scroll-back-btn");
     if (!btn || !btn.classList.contains("visible")) return;
     const rect = lastScrollOriginElement.getBoundingClientRect();
-    if (rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight)) {
+    // Chỉ ẩn khi người dùng đã tự cuộn màn hình xuống vùng phần tử gốc (trong phạm vi tầm nhìn)
+    const windowH = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.top >= 60 && rect.bottom <= windowH - 60) {
         hideScrollBackAssistant();
     }
 }, { passive: true });
@@ -1417,7 +1435,11 @@ function seekBothPlayers(seconds, autoPlay = false, originEl = null, originLabel
     // Cuộn màn hình mượt mà đến trình phát video để người dùng quan sát trực tiếp
     const playerSec = document.getElementById("result-annotated-video") || document.getElementById("result-orig-video");
     if (playerSec) {
+        isSmoothScrollingToPlayer = true;
         playerSec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+            isSmoothScrollingToPlayer = false;
+        }, 1500);
     }
     updateChartPlayhead(seconds, currentResultDuration);
 
@@ -1600,6 +1622,11 @@ function renderTimelineSegments() {
                 title="Bấm để phóng to ảnh chụp kèm Bounding Box" />`
             : `<span class="mono text-muted">--</span>`;
 
+        let weaponBadge = "";
+        if (seg.weapon_detected) {
+            weaponBadge = `<span class="badge badge-danger mono" style="margin-left: 6px; font-size: 0.78rem; background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.5); color: #FCA5A5;">⚔️ ${escapeHtml(seg.weapon_detected)}</span>`;
+        }
+
         html += `
             <tr class="${rowClass}" id="seg-row-${escapeHtml(seg.segment_id)}">
                 <td>
@@ -1612,6 +1639,7 @@ function renderTimelineSegments() {
                 <td>
                     <div class="threat-header-row">
                         <span class="${badgeClass}">${badgeText}</span>
+                        ${weaponBadge}
                         <div class="threat-score-pill mono">${seg.danger_score || 0} <span class="threat-scale">/ 10</span></div>
                     </div>
                     ${breakdownHtml}
@@ -1653,11 +1681,6 @@ function focusTimelineSegment(startSec, endSec, segId, summary, originBtn = null
     const rowEl = document.getElementById(`seg-row-${segId}`) || originBtn;
     seekBothPlayers(startSec, true, rowEl, segId);
     renderTimelineSegments();
-
-    const playerSec = document.querySelector(".side-by-side-grid") || document.getElementById("result-annotated-video");
-    if (playerSec) {
-        playerSec.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
 }
 
 function toggleLoopCurrentSegment() {

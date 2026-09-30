@@ -777,34 +777,42 @@ class KinematicAnomalyRanker:
                 areaB = max(1, (bb[2] - bb[0]) * (bb[3] - bb[1]))
                 iou = inter / float(areaA + areaB - inter)
 
-                # Trụ cột 3: Bán kính sải tay hiệu dụng (d < 0.85 * avg_h hoặc IoU > 0.05)
-                in_reach = (iou > 0.05 or dist < 0.85 * avg_h)
+                r_ab_x = cb_x - ca_x
+                r_ab_y = cb_y - ca_y
+                norm_ab = math.hypot(r_ab_x, r_ab_y) + 1e-4
+
+                # Trụ cột 1: Hướng véc-tơ đòn đánh từ A tới B
+                v_a = det_a.get("wrist_vec", (0.0, 0.0))
+                norm_va = math.hypot(v_a[0], v_a[1])
+                cos_a = (v_a[0] * r_ab_x + v_a[1] * r_ab_y) / (norm_va * norm_ab) if norm_va > 1e-4 else 0.0
+
+                # Hướng véc-tơ đòn đánh từ B tới A
+                v_b = det_b.get("wrist_vec", (0.0, 0.0))
+                norm_vb = math.hypot(v_b[0], v_b[1])
+                cos_b = (-v_b[0] * r_ab_x - v_b[1] * r_ab_y) / (norm_vb * norm_ab) if norm_vb > 1e-4 else 0.0
+
+                # Nón Sát Thương Vũ Khí Kéo Dài (Extended Weapon / Tool Reach Cone):
+                # Khi cầm gậy hoặc hung khí dài thụt tới, hai thân người cách nhau tới 1.65 * chiều cao.
+                # Nếu véc-tơ cổ tay hướng thẳng về đối phương (cos > 0.35) và vận tốc đáng kể -> Mở rộng tầm sát thương
+                is_weapon_thrust_a = (dist < 1.65 * avg_h and cos_a > 0.35 and (det_a["kinetic_spike"] >= 1.4 or norm_va >= 1.4))
+                is_weapon_thrust_b = (dist < 1.65 * avg_h and cos_b > 0.35 and (det_b["kinetic_spike"] >= 1.4 or norm_vb >= 1.4))
+
+                # Trụ cột 3: Bán kính sải tay hiệu dụng hoặc Nón sát thương vũ khí
+                in_reach = (iou > 0.05 or dist < 0.85 * avg_h or is_weapon_thrust_a or is_weapon_thrust_b)
 
                 if in_reach:
-                    r_ab_x = cb_x - ca_x
-                    r_ab_y = cb_y - ca_y
-                    norm_ab = math.hypot(r_ab_x, r_ab_y) + 1e-4
-
-                    # Trụ cột 1: Hướng véc-tơ đòn đánh từ A tới B
-                    v_a = det_a.get("wrist_vec", (0.0, 0.0))
-                    norm_va = math.hypot(v_a[0], v_a[1])
-                    cos_a = (v_a[0] * r_ab_x + v_a[1] * r_ab_y) / (norm_va * norm_ab) if norm_va > 1e-4 else 0.0
-
-                    # Hướng véc-tơ đòn đánh từ B tới A
-                    v_b = det_b.get("wrist_vec", (0.0, 0.0))
-                    norm_vb = math.hypot(v_b[0], v_b[1])
-                    cos_b = (-v_b[0] * r_ab_x - v_b[1] * r_ab_y) / (norm_vb * norm_ab) if norm_vb > 1e-4 else 0.0
-
                     # A tấn công B: Vận tốc cao và véc-tơ đâm trúng mục tiêu B
-                    if det_a["kinetic_spike"] >= 1.5 and cos_a > 0.40:
+                    if is_weapon_thrust_a or (det_a["kinetic_spike"] >= 1.4 and cos_a > 0.38):
                         det_a["is_striking"] = True
-                        det_a["interaction_score"] = max(det_a["interaction_score"], 5.0)
+                        strike_pts = 6.0 if is_weapon_thrust_a else 5.0
+                        det_a["interaction_score"] = max(det_a["interaction_score"], strike_pts)
                         det_b["is_targeted"] = True
 
                     # B tấn công A: Vận tốc cao và véc-tơ đâm trúng mục tiêu A
-                    if det_b["kinetic_spike"] >= 1.5 and cos_b > 0.40:
+                    if is_weapon_thrust_b or (det_b["kinetic_spike"] >= 1.4 and cos_b > 0.38):
                         det_b["is_striking"] = True
-                        det_b["interaction_score"] = max(det_b["interaction_score"], 5.0)
+                        strike_pts = 6.0 if is_weapon_thrust_b else 5.0
+                        det_b["interaction_score"] = max(det_b["interaction_score"], strike_pts)
                         det_a["is_targeted"] = True
 
                     # Tương tác áp sát giằng co chung (nếu cả 2 cùng di chuyển nhưng không có véc-tơ đâm thẳng)
@@ -900,7 +908,11 @@ class TemporalActionStabilizer:
         is_raw_strike = raw_danger or raw_role == "attacker" or (kinetic >= 2.2 and interaction >= 1.8)
         if is_raw_strike:
             st["strike_streak"] += 1
-            if st["strike_streak"] >= self.trigger_thresh:
+            # Kích hoạt tức thời (Impulse Shock Trigger):
+            # Nếu xung lực cực lớn (kinetic >= 2.2 hoặc threat_score >= 7.0 hoặc interaction >= 4.5),
+            # đòn đánh thật xảy ra rất nhanh (1-2 frames) -> kích hoạt ngay, không bắt buộc đợi 3 frames
+            req_thresh = 1 if (kinetic >= 2.2 or threat_score >= 7.0 or interaction >= 4.5) else self.trigger_thresh
+            if st["strike_streak"] >= req_thresh:
                 st["stable_role"] = "attacker"
                 st["stable_danger"] = True
                 st["cooldown_left"] = self.cooldown_frames
@@ -940,8 +952,11 @@ class TemporalActionStabilizer:
             else:
                 st["stable_action"] = max(set(actions), key=actions.count)
 
-        # 4. Làm mịn điểm số nguy cơ theo EMA
-        st["smoothed_threat"] = 0.60 * st["smoothed_threat"] + 0.40 * threat_score
+        # 4. Làm mịn điểm số nguy cơ theo EMA (Bảo toàn đỉnh nhọn nguy cơ cao)
+        if threat_score >= 6.5:
+            st["smoothed_threat"] = max(threat_score, 0.30 * st["smoothed_threat"] + 0.70 * threat_score)
+        else:
+            st["smoothed_threat"] = 0.60 * st["smoothed_threat"] + 0.40 * threat_score
 
         # 5. Xác định màu sắc ổn định không nhấp nháy
         if st["stable_role"] == "attacker" or (st["stable_role"] == "victim" and st["stable_danger"]):
@@ -1316,22 +1331,42 @@ class VideoAnnotatorEngine:
                                 hip_x = (l_hip[0] + r_hip[0]) / 2.0
                                 hip_y = (l_hip[1] + r_hip[1]) / 2.0
 
+                            # Nhận diện tư thế ngồi (Sitting / Desk Occlusion):
+                            # Trường hợp 1: Thấy cả chân và đầu gối gập ngang (Full body sitting)
+                            has_knee_kpts = (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35)
+                            is_seated_full = (has_knee_kpts and l_hip[2] > 0.30 and abs(kpts[13][1] - l_hip[1]) < 0.30 * bbox_h and abs(kpts[13][0] - l_hip[0]) > 0.18 * bbox_w)
+
+                            # Trường hợp 2: Bị bàn học / mặt bàn che khuất chân (Desk / Classroom Occlusion):
+                            # Thường gặp trong lớp học/văn phòng: bbox thấp/bè (aspect_ratio < 1.62),
+                            # trục thân thẳng đứng (60 <= torso_angle <= 120), đầu/vai rõ ràng, kinetic_spike thấp (< 0.85)
+                            is_seated_desk = (
+                                (not has_knee_kpts or aspect_ratio < 1.62) and
+                                60.0 <= torso_angle <= 120.0 and
+                                (l_sh[2] > 0.30 or r_sh[2] > 0.30) and
+                                nose[2] > 0.30 and
+                                kinetic_spike < 0.85 and
+                                (aspect_ratio < 1.55 or (l_hip[2] > 0.20 and abs(hip_y - y2) < 0.45 * bbox_h))
+                            )
+                            is_seated = (is_seated_full or is_seated_desk)
+
                             # =========================================================================
                             # BỘ TIÊU CHÍ ĐỘNG HỌC 5 TRỤ CỘT TRIỆT TIÊU GÁN OAN (5-PILLAR DISAMBIGUATION)
                             # =========================================================================
                             person_role_type = "bystander"
 
-                            # 1. Trụ cột 5: Khóa Bất Biến Cho Người Đứng Yên (Bystander Invariance Lock)
-                            # Nếu vận tốc khớp xương thấp (<0.6), người này đứng yên / quan sát bình thường
+                            # 1. Trụ cột 5: Khóa Bất Biến Cho Người Đứng/Ngồi Yên (Bystander Invariance Lock)
+                            # Nếu vận tốc khớp xương thấp (<0.65), người này ngồi/đứng yên / quan sát bình thường
                             # TUYỆT ĐỐI KHÔNG BAO GIỜ bị gán điểm nguy hiểm hay bôi đỏ dù xung quanh có xô xát
-                            if kinetic_spike < 0.6 and not cand.get("is_striking", False):
+                            if kinetic_spike < 0.65 and not cand.get("is_striking", False):
                                 person_danger = False
                                 person_threat_score = 0.2
                                 person_role_type = "bystander"
-                                if aspect_ratio >= 1.70:
+                                if is_seated:
+                                    person_action = "Ngồi tại bàn / Quan sát tĩnh"
+                                elif aspect_ratio >= 1.70:
                                     person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
                                 else:
-                                    person_action = "Đang đứng / Hoạt động bình thường"
+                                    person_action = "Hoạt động bình thường / Quan sát"
 
                             # 2. Phát hiện Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
                             elif torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
@@ -1417,10 +1452,9 @@ class VideoAnnotatorEngine:
                                       r_wrist[1] > sh_y + 0.15 * sh_w and r_wrist[1] < hip_y + 40):
                                     person_action = "Tương tác trước ngực / Ôm giữ vật thể"
 
-                                # F. Ngồi làm việc
-                                elif (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35 and l_hip[2] > 0.35 and
-                                      abs(kpts[13][1] - l_hip[1]) < 0.30 * bbox_h and abs(kpts[13][0] - l_hip[0]) > 0.20 * bbox_w):
-                                    person_action = "Ngồi làm việc / Thao tác tay"
+                                # F. Ngồi làm việc / Ngồi tại bàn học
+                                elif is_seated:
+                                    person_action = "Ngồi tại bàn / Quan sát tĩnh"
 
                                 # G. Cúi người / Nhặt đồ
                                 elif 45.0 <= torso_angle < 68.0:
@@ -1436,7 +1470,10 @@ class VideoAnnotatorEngine:
 
                                 # J. Mặc định tự nhiên
                                 else:
-                                    person_action = "Đang đứng / Hoạt động trong phòng"
+                                    if aspect_ratio >= 1.62:
+                                        person_action = "Đang đứng / Hoạt động trong phòng"
+                                    else:
+                                        person_action = "Sinh hoạt bình thường / Quan sát"
 
                             # Lọc trễ thời gian (Temporal Hysteresis) + Cửa sổ trượt đồng thuận đa số để khử giật nhãn/màu
                             stab_res = temporal_stabilizer.update(
@@ -1859,15 +1896,25 @@ class VideoAnnotatorEngine:
                 "snapshot_url": f"/api/snapshots/{snap_filename}"
             })
 
-        # Mảng mẫu Heatmap & Đường cong Rủi ro làm mượt bằng EMA 5 mẫu
+        # Mảng mẫu Heatmap & Đường cong Rủi ro: Bảo toàn đỉnh nhọn va chạm/đòn đánh (Peak-Preserving Smoothing)
         raw_slots = sorted(heatmap_samples.keys())
         smoothed_scores = {}
         for i, s_k in enumerate(raw_slots):
+            raw_v = heatmap_samples[s_k]
             nearby = [heatmap_samples[raw_slots[j]] for j in range(max(0, i - 2), min(len(raw_slots), i + 3))]
             if nearby:
-                smoothed_scores[s_k] = 0.55 * (sum(nearby) / len(nearby)) + 0.45 * max(nearby)
+                avg_nearby = sum(nearby) / len(nearby)
+                max_nearby = max(nearby)
+                # Nếu tại điểm hiện tại hoặc lân cận có xung lực nguy hiểm (>= 6.0),
+                # bảo toàn đỉnh nhọn để phản ánh đúng thực tế va chạm/đòn đánh trên đồ thị
+                if raw_v >= 6.0:
+                    smoothed_scores[s_k] = max(raw_v, 0.20 * avg_nearby + 0.80 * max_nearby)
+                elif max_nearby >= 7.0:
+                    smoothed_scores[s_k] = max(0.40 * avg_nearby + 0.60 * max_nearby, raw_v * 0.8)
+                else:
+                    smoothed_scores[s_k] = 0.60 * avg_nearby + 0.40 * max_nearby
             else:
-                smoothed_scores[s_k] = heatmap_samples[s_k]
+                smoothed_scores[s_k] = raw_v
 
         heatmap_data = []
         for slot in raw_slots:
@@ -1883,11 +1930,21 @@ class VideoAnnotatorEngine:
         # Gọi TokenGuard để chẩn đoán tổng hợp và mô tả thị giác chi tiết nếu được bật
         gemini_result = {}
         if call_gemini:
-            # Thu thập keyframes từ từng phân đoạn timeline
-            for s_data in segments_data:
+            # Thu thập keyframes từ từng phân đoạn timeline (Multi-Image Batch Request)
+            segment_keyframes = []
+            for idx, s_data in enumerate(segments_data):
                 ts_mid = round(s_data["start_sec"] - start_time, 2)
-                if s_data["peak_frame"] is not None and ts_mid not in candidate_keyframes:
-                    candidate_keyframes[ts_mid] = s_data["peak_frame"].copy()
+                s_id = f"SEG-{idx+1:02d}"
+                t_rng = f"{format_time(s_data['start_sec'] - start_time)} - {format_time(s_data['end_sec'] - start_time)}"
+                if s_data["peak_frame"] is not None:
+                    if ts_mid not in candidate_keyframes:
+                        candidate_keyframes[ts_mid] = s_data["peak_frame"].copy()
+                    segment_keyframes.append({
+                        "segment_id": s_id,
+                        "time_range": t_rng,
+                        "timestamp": ts_mid,
+                        "frame": s_data["peak_frame"].copy()
+                    })
 
             peak_kfs = self.token_guard.select_peak_keyframes(
                 event_log=threat_event_log,
@@ -1900,32 +1957,20 @@ class VideoAnnotatorEngine:
                 segment_info_list.append({
                     "segment_id": s["segment_id"],
                     "time_range": s["time_range"],
-                    "entity_count": len(s.get("entities", []))
+                    "entity_count": len(s.get("entities", [])),
+                    "local_score": s.get("danger_score", 0.0),
+                    "local_severity": s.get("severity", "safe")
                 })
 
             gemini_result = self.token_guard.synthesize_video_report(
                 video_metadata=video_meta,
                 event_summary=threat_event_log,
                 peak_keyframes=peak_kfs,
-                segment_info=segment_info_list
+                segment_info=segment_info_list,
+                segment_keyframes=segment_keyframes
             )
 
-            # Trọng tài Thẩm định Nguy cơ (Contextual Arbiter Override):
-            # Nếu Gemini khẳng định môi trường an toàn (sinh hoạt gia đình, làm việc, văn phòng),
-            # triệt tiêu hoàn toàn các cảnh báo giả từ Edge AI cục bộ
-            if gemini_result.get("threat_level") == "AN TOÀN" or gemini_result.get("is_safe_environment", False):
-                max_danger_score = 0
-                peak_danger_reason = "Không gian an toàn, không có nguy cơ an ninh"
-                for seg in timeline_segments:
-                    seg["severity"] = "safe"
-                    seg["danger_score"] = 0.0
-                    for ent in seg.get("entities", []):
-                        ent["severity"] = "safe"
-                for slot in heatmap_data:
-                    slot["score"] = 0.0
-                    slot["level"] = "safe"
-
-            # Áp dụng Gemini Visual Grounding (danh tính và vai trò thực tế của 4 người)
+            # Áp dụng Gemini Visual Grounding (danh tính và vai trò thực tế của các đối tượng)
             detected_actors = gemini_result.get("detected_actors", [])
             if detected_actors:
                 stabilizer.apply_gemini_actors(detected_actors)
@@ -1945,7 +1990,7 @@ class VideoAnnotatorEngine:
                             if custom_posture:
                                 ent["posture"] = custom_posture
 
-            # Ghép phân tích chi tiết cấp Vĩ Mô (Macro Narrative) của Gemini vào từng phân đoạn timeline
+            # Ghép phân tích chi tiết cấp Vĩ Mô (Macro Narrative) & Nhận diện Vũ khí của Gemini vào từng phân đoạn timeline
             gemini_analyses = {a.get("segment_id"): a for a in gemini_result.get("segment_analyses", []) if isinstance(a, dict)}
             for seg in timeline_segments:
                 s_id = seg["segment_id"]
@@ -1957,8 +2002,38 @@ class VideoAnnotatorEngine:
                         seg["context_description"] = narrative
                     if ga.get("prediction_next_4s"):
                         seg["prediction_next_4s"] = ga["prediction_next_4s"]
+
+                    # Nhận diện Vũ khí / Hung khí từ Gemini Vision
+                    w_det = ga.get("weapon_detected")
+                    if w_det and str(w_det).lower() not in ["null", "none", "không có", "không", "false"]:
+                        seg["weapon_detected"] = str(w_det)
+                        seg["severity"] = "danger"
+                        seg["danger_score"] = max(seg.get("danger_score", 0.0), float(ga.get("threat_score", 8.8)))
+
+                    # Đồng bộ mức độ nguy hiểm phân đoạn nếu Gemini xác nhận
+                    g_lvl = str(ga.get("threat_level", "")).upper()
+                    if g_lvl == "NGUY HIỂM":
+                        seg["severity"] = "danger"
+                        seg["danger_score"] = max(seg.get("danger_score", 0.0), float(ga.get("threat_score", 8.5)))
+                    elif g_lvl == "CẢNH BÁO" and seg["severity"] != "danger":
+                        seg["severity"] = "warning"
+                        seg["danger_score"] = max(seg.get("danger_score", 0.0), float(ga.get("threat_score", 5.0)))
+
+                    # Điều chỉnh tư thế ngồi nếu Gemini nhận diện ngồi tại bàn
+                    p_override = ga.get("posture_override")
+                    if p_override:
+                        for ent in seg.get("entities", []):
+                            if "đang đứng" in ent.get("action", "").lower() or ent.get("role") == "observer":
+                                ent["action"] = p_override
+                                ent["posture"] = p_override
+
                 elif gemini_result.get("scene_context"):
                     seg["context_description"] = gemini_result.get("scene_context")
+
+            # Cập nhật max_danger_score sau khi hội chẩn cùng Gemini
+            max_danger_score = max([seg.get("danger_score", 0.0) for seg in timeline_segments] or [max_danger_score])
+            if max_danger_score >= 7.0:
+                peak_danger_reason = "Phát hiện xung đột thể xác / đòn đánh hoặc hung khí nguy hiểm"
 
         # Thống kê Phân bổ Rủi ro & Tư thế Đa chiều (Multi-dimensional Behavior & Risk Analytics)
         safe_cnt = 0
@@ -1966,9 +2041,9 @@ class VideoAnnotatorEngine:
         danger_cnt = 0
         for slot in heatmap_data:
             sc = slot.get("score", 0.0)
-            if sc >= 8.0:
+            if sc >= 7.0:
                 danger_cnt += 1
-            elif sc >= 4.0:
+            elif sc >= 3.5:
                 warn_cnt += 1
             else:
                 safe_cnt += 1
@@ -1994,7 +2069,8 @@ class VideoAnnotatorEngine:
         ergo_score = round(raw_ergo, 1)
 
         # Ước lượng thời gian ngồi liên tục (Sedentary time)
-        sitting_ratio = action_counts.get("Ngồi làm việc / Thao tác tay", 0) / max(1, sum(action_counts.values()))
+        sitting_counts = action_counts.get("Ngồi làm việc / Thao tác tay", 0) + action_counts.get("Ngồi tại bàn / Quan sát tĩnh", 0)
+        sitting_ratio = sitting_counts / max(1, sum(action_counts.values()))
         continuous_sitting_sec = round(sitting_ratio * (processed_count / input_fps), 1)
 
         if ergo_score >= 82.0:
@@ -2004,6 +2080,14 @@ class VideoAnnotatorEngine:
         else:
             ergo_advice = "Cảnh báo công thái học: Xuất hiện tư thế gập sâu bất đối xứng hoặc dấu hiệu té ngã. Cần kiểm tra an toàn lập tức."
 
+        # Quyết định dominant_risk theo tiêu chuẩn an ninh: Có biến cố bạo lực/đòn đánh -> Đánh dấu DANGER
+        if danger_cnt >= 2 or danger_pct >= 5.0 or max_danger_score >= 7.0:
+            dominant_risk = "danger"
+        elif warn_cnt >= 3 or warn_pct >= 10.0 or max_danger_score >= 4.0:
+            dominant_risk = "warning"
+        else:
+            dominant_risk = "safe"
+
         behavior_analytics = {
             "risk_breakdown": {
                 "safe_count": safe_cnt,
@@ -2012,7 +2096,7 @@ class VideoAnnotatorEngine:
                 "safe_pct": safe_pct,
                 "warning_pct": warn_pct,
                 "danger_pct": danger_pct,
-                "dominant_risk": "safe" if safe_cnt >= warn_cnt and safe_cnt >= danger_cnt else ("warning" if warn_cnt >= danger_cnt else "danger")
+                "dominant_risk": dominant_risk
             },
             "posture_distribution": {
                 "upright_count": posture_distribution["upright"],

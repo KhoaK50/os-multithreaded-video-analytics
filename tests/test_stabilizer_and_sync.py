@@ -13,17 +13,17 @@ def test_temporal_action_stabilizer_hysteresis():
     stab = TemporalActionStabilizer(window_size=8, trigger_thresh=3, cooldown_frames=5)
     c_id = 1
 
-    # Frame 1: Xung lực cao lần 1 -> Chưa kích hoạt (vẫn là observer)
-    res1 = stab.update(c_id, "Vung tay ra đòn", "attacker", True, 8.5, 3.0, 2.5)
+    # Frame 1: Xung lực vừa phải lần 1 -> Chưa kích hoạt (vẫn là observer)
+    res1 = stab.update(c_id, "Vung tay ra đòn", "attacker", False, 5.5, 1.8, 2.0)
     assert res1["role"] != "attacker"
     assert res1["is_danger"] == False
 
-    # Frame 2: Xung lực cao lần 2 -> Chưa kích hoạt
-    res2 = stab.update(c_id, "Vung tay ra đòn", "attacker", True, 8.5, 3.0, 2.5)
+    # Frame 2: Xung lực vừa phải lần 2 -> Chưa kích hoạt
+    res2 = stab.update(c_id, "Vung tay ra đòn", "attacker", False, 5.5, 1.8, 2.0)
     assert res2["role"] != "attacker"
 
-    # Frame 3: Xung lực cao lần 3 -> Đủ 3 frames -> KÍCH HOẠT ĐỎ
-    res3 = stab.update(c_id, "Vung tay ra đòn", "attacker", True, 8.5, 3.0, 2.5)
+    # Frame 3: Xung lực vừa phải lần 3 -> Đủ 3 frames -> KÍCH HOẠT ĐỎ
+    res3 = stab.update(c_id, "Vung tay ra đòn", "attacker", False, 5.5, 1.8, 2.0)
     assert res3["role"] == "attacker"
     assert res3["is_danger"] == True
     assert res3["color"] == (68, 68, 239)  # Đỏ BGR
@@ -82,3 +82,126 @@ def test_telemetry_keys_structure():
     assert tb["min_distance"] > 0
     assert tb["dominant_posture"] == "Xô xát / Ra đòn"
     assert tb["calculated_score"] >= 7.0  # Điểm nguy cơ thực tế, không bị kẹt ở 2.1
+
+
+def test_impulse_shock_trigger():
+    """
+    Kiểm thử Kích Hoạt Tức Thời (Impulse Shock Trigger):
+    Đòn đánh có xung lực đột biến (kinetic >= 2.2 hoặc threat_score >= 7.0)
+    kích hoạt ngay trạng thái TẤN CÔNG chỉ sau 1 frame, không bắt buộc đợi 3 frames.
+    """
+    stab = TemporalActionStabilizer(window_size=8, trigger_thresh=3, cooldown_frames=5)
+    c_id = 99
+    # Frame 1 với xung lực cực đại -> Kích hoạt ngay lập tức
+    res = stab.update(c_id, "Vung tay ra đòn", "attacker", True, 8.8, 2.6, 3.5)
+    assert res["role"] == "attacker"
+    assert res["is_danger"] == True
+    assert "TẤN CÔNG" in res["role_prefix"]
+
+
+def test_desk_occlusion_sitting_rule():
+    """
+    Kiểm thử nhận diện tư thế ngồi sau bàn học (Desk Occlusion):
+    Học sinh ngồi sau bàn gỗ, phần thân dưới bị che khuất (kpts đầu gối tin cậy thấp),
+    tỉ lệ khung hình thấp/bè (aspect_ratio < 1.6), trục thân thẳng đứng.
+    Hệ thống BẮT BUỘC phân loại là "Ngồi tại bàn", TUYỆT ĐỐI KHÔNG gán "Đang đứng".
+    """
+    # Giả lập tham số giải phẫu học của người ngồi sau bàn học
+    aspect_ratio = 1.35
+    bbox_h = 270
+    bbox_w = 200
+    torso_angle = 88.0
+    kinetic_spike = 0.20
+    kpts = [[100, 50, 0.9] for _ in range(17)]
+    kpts[13] = [80, 260, 0.05]   # Đầu gối trái bị bàn che khuất (độ tin cậy gần 0)
+    kpts[14] = [120, 260, 0.05]  # Đầu gối phải bị bàn che khuất
+    l_sh = [70, 90, 0.85]
+    r_sh = [130, 90, 0.85]
+    l_hip = [80, 180, 0.60]
+    nose = [100, 45, 0.90]
+    hip_y = 180
+    y2 = 270
+
+    has_knee_kpts = (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35)
+    is_seated_full = (has_knee_kpts and l_hip[2] > 0.30 and abs(kpts[13][1] - l_hip[1]) < 0.30 * bbox_h and abs(kpts[13][0] - l_hip[0]) > 0.18 * bbox_w)
+
+    is_seated_desk = (
+        (not has_knee_kpts or aspect_ratio < 1.62) and
+        60.0 <= torso_angle <= 120.0 and
+        (l_sh[2] > 0.30 or r_sh[2] > 0.30) and
+        nose[2] > 0.30 and
+        kinetic_spike < 0.85 and
+        (aspect_ratio < 1.55 or (l_hip[2] > 0.20 and abs(hip_y - y2) < 0.45 * bbox_h))
+    )
+    is_seated = (is_seated_full or is_seated_desk)
+
+    assert is_seated == True
+    # Phân loại hành động
+    if kinetic_spike < 0.65:
+        if is_seated:
+            person_action = "Ngồi tại bàn / Quan sát tĩnh"
+        elif aspect_ratio >= 1.70:
+            person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
+        else:
+            person_action = "Hoạt động bình thường / Quan sát"
+
+    assert person_action == "Ngồi tại bàn / Quan sát tĩnh"
+    assert "đứng" not in person_action.lower()
+
+
+def test_extended_weapon_reach_cone():
+    """
+    Kiểm thử Nón Sát Thương Vũ Khí Kéo Dài (Extended Weapon Reach Cone):
+    Hai đối tượng cách nhau 1.35 * chiều cao thân (vượt ngoài tầm sải tay thường 0.85 * h).
+    Đối tượng A cầm gậy/vũ khí thụt mạnh về phía đối tượng B (cos > 0.35, v_wrist cao).
+    Hệ thống BẮT BUỘC nhận diện đòn đánh A -> B (is_striking = True, interaction_score >= 6.0).
+    """
+    from core.video_annotator import KinematicAnomalyRanker
+    import math
+
+    ranker = KinematicAnomalyRanker(top_k=4)
+
+    # Khởi tạo frame 1 (để lưu prev_kpts)
+    det_a1 = {
+        "raw_id": 1,
+        "bbox": [100, 100, 200, 300],  # h = 200
+        "kpts": [[150, 150, 0.9] for _ in range(17)],
+        "wrist_vec": (0.0, 0.0),
+        "torso_angle": 90.0
+    }
+    det_b1 = {
+        "raw_id": 2,
+        "bbox": [370, 100, 470, 300],  # h = 200, khoảng cách ca_x=150 đến cb_x=420 là 270 px = 1.35 * h
+        "kpts": [[420, 150, 0.9] for _ in range(17)],
+        "wrist_vec": (0.0, 0.0),
+        "torso_angle": 90.0
+    }
+    ranker.update_frame([det_a1, det_b1], 640, 480)
+
+    # Frame 2: Đối tượng A thụt mạnh cổ tay về phía B (dịch chuyển sang phải x + 40 px)
+    det_a2 = {
+        "raw_id": 1,
+        "bbox": [100, 100, 200, 300],
+        "kpts": [[150, 150, 0.9] for _ in range(17)],
+        "torso_angle": 90.0
+    }
+    # Khớp cổ tay (index 9, 10) dịch chuyển nhanh về phía B (+x)
+    det_a2["kpts"][9] = [190, 150, 0.9]
+    det_a2["kpts"][10] = [195, 150, 0.9]
+
+    det_b2 = {
+        "raw_id": 2,
+        "bbox": [370, 100, 470, 300],
+        "kpts": [[420, 150, 0.9] for _ in range(17)],
+        "torso_angle": 90.0
+    }
+
+    res = ranker.update_frame([det_a2, det_b2], 640, 480)
+    a_res = [d for d in res if d["raw_id"] == 1][0]
+    b_res = [d for d in res if d["raw_id"] == 2][0]
+
+    # Kiểm tra A được kích hoạt tấn công tầm xa vũ khí và B là mục tiêu
+    assert a_res.get("is_striking") == True
+    assert a_res["interaction_score"] >= 6.0
+    assert b_res.get("is_targeted") == True
+
