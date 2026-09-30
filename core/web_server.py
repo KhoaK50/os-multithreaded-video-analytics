@@ -34,6 +34,7 @@ import math
 import uuid
 import queue
 import threading
+import subprocess
 from typing import Dict, Any, Optional
 from collections import deque
 from contextlib import asynccontextmanager
@@ -50,7 +51,7 @@ from pydantic import BaseModel
 
 from core.config import CONFIG
 from core.cyber_hud import CyberHUDRenderer
-from core.video_annotator import VideoAnnotatorEngine, download_web_video, probe_web_video, check_video_has_audio
+from core.video_annotator import VideoAnnotatorEngine, download_web_video, probe_web_video, check_video_has_audio, get_ffmpeg_bin
 from core.token_guard import TokenGuard
 from core.enhancer import CameraEnhancer
 from core.model_orchestrator import get_model_orchestrator, ModelTier
@@ -1455,6 +1456,32 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
                 call_gemini=req.call_gemini,
                 anomaly_focus=req.anomaly_focus
             )
+
+            # Trích xuất video đoạn gốc tương ứng (Raw Trimmed Slice) để so sánh song song 1:1
+            raw_trimmed_filename = f"raw_trimmed_{job_id}_{os.path.basename(req.video_path)}"
+            raw_trimmed_path = os.path.abspath(os.path.join(RECORDINGS_DIR, raw_trimmed_filename))
+            has_audio = check_video_has_audio(req.video_path)
+            cmd_raw = [
+                get_ffmpeg_bin(), "-y",
+                "-ss", str(req.start_time),
+                "-to", str(req.end_time),
+                "-i", req.video_path
+            ]
+            if has_audio:
+                cmd_raw.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac"])
+            else:
+                cmd_raw.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an"])
+            cmd_raw.extend(["-pix_fmt", "yuv420p", "-movflags", "+faststart", raw_trimmed_path])
+
+            try:
+                subprocess.run(cmd_raw, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=45)
+            except Exception as e_trim:
+                print(f"[!] Warning: failed to extract raw trimmed clip: {e_trim}")
+
+            if os.path.exists(raw_trimmed_path) and os.path.getsize(raw_trimmed_path) > 0:
+                res["raw_trimmed_stream_url"] = f"/api/video/stream_file/{raw_trimmed_filename}"
+            else:
+                res["raw_trimmed_stream_url"] = None
 
             res["annotated_stream_url"] = f"/api/video/stream_file/{output_filename}"
             res["download_url"] = f"/api/video/download/{output_filename}"

@@ -1203,7 +1203,7 @@ function renderResults(result) {
     // Video Players
     const origVid = document.getElementById("result-orig-video");
     const annotVid = document.getElementById("result-annotated-video");
-    origVid.src = currentVideoData.stream_url;
+    origVid.src = result.raw_trimmed_stream_url || currentVideoData.stream_url;
     annotVid.src = result.annotated_stream_url;
 
     // Download Button
@@ -1352,7 +1352,56 @@ function setupDualPlayerSync() {
     };
 }
 
-function seekBothPlayers(seconds, autoPlay = false) {
+let lastScrollOriginElement = null;
+let lastScrollOriginLabel = "";
+
+function showScrollBackAssistant(originElement, label = "") {
+    lastScrollOriginElement = originElement;
+    lastScrollOriginLabel = label;
+    const btn = document.getElementById("floating-scroll-back-btn");
+    const labelEl = document.getElementById("scroll-back-label");
+    if (!btn) return;
+    if (labelEl) {
+        labelEl.textContent = label ? `Quay lại: ${label}` : "Quay lại Phân Đoạn";
+    }
+    btn.classList.remove("hidden");
+    void btn.offsetWidth;
+    btn.classList.add("visible");
+}
+
+function hideScrollBackAssistant() {
+    const btn = document.getElementById("floating-scroll-back-btn");
+    if (!btn) return;
+    btn.classList.remove("visible");
+    setTimeout(() => {
+        if (!btn.classList.contains("visible")) {
+            btn.classList.add("hidden");
+        }
+    }, 280);
+}
+
+function scrollToLastOrigin() {
+    if (lastScrollOriginElement) {
+        lastScrollOriginElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        lastScrollOriginElement.classList.add("highlight-pulse");
+        setTimeout(() => {
+            if (lastScrollOriginElement) lastScrollOriginElement.classList.remove("highlight-pulse");
+        }, 2200);
+    }
+    hideScrollBackAssistant();
+}
+
+window.addEventListener("scroll", () => {
+    if (!lastScrollOriginElement) return;
+    const btn = document.getElementById("floating-scroll-back-btn");
+    if (!btn || !btn.classList.contains("visible")) return;
+    const rect = lastScrollOriginElement.getBoundingClientRect();
+    if (rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight)) {
+        hideScrollBackAssistant();
+    }
+}, { passive: true });
+
+function seekBothPlayers(seconds, autoPlay = false, originEl = null, originLabel = "") {
     const origVid = document.getElementById("result-orig-video");
     const annotVid = document.getElementById("result-annotated-video");
     const wasPlaying = (annotVid && !annotVid.paused) || (origVid && !origVid.paused);
@@ -1371,6 +1420,10 @@ function seekBothPlayers(seconds, autoPlay = false) {
         playerSec.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     updateChartPlayhead(seconds, currentResultDuration);
+
+    if (originEl) {
+        showScrollBackAssistant(originEl, originLabel);
+    }
 }
 
 // ==============================================================================
@@ -1396,7 +1449,7 @@ function renderHeatmap(heatmapData, totalDuration) {
         cell.dataset.idx = idx;
         cell.title = `[${slot.time_str}] Điểm đe dọa: ${slot.score} (${(slot.level || 'safe').toUpperCase()}) - Nhấn để tua`;
         cell.onclick = () => {
-            seekBothPlayers(slot.time);
+            seekBothPlayers(slot.time, false, cell, `Dòng [${slot.time_str}]`);
         };
         container.appendChild(cell);
     });
@@ -1523,11 +1576,17 @@ function renderTimelineSegments() {
         const tb = seg.telemetry_breakdown;
         let breakdownHtml = "";
         if (tb) {
+            const maxVelVal = tb.max_velocity !== undefined ? tb.max_velocity : (tb.strike_velocity || 0);
+            const maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
+            const minDistVal = tb.min_distance !== undefined ? tb.min_distance : (tb.proximity_dist || null);
+            const minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : '> 1.5 m');
+            const dominantPosture = tb.dominant_posture || tb.posture_state || 'Bình thường';
+
             breakdownHtml = `
                 <div class="telemetry-breakdown-box">
-                    <div class="tb-item" title="Vận tốc cử động tay/chân lớn nhất trong đoạn"><span class="tb-k">Vận tốc:</span> <strong class="tb-v mono">${tb.max_velocity || 0} px/s</strong></div>
-                    ${(tb.min_distance !== null && tb.min_distance !== undefined) ? `<div class="tb-item" title="Khoảng cách tiếp cận gần nhất"><span class="tb-k">Tiếp cận:</span> <strong class="tb-v mono">${tb.min_distance} px</strong></div>` : ''}
-                    <div class="tb-item" title="Tư thế phân đoạn"><span class="tb-k">Tư thế:</span> <span class="tb-v">${escapeHtml(tb.dominant_posture || 'Bình thường')}</span></div>
+                    <div class="tb-item" title="Vận tốc cử động tay/chân lớn nhất trong đoạn"><span class="tb-k">Vận tốc:</span> <strong class="tb-v mono">${escapeHtml(maxVelStr)}</strong></div>
+                    <div class="tb-item" title="Khoảng cách tiếp cận gần nhất"><span class="tb-k">Tiếp cận:</span> <strong class="tb-v mono">${escapeHtml(minDistStr)}</strong></div>
+                    <div class="tb-item" title="Tư thế phân đoạn"><span class="tb-k">Tư thế:</span> <span class="tb-v">${escapeHtml(dominantPosture)}</span></div>
                 </div>
             `;
         }
@@ -1562,7 +1621,7 @@ function renderTimelineSegments() {
                 </td>
                 <td style="text-align: right;">
                     <button class="btn btn-sm btn-outline btn-focus-seg" 
-                        onclick="focusTimelineSegment(${seg.start_sec}, ${seg.end_sec}, '${escapeHtml(seg.segment_id)}', '${summaryEscaped}')">
+                        onclick="focusTimelineSegment(${seg.start_sec}, ${seg.end_sec}, '${escapeHtml(seg.segment_id)}', '${summaryEscaped}', this)">
                         ▶️ Xem Đoạn Này
                     </button>
                 </td>
@@ -1576,7 +1635,7 @@ function renderTimelineSegments() {
 // ==============================================================================
 // SEGMENT FOCUS & PLAYBACK LOOP MECHANICS
 // ==============================================================================
-function focusTimelineSegment(startSec, endSec, segId, summary) {
+function focusTimelineSegment(startSec, endSec, segId, summary, originBtn = null) {
     activeFocusSegment = {
         segment_id: segId,
         start_sec: parseFloat(startSec),
@@ -1591,10 +1650,11 @@ function focusTimelineSegment(startSec, endSec, segId, summary) {
         safeSetText("focus-summary-text", summary || "Đang xem lại phân đoạn");
     }
 
-    seekBothPlayers(startSec);
+    const rowEl = document.getElementById(`seg-row-${segId}`) || originBtn;
+    seekBothPlayers(startSec, true, rowEl, segId);
     renderTimelineSegments();
 
-    const playerSec = document.querySelector(".side-by-side-grid");
+    const playerSec = document.querySelector(".side-by-side-grid") || document.getElementById("result-annotated-video");
     if (playerSec) {
         playerSec.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -2000,7 +2060,7 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
         const svgX = ((e.clientX - rect.left) / rect.width) * W;
         const plotX = Math.max(0, Math.min(plotW, svgX - padLeft));
         const seekSec = (plotX / plotW) * duration;
-        seekBothPlayers(seekSec);
+        seekBothPlayers(seekSec, false, wrapper, `Đồ thị [${formatTime(seekSec)}]`);
     };
 
     wrapper.onmousemove = (e) => {
@@ -2108,7 +2168,7 @@ function drawMultiTrackActorTimeline(tracksData, duration) {
                 <div class="ribbon-block ${stateClass}"
                      style="left: ${leftPct.toFixed(2)}%; width: ${widthPct.toFixed(2)}%;"
                      title="[${escapeHtml(actorId)}${roleStr}] ${formatTime(startSec)} - ${formatTime(endSec)}: ${escapeHtml(s.action)} (${stateLabel})"
-                     onclick="seekBothPlayers(${startSec})">
+                     onclick="seekBothPlayers(${startSec}, false, this, '${escapeHtml(actorId)} [${formatTime(startSec)}]')">
                     <span class="ribbon-text">${escapeHtml(s.action)}</span>
                 </div>
             `;

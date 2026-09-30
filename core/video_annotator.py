@@ -850,6 +850,120 @@ class KinematicAnomalyRanker:
         return detections
 
 
+class TemporalActionStabilizer:
+    """
+    Bộ Lọc Trễ Thời Gian & Máy Trạng Thái Cân Bằng (Temporal Hysteresis State Machine)
+    kết hợp Cửa Sổ Trượt Đồng Thuận Đa Số (Sliding Window Majority Vote 7-10 frames).
+    
+    Quy tắc hoạt động chuẩn xác:
+    1. Ngưỡng kích hoạt đòn đánh: Yêu cầu xung lực đòn đánh duy trì >= 3 frames liên tiếp
+       mới kích hoạt trạng thái ĐỎ (Kẻ tấn công / Đang tấn công).
+    2. Khoảng giảm chấn phục hồi (Hysteresis Cooldown Decay): Khi xung lực giảm, duy trì
+       trạng thái VÀNG (Phòng vệ / Cảnh giác) trong tối thiểu 5-6 frames trước khi hạ về XANH (Bình thường).
+    3. Nhãn hành động (Action string): Lấy nhãn chiếm đa số (Majority Vote) trong cửa sổ 7-10 frames gần nhất.
+    4. Ổn định màu sắc BBox & Khung xương: Không cho phép màu sắc nhảy loạn xạ qua từng frame.
+    """
+    def __init__(self, window_size: int = 8, trigger_thresh: int = 3, cooldown_frames: int = 6):
+        self.window_size = window_size
+        self.trigger_thresh = trigger_thresh
+        self.cooldown_frames = cooldown_frames
+        self.track_states = {}  # c_id -> dict
+
+    def update(
+        self,
+        c_id: int,
+        raw_action: str,
+        raw_role: str,
+        raw_danger: bool,
+        threat_score: float,
+        kinetic: float,
+        interaction: float
+    ) -> Dict[str, Any]:
+        if c_id not in self.track_states:
+            self.track_states[c_id] = {
+                "action_history": [],
+                "strike_streak": 0,
+                "cooldown_left": 0,
+                "stable_role": "observer",
+                "stable_danger": False,
+                "stable_action": raw_action,
+                "smoothed_threat": threat_score
+            }
+        st = self.track_states[c_id]
+
+        # 1. Cập nhật lịch sử hành động cho cửa sổ trượt
+        st["action_history"].append(raw_action)
+        if len(st["action_history"]) > self.window_size:
+            st["action_history"].pop(0)
+
+        # 2. Xử lý máy trạng thái Hysteresis cho Đòn Đánh
+        is_raw_strike = raw_danger or raw_role == "attacker" or (kinetic >= 2.2 and interaction >= 1.8)
+        if is_raw_strike:
+            st["strike_streak"] += 1
+            if st["strike_streak"] >= self.trigger_thresh:
+                st["stable_role"] = "attacker"
+                st["stable_danger"] = True
+                st["cooldown_left"] = self.cooldown_frames
+        else:
+            st["strike_streak"] = 0
+            if st["cooldown_left"] > 0:
+                st["cooldown_left"] -= 1
+                # Trong thời gian giảm chấn, giữ ở mức phòng vệ / cảnh giác (Vàng)
+                st["stable_role"] = "defender"
+                st["stable_danger"] = False
+            else:
+                if raw_role == "defender":
+                    st["stable_role"] = "defender"
+                    st["stable_danger"] = False
+                elif raw_role == "victim":
+                    st["stable_role"] = "victim"
+                    st["stable_danger"] = True
+                else:
+                    st["stable_role"] = "observer"
+                    st["stable_danger"] = False
+
+        # 3. Đồng thuận đa số cho nhãn hành vi
+        actions = st["action_history"]
+        if actions:
+            if st["stable_role"] == "attacker":
+                strike_actions = [a for a in actions if any(k in a for k in ["Vung tay", "Tấn công", "Xung đột"])]
+                if strike_actions:
+                    st["stable_action"] = max(set(strike_actions), key=strike_actions.count)
+                else:
+                    st["stable_action"] = "Vung tay ra đòn / Tấn công áp sát"
+            elif st["stable_role"] in ["defender", "victim"]:
+                def_actions = [a for a in actions if any(k in a for k in ["Phòng vệ", "Thủ thế", "Chắn đỡ", "Té ngã"])]
+                if def_actions:
+                    st["stable_action"] = max(set(def_actions), key=def_actions.count)
+                else:
+                    st["stable_action"] = "Phòng vệ / Chắn đỡ né đòn" if st["stable_role"] == "defender" else "Té ngã / Nằm bất động"
+            else:
+                st["stable_action"] = max(set(actions), key=actions.count)
+
+        # 4. Làm mịn điểm số nguy cơ theo EMA
+        st["smoothed_threat"] = 0.60 * st["smoothed_threat"] + 0.40 * threat_score
+
+        # 5. Xác định màu sắc ổn định không nhấp nháy
+        if st["stable_role"] == "attacker" or (st["stable_role"] == "victim" and st["stable_danger"]):
+            color = (68, 68, 239)      # Đỏ BGR
+            role_prefix = " [TẤN CÔNG]" if st["stable_role"] == "attacker" else " [NẠN NHÂN]"
+        elif st["stable_role"] == "defender":
+            color = (0, 215, 255)       # Vàng hổ phách BGR
+            role_prefix = " [PHÒNG VỆ]"
+        else:
+            color = (255, 240, 0)       # Cyan BGR (Người quan sát)
+            role_prefix = ""
+
+        return {
+            "action": st["stable_action"],
+            "role": st["stable_role"],
+            "is_danger": st["stable_danger"],
+            "color": color,
+            "role_prefix": role_prefix,
+            "threat_score": round(st["smoothed_threat"], 1)
+        }
+
+
 class VideoAnnotatorEngine:
 
     def __init__(self, auto_warmup: bool = False):
@@ -1017,6 +1131,7 @@ class VideoAnnotatorEngine:
         anomaly_ranker = KinematicAnomalyRanker(top_k=4) if anomaly_focus else None
         posture_distribution = {"upright": 0, "bent": 0, "slouched": 0}
         fall_streaks = {}
+        temporal_stabilizer = TemporalActionStabilizer(window_size=8, trigger_thresh=3, cooldown_frames=6)
         has_orig_audio = check_video_has_audio(input_path)
 
         # Cấu trúc Phân đoạn Timeline (Temporal Behavior Segments)
@@ -1323,26 +1438,32 @@ class VideoAnnotatorEngine:
                                 else:
                                     person_action = "Đang đứng / Hoạt động trong phòng"
 
-                            # Phối màu chuẩn phân cấp: Đỏ (Kẻ tấn công), Vàng (Nạn nhân phòng thủ), Xanh Cyan (Người ngoài cuộc)
-                            if person_danger or person_role_type == "attacker":
-                                color = (68, 68, 239)     # Đỏ BGR (Kẻ tấn công)
-                                role_prefix = " [TẤN CÔNG]"
-                            elif person_role_type == "defender":
-                                color = (0, 215, 255)      # Vàng hổ phách BGR (Nạn nhân phòng thủ)
-                                role_prefix = " [PHÒNG VỆ]"
-                            else:
-                                color = (255, 240, 0)      # Cyan BGR (Người quan sát)
-                                role_prefix = ""
+                            # Lọc trễ thời gian (Temporal Hysteresis) + Cửa sổ trượt đồng thuận đa số để khử giật nhãn/màu
+                            stab_res = temporal_stabilizer.update(
+                                c_id=c_id,
+                                raw_action=person_action,
+                                raw_role=person_role_type,
+                                raw_danger=person_danger,
+                                threat_score=person_threat_score,
+                                kinetic=kinetic_spike,
+                                interaction=interaction_score
+                            )
+                            stable_action = stab_res["action"]
+                            stable_role = stab_res["role"]
+                            stable_danger = stab_res["is_danger"]
+                            color = stab_res["color"]
+                            role_prefix = stab_res["role_prefix"]
+                            stable_threat_score = stab_res["threat_score"]
 
-                            # Bounding Box góc ngoặc
-                            label_str = f"{id_label}{role_prefix}: {person_action.upper()}"
+                            # Bounding Box góc ngoặc mượt mà, không nhấp nháy
+                            label_str = f"{id_label}{role_prefix}: {stable_action.upper()}"
                             self.hud.draw_corner_bracket_bbox(frame, x1, y1, x2, y2, color, label_str, conf)
 
                             # Khung xương 17 khớp nối thanh mảnh
                             kpts_scaled = [(pt[0], pt[1], pt[2]) for pt in kpts]
                             self.hud.draw_cyber_skeleton(frame, kpts_scaled, color)
 
-                        action_counts[person_action] = action_counts.get(person_action, 0) + 1
+                        action_counts[stable_action] = action_counts.get(stable_action, 0) + 1
                         if torso_angle >= 75.0:
                             posture_distribution["upright"] += 1
                         elif 45.0 <= torso_angle < 75.0:
@@ -1350,14 +1471,22 @@ class VideoAnnotatorEngine:
                         else:
                             posture_distribution["slouched"] += 1
 
-                        frame_threat_score = max(frame_threat_score, person_threat_score)
+                        if stable_danger:
+                            has_frame_danger = True
+                            if not frame_alert:
+                                frame_alert = f"CẢNH BÁO: XUNG ĐỘT ({id_label})"
+
+                        frame_threat_score = max(frame_threat_score, stable_threat_score)
                         frame_entities.append({
                             "canonical_id": c_id,
                             "id_label": id_label,
-                            "action": person_action,
+                            "action": stable_action,
+                            "role": stable_role,
                             "angle": torso_angle,
-                            "threat_score": person_threat_score,
-                            "is_danger": person_danger
+                            "threat_score": stable_threat_score,
+                            "is_danger": stable_danger,
+                            "kinetic_spike": kinetic_spike,
+                            "interaction_score": interaction_score
                         })
 
             # Ghi nhận vào phân đoạn timeline tương ứng
@@ -1371,13 +1500,20 @@ class VideoAnnotatorEngine:
                         "actions": [],
                         "angles": [],
                         "max_threat": 0.0,
-                        "danger_count": 0
+                        "danger_count": 0,
+                        "defender_count": 0,
+                        "kinetic_spikes": [],
+                        "interaction_scores": []
                     }
                 current_seg["persons_history"][c_id_key]["actions"].append(ent["action"])
                 current_seg["persons_history"][c_id_key]["angles"].append(ent["angle"])
                 current_seg["persons_history"][c_id_key]["max_threat"] = max(current_seg["persons_history"][c_id_key]["max_threat"], ent["threat_score"])
-                if ent["is_danger"]:
+                current_seg["persons_history"][c_id_key]["kinetic_spikes"].append(ent.get("kinetic_spike", 0.0))
+                current_seg["persons_history"][c_id_key]["interaction_scores"].append(ent.get("interaction_score", 0.0))
+                if ent.get("role") == "attacker" or ent["is_danger"]:
                     current_seg["persons_history"][c_id_key]["danger_count"] += 1
+                elif ent.get("role") == "defender":
+                    current_seg["persons_history"][c_id_key]["defender_count"] += 1
 
             if has_frame_danger:
                 current_seg["has_danger"] = True
@@ -1644,30 +1780,69 @@ class VideoAnnotatorEngine:
             # Cơ sở phân tích (Telemetry Breakdown theo công thức 5 trụ cột)
             max_k = max(seg_kinetics) if seg_kinetics else 0.0
             max_c = max(seg_interactions) if seg_interactions else 0.0
-            score_kinetic = min(10.0, max_k * 3.2)
-            score_proximity = min(10.0, max_c * 2.0)
+            score_kinetic = min(10.0, max_k * 2.8)
+            score_proximity = min(10.0, max_c * 2.2)
             score_posture = 8.5 if seg_severity == "danger" else (4.5 if seg_severity == "warning" else 0.5)
+            
+            # Tính điểm nguy cơ đa biến biến thiên thực tế theo mức độ va chạm
             calculated_score = min(10.0, 0.40 * score_kinetic + 0.35 * score_proximity + 0.25 * score_posture)
             final_threat_score = round(calculated_score if seg_severity != "safe" else 0.0, 1)
 
+            vel_px = int(round(max_k * 140.0)) if max_k > 0.3 else 0
+            dist_px = int(round(max(25.0, 180.0 - max_c * 28.0))) if max_c > 0.5 else 180
+            posture_display = "Xô xát / Ra đòn" if seg_severity == "danger" else ("Áp sát thủ thế" if seg_severity == "warning" else "Đứng thẳng / Ổn định")
+
             telemetry_breakdown = {
-                "strike_velocity": f"{round(max_k * 1.3, 1)} m/s" if max_k > 0.8 else "Bình thường",
-                "proximity_dist": f"{round(max(0.25, 1.1 - max_c/5.5), 2)} m" if max_c > 1.0 else "> 1.5 m",
-                "posture_state": "Xô xát / Sụp đổ" if seg_severity == "danger" else ("Áp sát thủ thế" if seg_severity == "warning" else "Ổn định"),
+                # Frontend convention (app.js compatibility)
+                "max_velocity": vel_px,
+                "min_distance": dist_px,
+                "dominant_posture": posture_display,
+                # Backend convention
+                "strike_velocity": f"{round(max_k * 1.3, 1)} m/s" if max_k > 0.8 else f"{vel_px} px/s",
+                "proximity_dist": f"{dist_px} px" if max_c > 0.8 else "> 1.5 m",
+                "posture_state": posture_display,
                 "kinetic_spike": round(max_k, 2),
                 "interaction_score": round(max_c, 2),
                 "calculated_score": final_threat_score
             }
 
-            # Tóm tắt hành vi chuẩn xác, loại bỏ định kiến
+            # Tổng hợp câu văn mô tả sinh động từ số liệu động học thực tế (Kinematic-Semantic Synthesis)
+            attackers = [e for e in seg_entities if e.get("severity") == "danger"]
+            defenders = [e for e in seg_entities if e.get("severity") == "warning"]
+            observers = [e for e in seg_entities if e.get("severity") == "safe" and e.get("id") != "KHÔNG GIAN"]
+
             if seg_severity == "danger":
-                scene_summary = "Cảnh báo an ninh: Phát hiện hành vi xô xát / vung đòn tấn công trong phân đoạn này."
+                if attackers and defenders:
+                    atk_id = attackers[0]["id"]
+                    def_id = defenders[0]["id"]
+                    scene_summary = f"Cảnh báo xung đột: Đối tượng {atk_id} áp sát ở cự ly {dist_px} px, vung đòn tốc độ {vel_px} px/s về phía {def_id}. {def_id} co hai tay phòng vệ né đòn."
+                    if observers:
+                        obs_str = ", ".join([o["id"] for o in observers[:2]])
+                        scene_summary += f" Đối tượng {obs_str} giữ vị trí quan sát ngoài cuộc."
+                elif attackers:
+                    atk_id = attackers[0]["id"]
+                    scene_summary = f"Cảnh báo an ninh: Đối tượng {atk_id} ghi nhận xung lực cơ thể đột biến ({vel_px} px/s) với tư thế vung tay tấn công áp sát."
+                else:
+                    scene_summary = f"Cảnh báo va chạm: Phát hiện biến thiên động học mạnh giữa các cá nhân ({vel_px} px/s), cự ly thu hẹp dưới {dist_px} px."
             elif seg_severity == "warning":
-                scene_summary = "Cảnh báo phòng vệ: Ghi nhận tư thế đối đầu / áp sát phòng thủ giữa các đối tượng."
-            elif len(seg_entities) > 1:
-                scene_summary = f"Không gian ổn định: Ghi nhận {len(seg_entities)} đối tượng hoạt động và quan sát bình thường."
+                if defenders:
+                    def_id = defenders[0]["id"]
+                    scene_summary = f"Cảnh báo phòng vệ: Ghi nhận đối tượng {def_id} thủ thế co hai tay chắn đỡ, nghiêng thân né tránh ở cự ly {dist_px} px."
+                else:
+                    scene_summary = f"Trạng thái đối đầu: Các đối tượng thu hẹp khoảng cách tiếp cận ({dist_px} px), tư thế sẵn sàng phòng vệ nhưng chưa phát sinh va chạm."
             else:
-                scene_summary = f"Đối tượng {seg_entities[0]['id']} {seg_entities[0]['action'].lower()}."
+                if len(observers) > 1:
+                    scene_summary = f"Khu vực an ninh ổn định: Ghi nhận {len(observers)} đối tượng hoạt động bình thường, cự ly an toàn > 1.5 m, không có xung lực đột biến."
+                elif len(seg_entities) == 1 and seg_entities[0].get("id") != "KHÔNG GIAN":
+                    scene_summary = f"Đối tượng {seg_entities[0]['id']} {seg_entities[0]['action'].lower()}, trạng thái sinh cơ học ổn định."
+                else:
+                    scene_summary = "Khu vực an ninh ổn định, không ghi nhận chuyển động bất thường."
+
+            pred_next = "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo"
+            if seg_severity == "danger":
+                pred_next = "Nguy cơ xung đột tiếp diễn cao; cần kích hoạt cảnh báo an ninh và tách biệt các đối tượng"
+            elif seg_severity == "warning":
+                pred_next = "Cần theo dõi cự ly tiếp xúc; có thể hạ nhiệt nếu các đối tượng lùi bước giữ khoảng cách an toàn"
 
             timeline_segments.append({
                 "segment_id": f"SEG-{idx+1:02d}",
@@ -1676,7 +1851,7 @@ class VideoAnnotatorEngine:
                 "time_range": time_range,
                 "scene_summary": scene_summary,
                 "context_description": scene_summary,
-                "prediction_next_4s": "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo",
+                "prediction_next_4s": pred_next,
                 "entities": seg_entities,
                 "severity": seg_severity,
                 "danger_score": final_threat_score,
@@ -1684,15 +1859,24 @@ class VideoAnnotatorEngine:
                 "snapshot_url": f"/api/snapshots/{snap_filename}"
             })
 
-        # Mảng mẫu Heatmap
+        # Mảng mẫu Heatmap & Đường cong Rủi ro làm mượt bằng EMA 5 mẫu
+        raw_slots = sorted(heatmap_samples.keys())
+        smoothed_scores = {}
+        for i, s_k in enumerate(raw_slots):
+            nearby = [heatmap_samples[raw_slots[j]] for j in range(max(0, i - 2), min(len(raw_slots), i + 3))]
+            if nearby:
+                smoothed_scores[s_k] = 0.55 * (sum(nearby) / len(nearby)) + 0.45 * max(nearby)
+            else:
+                smoothed_scores[s_k] = heatmap_samples[s_k]
+
         heatmap_data = []
-        for slot in sorted(heatmap_samples.keys()):
-            score = heatmap_samples[slot]
-            level = "danger" if score >= 8.0 else ("warning" if score >= 4.0 else "safe")
+        for slot in raw_slots:
+            sc = round(smoothed_scores.get(slot, heatmap_samples[slot]), 1)
+            level = "danger" if sc >= 7.0 else ("warning" if sc >= 3.5 else "safe")
             heatmap_data.append({
                 "time": slot,
                 "time_str": format_time(slot),
-                "score": round(score, 1),
+                "score": sc,
                 "level": level
             })
 
