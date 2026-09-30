@@ -206,15 +206,46 @@ class TokenGuard:
                 t_rng = s.get("time_range", "")
                 loc_sc = s.get("local_score", 0.0)
                 seg_threat_lvl = "NGUY HIỂM" if (loc_sc >= 7.0 or has_strike or has_clash) else ("CẢNH BÁO" if loc_sc >= 4.0 else threat_level)
+                
+                # Tạo đoạn văn miêu tả phân tích hành vi cụ thể (2-4 câu) giống Live Camera
+                if seg_threat_lvl == "NGUY HIỂM":
+                    if has_fall and not (has_clash or has_strike):
+                        detailed_narrative = (
+                            f"Phân đoạn ghi nhận biến cố té ngã nghiêm trọng tại mốc thời gian {t_rng}. "
+                            f"Chủ thể mất thăng bằng, trục thân sụp đổ nhanh chóng xuống sát sàn nhà (điểm nguy cơ: {max_threat_score:.1f}/10). "
+                            f"Các đối tượng xung quanh có xu hướng dừng vận động hoặc tiếp cận hiện trường. "
+                            f"Khuyến nghị kích hoạt hỗ trợ y tế và kiểm tra an toàn lập tức."
+                        )
+                    else:
+                        detailed_narrative = (
+                            f"Phân đoạn ghi nhận xung đột thể chất cường độ cao tại mốc thời gian {t_rng}. "
+                            f"Các đối tượng tiếp cận ở cự ly rất gần, xuất hiện cử chỉ vung tay tấn công áp sát với xung lực mạnh (điểm nguy cơ: {max_threat_score:.1f}/10). "
+                            f"Ghi nhận phản ứng chống đỡ tự vệ và giằng co rõ rệt giữa các bên. "
+                            f"Yêu cầu lực lượng an ninh can thiệp giải tán xung đột kịp thời."
+                        )
+                elif seg_threat_lvl == "CẢNH BÁO":
+                    detailed_narrative = (
+                        f"Phân đoạn ghi nhận tương tác căng thẳng hoặc cử chỉ đối kháng ở cự ly gần tại mốc thời gian {t_rng}. "
+                        f"Đối tượng có biểu hiện thủ thế, co tay trước ngực hoặc di chuyển áp sát đối phương. "
+                        f"Chưa ghi nhận va chạm sát thương vật lý mạnh nhưng tiềm ẩn nguy cơ leo thang xô xát, cần theo dõi sát sao."
+                    )
+                else:
+                    detailed_narrative = (
+                        f"Phân đoạn diễn ra trong không gian sinh hoạt và làm việc an toàn, ổn định tại mốc {t_rng}. "
+                        f"Các đối tượng duy trì tư thế ngồi làm việc hoặc đứng di chuyển với động năng bình thường. "
+                        f"Không xuất hiện gia tốc đột biến, cử chỉ gây hấn hay bất kỳ dấu hiệu mất an toàn nào."
+                    )
+
                 seg_analyses.append({
                     "segment_id": s_id,
                     "macro_narrative": f"Phân đoạn {s_id} ({t_rng}): {macro_action}. Đánh giá nguy cơ: {seg_threat_lvl}.",
                     "detailed_action": macro_action,
+                    "detailed_narrative": detailed_narrative,
                     "weapon_detected": "Hung khí / Vật dụng va chạm" if has_strike else None,
                     "posture_override": "Ngồi tại bàn / Học tập" if is_safe else None,
                     "threat_score": max_threat_score if seg_threat_lvl == "NGUY HIỂM" else (4.5 if seg_threat_lvl == "CẢNH BÁO" else 0.5),
                     "threat_level": seg_threat_lvl,
-                    "context_description": scene_ctx,
+                    "context_description": detailed_narrative,
                     "prediction_next_4s": "Duy trì theo dõi sát sao động thái ở chu kỳ tiếp theo."
                 })
 
@@ -400,8 +431,9 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
   "segment_analyses": [
     {{
       "segment_id": "SEG-01",
-      "macro_narrative": "Câu mô tả diễn biến vĩ mô hoàn chỉnh của phân đoạn",
+      "macro_narrative": "Câu mô tả diễn biến vĩ mô ngắn gọn (1 câu)",
       "detailed_action": "Hành động chủ đạo ngắn gọn",
+      "detailed_narrative": "Đoạn văn phân tích hành vi cụ thể (2-4 câu): Diễn giải chi tiết cử chỉ, tư thế, ngôn ngữ cơ thể, tương tác thể chất giữa các đối tượng và đồ vật trong phân đoạn.",
       "weapon_detected": "Gậy / Hung khí" | null,
       "posture_override": "Ngồi tại bàn / Học tập" | null,
       "threat_score": 8.5,

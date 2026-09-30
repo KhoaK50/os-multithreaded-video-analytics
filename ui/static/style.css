@@ -3438,3 +3438,167 @@ tr.active-segment-row {
     }
 }
 
+/* ==============================================================================
+   TIMELINE CHAPTERS: DETAILED NARRATIVE PARAGRAPH CARD
+   ============================================================================== */
+.seg-detailed-narrative-card {
+    margin-top: 10px;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 3px solid #06B6D4;
+    border-radius: 6px;
+    padding: 10px 14px;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.seg-detailed-narrative-card:hover {
+    background: rgba(15, 23, 42, 0.75);
+    border-left-color: #10B981;
+}
+
+.sdn-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 5px;
+}
+
+.sdn-icon {
+    font-size: 14px;
+}
+
+.sdn-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+}
+
+.sdn-body {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.sdn-prediction {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    font-size: 0.80rem;
+    color: #FBBF24;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sdn-pred-tag {
+    font-weight: 600;
+    color: #F59E0B;
+}
+
+/* ==============================================================================
+   REALTIME QUOTA GAUGES (RPM & RPD) IN TELEMETRY DRAWER
+   ============================================================================== */
+.quota-gauges-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+@media (max-width: 768px) {
+    .quota-gauges-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+.quota-gauge-card {
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.qg-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.qg-label {
+    font-size: 0.80rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.qg-val {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+#drawer-rpm-val {
+    color: #10B981;
+}
+
+#drawer-rpd-val {
+    color: #06B6D4;
+}
+
+.quota-progress-track {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.quota-progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    transition: width 0.3s ease, background 0.3s ease;
+}
+
+.rpm-bar {
+    background: #10B981;
+}
+
+.rpd-bar {
+    background: #06B6D4;
+}
+
+.qg-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+}
+
+.qg-footer strong {
+    color: var(--text-secondary);
+}
+
+.quota-tokens-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 14px;
+    font-size: 0.80rem;
+}
+
+.qtr-label {
+    color: var(--text-secondary);
+}
+
+.qtr-val {
+    color: #F59E0B;
+}
+
+

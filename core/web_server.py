@@ -1230,14 +1230,15 @@ def get_telemetry():
     else:
         curr_ergo = 58.0
 
-    tier1_m = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
-    tier2_m = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-3.1-flash-lite")
+    quota_stats = tier_info.get("quota_stats") or MODEL_ORCHESTRATOR.quota_tracker.get_stats()
+    tier1_m = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-2.0-flash")
+    tier2_m = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-1.5-flash")
     quota_matrix = {
         "tier_1": {
             "name": "Tier 1: Cloud Vision Cao Cấp",
             "model": tier1_m,
             "status": "Đang hoạt động" if not tier_info.get("is_cooldown") else f"Hồi hạn mức ({round(tier_info.get('cooldown_remaining', 0), 1)}s)",
-            "limit": "1,500 RPD / 15 RPM",
+            "limit": f"{quota_stats['rpd_used']}/{quota_stats['rpd_limit']} RPD | {quota_stats['rpm_used']}/{quota_stats['rpm_limit']} RPM",
             "badge": "● Sẵn sàng",
             "is_active": (tier_info.get("active_tier") == "tier_1")
         },
@@ -1245,7 +1246,7 @@ def get_telemetry():
             "name": "Tier 2: Cloud Vision Kế Cận",
             "model": tier2_m,
             "status": "Đang hoạt động (Dự phòng)" if (tier_info.get("active_tier") == "tier_2") else "Sẵn sàng dự phòng",
-            "limit": "1,500 RPD / 15 RPM",
+            "limit": f"{quota_stats['rpd_used']}/{quota_stats['rpd_limit']} RPD | {quota_stats['rpm_used']}/{quota_stats['rpm_limit']} RPM",
             "badge": "● Dự phòng",
             "is_active": (tier_info.get("active_tier") == "tier_2")
         },
@@ -1287,6 +1288,17 @@ def get_telemetry():
         "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
         "is_cooldown": tier_info.get("is_cooldown", False),
         "quota_matrix": quota_matrix,
+        "realtime_quota": {
+            "rpm_used": quota_stats["rpm_used"],
+            "rpm_limit": quota_stats["rpm_limit"],
+            "rpm_remaining": quota_stats["rpm_remaining"],
+            "rpm_percent": quota_stats["rpm_percent"],
+            "rpd_used": quota_stats["rpd_used"],
+            "rpd_limit": quota_stats["rpd_limit"],
+            "rpd_remaining": quota_stats["rpd_remaining"],
+            "rpd_percent": quota_stats["rpd_percent"],
+            "tokens_today": quota_stats["tokens_today"]
+        },
         "active_clients": LIVE_CAMERA.active_clients,
 
         # Tương thích ngược với UI và test suite hiện hành

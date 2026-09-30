@@ -161,6 +161,57 @@ class CooldownTracker:
             self.tier2_cooldown_start = None
 
 
+
+class QuotaTracker:
+    """
+    Theo dõi lưu lượng gọi API Gemini thời gian thực:
+    - RPM (Requests Per Minute): Cửa sổ trượt 60 giây (ngưỡng miễn phí: 15 RPM).
+    - RPD (Requests Per Day): Cửa sổ 24 giờ (ngưỡng miễn phí: 1,500 RPD).
+    - Tổng Tokens tích lũy hôm nay.
+    """
+    def __init__(self, rpm_limit: int = 15, rpd_limit: int = 1500):
+        self.rpm_limit = rpm_limit
+        self.rpd_limit = rpd_limit
+        self.minute_window: List[float] = []
+        self.daily_requests_count: int = 0
+        self.day_start_timestamp: float = time.time()
+        self.total_tokens_used_today: int = 0
+        self._lock = threading.Lock()
+
+    def record_request(self, token_count: int = 0):
+        with self._lock:
+            now = time.time()
+            if now - self.day_start_timestamp >= 86400.0:
+                self.day_start_timestamp = now
+                self.daily_requests_count = 0
+                self.total_tokens_used_today = 0
+            self.minute_window.append(now)
+            self.daily_requests_count += 1
+            if token_count > 0:
+                self.total_tokens_used_today += token_count
+
+    def get_stats(self) -> dict:
+        with self._lock:
+            now = time.time()
+            cutoff = now - 60.0
+            self.minute_window = [t for t in self.minute_window if t > cutoff]
+            rpm_used = len(self.minute_window)
+            rpd_used = self.daily_requests_count
+            rpm_rem = max(0, self.rpm_limit - rpm_used)
+            rpd_rem = max(0, self.rpd_limit - rpd_used)
+            return {
+                "rpm_used": rpm_used,
+                "rpm_limit": self.rpm_limit,
+                "rpm_remaining": rpm_rem,
+                "rpm_percent": round((rpm_used / max(1, self.rpm_limit)) * 100.0, 1),
+                "rpd_used": rpd_used,
+                "rpd_limit": self.rpd_limit,
+                "rpd_remaining": rpd_rem,
+                "rpd_percent": round((rpd_used / max(1, self.rpd_limit)) * 100.0, 1),
+                "tokens_today": self.total_tokens_used_today
+            }
+
+
 class AutonomousHeuristicArbiter:
     """Bộ Hội chẩn Hành vi Tự hành Cục bộ (Tier 3) có nhận thức ngữ cảnh chuỗi hành vi."""
 
@@ -249,6 +300,7 @@ class HierarchicalModelOrchestrator:
         self.tier3_enum = ModelTier.TIER_3_HEURISTIC
 
         self.cooldown_tracker = CooldownTracker(cooldown_seconds=self.cooldown_seconds)
+        self.quota_tracker = QuotaTracker()
         self.context_memory = RollingContextMemory(maxlen=5)
         self.heuristic_arbiter = AutonomousHeuristicArbiter()
 
@@ -320,12 +372,15 @@ class HierarchicalModelOrchestrator:
             is_cd = True
             cd_rem = self.cooldown_tracker.get_cooldown_remaining(ModelTier.TIER_1_PRIMARY)
 
+        quota_stats = self.quota_tracker.get_stats()
+
         return {
             "active_tier": tier_key,
             "tier_name": tier_name,
             "tier_badge": tier_badge,
             "is_cooldown": is_cd,
             "cooldown_remaining": round(cd_rem, 1),
+            "quota_stats": quota_stats
         }
 
     def _parse_gemini_json(self, raw_text: str) -> dict:
@@ -392,6 +447,8 @@ class HierarchicalModelOrchestrator:
             config=config
         )
         raw_text = getattr(response, "text", "") or "{}"
+        toks = getattr(getattr(response, "usage_metadata", None), "total_token_count", 0) or 0
+        self.quota_tracker.record_request(token_count=toks)
         return self._parse_gemini_json(raw_text)
 
     def _record_success(self, res: dict, bio: dict, tier: ModelTier):
@@ -497,6 +554,8 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                     config=config
                 )
                 raw_text = getattr(resp, "text", "") or "{}"
+                toks = getattr(getattr(resp, "usage_metadata", None), "total_token_count", 0) or 0
+                self.quota_tracker.record_request(token_count=toks)
                 data = self._parse_gemini_json(raw_text)
                 return data, ModelTier.TIER_1_PRIMARY
             except Exception as e1:
@@ -516,6 +575,8 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                     config=config
                 )
                 raw_text = getattr(resp, "text", "") or "{}"
+                toks = getattr(getattr(resp, "usage_metadata", None), "total_token_count", 0) or 0
+                self.quota_tracker.record_request(token_count=toks)
                 data = self._parse_gemini_json(raw_text)
                 return data, ModelTier.TIER_2_FALLBACK
             except Exception as e2:

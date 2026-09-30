@@ -341,3 +341,76 @@ def test_fallback_role_differentiation_fall_vs_strike():
     assert "tấn công" not in actors[0]["role"].lower()
 
 
+def test_quota_tracker_rpm_and_rpd_sliding_window():
+    """
+    Kiểm thử Bộ theo dõi Quota Realtime (QuotaTracker):
+    1. Ghi nhận chính xác số requests trong cửa sổ trượt 60 giây (RPM).
+    2. Ghi nhận chính xác số requests và tokens tích lũy trong ngày (RPD).
+    3. Tính toán chính xác số lượt còn lại (rpm_remaining, rpd_remaining).
+    """
+    from core.model_orchestrator import QuotaTracker
+    qt = QuotaTracker(rpm_limit=15, rpd_limit=1500)
+    
+    # Ghi nhận 3 requests liên tiếp với tokens
+    qt.record_request(token_count=120)
+    qt.record_request(token_count=350)
+    qt.record_request(token_count=400)
+
+    stats = qt.get_stats()
+    assert stats["rpm_used"] == 3
+    assert stats["rpm_limit"] == 15
+    assert stats["rpm_remaining"] == 12
+    assert stats["rpm_percent"] == 20.0
+
+    assert stats["rpd_used"] == 3
+    assert stats["rpd_limit"] == 1500
+    assert stats["rpd_remaining"] == 1497
+    assert stats["tokens_today"] == 870
+
+
+def test_segment_detailed_narrative_generation():
+    """
+    Kiểm thử tạo Đoạn văn Phân tích Hành vi Chi tiết theo phân đoạn:
+    Hệ thống bắt buộc trả về trường detailed_narrative chứa câu phân tích
+    cụ thể dài 2-4 câu diễn giải diễn biến hành vi cho từng phân đoạn.
+    """
+    from core.token_guard import TokenGuard
+    tg = TokenGuard()
+    report = tg._synthesize_local_autonomous_report(
+        event_summary=[
+            {"threat_type": "XUNG ĐỘT", "threat_score": 8.5, "details": "Vung tay ra đòn áp sát"}
+        ],
+        video_metadata={"duration_sec": 15.0, "frame_count": 450, "fps": 30.0},
+        segment_info=[
+            {"segment_id": "SEG-01", "time_range": "00:00 -> 00:07", "local_score": 8.5, "entity_count": 3}
+        ]
+    )
+    segs = report.get("segment_analyses", [])
+    assert len(segs) >= 1
+    seg1 = segs[0]
+    assert "detailed_narrative" in seg1
+    nar = seg1["detailed_narrative"]
+    assert isinstance(nar, str)
+    assert len(nar) > 50
+    # Phải có dấu chấm câu chứng minh là đoạn văn đa câu
+    assert nar.count(".") >= 2
+
+
+def test_telemetry_realtime_quota_contract():
+    """
+    Kiểm thử cấu trúc trả về của API Telemetry có trường realtime_quota
+    đáp ứng đầy đủ các thông số RPM và RPD cho giao diện Web.
+    """
+    from core.web_server import get_telemetry
+    data = get_telemetry()
+    assert "realtime_quota" in data
+    rq = data["realtime_quota"]
+    assert "rpm_used" in rq
+    assert "rpm_limit" in rq
+    assert "rpd_used" in rq
+    assert "rpd_limit" in rq
+    assert rq["rpm_limit"] == 15
+    assert rq["rpd_limit"] == 1500
+
+
+

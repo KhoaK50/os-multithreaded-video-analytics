@@ -797,7 +797,44 @@
 
                 <!-- Section 2: Realtime Quota Matrix -->
                 <div class="drawer-section">
-                    <div class="drawer-section-title">🛡️ HẠN MỨC & TRẠNG THÁI API (QUOTA MATRIX)</div>
+                    <div class="drawer-section-title">🛡️ HẠN MỨC & TRẠNG THÁI API REALTIME</div>
+
+                    <!-- Realtime Live Gauges: RPM & RPD -->
+                    <div class="quota-gauges-container">
+                        <div class="quota-gauge-card">
+                            <div class="qg-header">
+                                <span class="qg-label">⚡ QUOTA PHÚT (RPM)</span>
+                                <span class="qg-val mono" id="drawer-rpm-val">0 / 15</span>
+                            </div>
+                            <div class="quota-progress-track">
+                                <div id="drawer-rpm-bar" class="quota-progress-bar rpm-bar"></div>
+                            </div>
+                            <div class="qg-footer mono">
+                                <span>Còn: <strong id="drawer-rpm-rem">15 req</strong></span>
+                                <span>Trần: 15 req/phút</span>
+                            </div>
+                        </div>
+
+                        <div class="quota-gauge-card">
+                            <div class="qg-header">
+                                <span class="qg-label">📅 QUOTA NGÀY (RPD)</span>
+                                <span class="qg-val mono" id="drawer-rpd-val">0 / 1,500</span>
+                            </div>
+                            <div class="quota-progress-track">
+                                <div id="drawer-rpd-bar" class="quota-progress-bar rpd-bar"></div>
+                            </div>
+                            <div class="qg-footer mono">
+                                <span>Còn: <strong id="drawer-rpd-rem">1,500 req</strong></span>
+                                <span>Trần: 1,500 req/ngày</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="quota-tokens-row mono">
+                        <span class="qtr-label">🪙 Tokens Tiêu Thụ Hôm Nay:</span>
+                        <strong id="drawer-tokens-val" class="qtr-val">0 tokens</strong>
+                    </div>
+
                     <div class="quota-matrix-list" id="drawer-quota-list">
                         <!-- Rendered dynamically via fetchTelemetry() -->
                     </div>

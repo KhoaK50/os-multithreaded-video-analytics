@@ -1594,6 +1594,21 @@ function renderTimelineSegments() {
         });
         entitiesHtml += `</div>`;
 
+        // Khung Đoạn Văn Phân Tích Diễn Biến Hành Vi Chi Tiết Cụ Thể (2-4 câu)
+        const narrativeText = seg.detailed_narrative || seg.context_description || seg.scene_summary || "Phân đoạn ghi nhận các đối tượng tương tác ổn định trong không gian.";
+        const predHtml = seg.prediction_next_4s ? `<div class="sdn-prediction mono"><span class="sdn-pred-tag">🔮 Dự đoán 4s tới:</span> ${escapeHtml(seg.prediction_next_4s)}</div>` : "";
+
+        entitiesHtml += `
+            <div class="seg-detailed-narrative-card">
+                <div class="sdn-header">
+                    <span class="sdn-icon">📖</span>
+                    <strong class="sdn-title">Phân tích Diễn biến Hành vi Phân đoạn:</strong>
+                </div>
+                <p class="sdn-body">${escapeHtml(narrativeText)}</p>
+                ${predHtml}
+            </div>
+        `;
+
         // Cơ sở đánh giá động học (Telemetry Breakdown)
         const tb = seg.telemetry_breakdown;
         let breakdownHtml = "";
@@ -2261,6 +2276,37 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
     safeSetText("drawer-cpu", `${telemetryData.cpu_percent || 0}%`);
     safeSetText("drawer-ram", `${telemetryData.ram_percent || 0}%`);
     safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0} / ${telemetryData.gpu_vram_total_mb || 8192} MB (${telemetryData.gpu_name || 'GPU'})`);
+
+    // Update realtime Quota Gauges (RPM, RPD & Tokens)
+    const rq = telemetryData.realtime_quota;
+    if (rq) {
+        safeSetText("drawer-rpm-val", `${rq.rpm_used || 0} / ${rq.rpm_limit || 15}`);
+        safeSetText("drawer-rpm-rem", `${rq.rpm_remaining !== undefined ? rq.rpm_remaining : 15} req`);
+        const rpmBar = document.getElementById("drawer-rpm-bar");
+        if (rpmBar) {
+            rpmBar.style.width = `${Math.min(100, rq.rpm_percent || 0)}%`;
+            if (rq.rpm_percent >= 80) {
+                rpmBar.style.background = "var(--accent-crimson)";
+            } else if (rq.rpm_percent >= 50) {
+                rpmBar.style.background = "var(--accent-amber)";
+            } else {
+                rpmBar.style.background = "var(--accent-emerald)";
+            }
+        }
+
+        safeSetText("drawer-rpd-val", `${(rq.rpd_used || 0).toLocaleString()} / ${(rq.rpd_limit || 1500).toLocaleString()}`);
+        safeSetText("drawer-rpd-rem", `${(rq.rpd_remaining !== undefined ? rq.rpd_remaining : 1500).toLocaleString()} req`);
+        const rpdBar = document.getElementById("drawer-rpd-bar");
+        if (rpdBar) {
+            rpdBar.style.width = `${Math.min(100, rq.rpd_percent || 0)}%`;
+        }
+
+        safeSetText("drawer-tokens-val", `${(rq.tokens_today || 0).toLocaleString()} tokens`);
+
+        if (bubbleBadge && rq.rpm_used > 0) {
+            bubbleBadge.textContent = `${activeTier.toUpperCase()} | ${rq.rpm_used}/15 RPM`;
+        }
+    }
 
     // Render Quota Matrix cards
     const listEl = document.getElementById("drawer-quota-list");

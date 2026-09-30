@@ -2016,11 +2016,12 @@ class VideoAnnotatorEngine:
             for seg in timeline_segments:
                 s_id = seg["segment_id"]
                 if s_id in gemini_analyses:
-                    ga = gemini_analyses[s_id]
-                    narrative = ga.get("macro_narrative") or ga.get("context_description") or ga.get("detailed_action")
-                    if narrative:
-                        seg["scene_summary"] = narrative
-                        seg["context_description"] = narrative
+                    detailed_nar = ga.get("detailed_narrative") or ga.get("context_description") or ga.get("macro_narrative") or ga.get("detailed_action")
+                    macro_sum = ga.get("macro_narrative") or ga.get("detailed_action") or detailed_nar
+                    if detailed_nar:
+                        seg["scene_summary"] = macro_sum
+                        seg["detailed_narrative"] = detailed_nar
+                        seg["context_description"] = detailed_nar
                     if ga.get("prediction_next_4s"):
                         seg["prediction_next_4s"] = ga["prediction_next_4s"]
 
