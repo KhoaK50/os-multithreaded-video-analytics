@@ -27,7 +27,11 @@ if hasattr(sys.stdout, "reconfigure"):
 import urllib.request
 import urllib.error
 import warnings
+import logging
+warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*automatic function calling.*")
+logging.getLogger("google_genai").setLevel(logging.ERROR)
+logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 
 from dotenv import load_dotenv
 load_dotenv()

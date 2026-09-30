@@ -1416,11 +1416,11 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
     """
     Khởi chạy phân tích đoạn video được chọn theo timeline CapCut trên GPU RTX 5060.
     """
-    if not os.path.exists(req.video_path):
-        raise HTTPException(status_code=404, detail="File video không tồn tại trên hệ thống.")
-
     if req.end_time <= req.start_time:
         raise HTTPException(status_code=400, detail="Khoảng thời gian timeline không hợp lệ: end_time phải lớn hơn start_time.")
+
+    if not os.path.exists(req.video_path):
+        raise HTTPException(status_code=404, detail="File video không tồn tại trên hệ thống.")
 
     job_id = str(uuid.uuid4())[:8]
     output_filename = f"annotated_{job_id}_{os.path.basename(req.video_path)}"

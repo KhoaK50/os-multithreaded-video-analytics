@@ -28,7 +28,10 @@ from PIL import Image
 
 from core.config import CONFIG, parse_gemini_api_keys
 
+warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*automatic function calling.*")
+logging.getLogger("google_genai").setLevel(logging.ERROR)
+logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 
@@ -340,23 +343,29 @@ class HierarchicalModelOrchestrator:
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
         """Gọi client.models.generate_content kèm cơ chế tự động chuyển sang model tương thích nếu gặp lỗi 404 Deprecated hoặc 503 Spike."""
         candidates = [model]
-        for verified_m in ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash"]:
+        for verified_m in ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"]:
             if verified_m not in candidates:
                 candidates.append(verified_m)
 
         last_err = None
         for m in candidates:
             try:
-                return self.client.models.generate_content(
+                res = self.client.models.generate_content(
                     model=m,
                     contents=contents,
                     config=config
                 )
+                if m != model:
+                    if self.tier1_model == model:
+                        self.tier1_model = m
+                    elif self.tier2_model == model:
+                        self.tier2_model = m
+                return res
             except Exception as e:
                 last_err = e
                 err_msg = str(e).upper()
                 if "404" in err_msg or "NOT_FOUND" in err_msg or "NO LONGER AVAILABLE" in err_msg or "503" in err_msg or "UNAVAILABLE" in err_msg:
-                    logger.warning(f"Mô hình '{m}' gặp lỗi tạm thời ({err_msg[:60]}). Tự động thử mô hình tiếp theo...")
+                    logger.debug(f"Mô hình '{m}' gặp lỗi tạm thời ({err_msg[:60]}). Thử tiếp...")
                     continue
                 raise e
         if last_err:
