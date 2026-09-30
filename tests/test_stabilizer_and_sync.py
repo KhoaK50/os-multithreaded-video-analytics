@@ -178,16 +178,18 @@ def test_extended_weapon_reach_cone():
     }
     ranker.update_frame([det_a1, det_b1], 640, 480)
 
-    # Frame 2: Đối tượng A thụt mạnh cổ tay về phía B (dịch chuyển sang phải x + 40 px)
+    # Frame 2: Đối tượng A vung cả cánh tay và thụt mạnh hung khí về phía B (dịch chuyển +x 50px)
     det_a2 = {
         "raw_id": 1,
         "bbox": [100, 100, 200, 300],
         "kpts": [[150, 150, 0.9] for _ in range(17)],
         "torso_angle": 90.0
     }
-    # Khớp cổ tay (index 9, 10) dịch chuyển nhanh về phía B (+x)
-    det_a2["kpts"][9] = [190, 150, 0.9]
-    det_a2["kpts"][10] = [195, 150, 0.9]
+    # Khuỷu tay và cổ tay (index 7, 8, 9, 10) phóng mạnh về phía B (+x)
+    det_a2["kpts"][7] = [185, 150, 0.9]
+    det_a2["kpts"][8] = [185, 150, 0.9]
+    det_a2["kpts"][9] = [200, 150, 0.9]
+    det_a2["kpts"][10] = [200, 150, 0.9]
 
     det_b2 = {
         "raw_id": 2,
@@ -204,4 +206,60 @@ def test_extended_weapon_reach_cone():
     assert a_res.get("is_striking") == True
     assert a_res["interaction_score"] >= 6.0
     assert b_res.get("is_targeted") == True
+
+
+def test_seated_classroom_jitter_not_attacker():
+    """
+    Kiểm thử quan trọng: Học sinh ngồi trong lớp học có độ rung cảm biến nhẹ (1-3 px)
+    TUYỆT ĐỐI KHÔNG được kích hoạt thành TẤN CÔNG (is_striking = False, interaction_score = 0).
+    """
+    from core.video_annotator import KinematicAnomalyRanker
+
+    ranker = KinematicAnomalyRanker(top_k=4)
+
+    # Frame 1: Hai học sinh ngồi cạnh nhau trong lớp
+    det_s1 = {
+        "raw_id": 1,
+        "bbox": [100, 100, 200, 260],
+        "kpts": [[150, 150, 0.9] for _ in range(17)],
+        "wrist_vec": (0.0, 0.0),
+        "torso_angle": 85.0
+    }
+    det_s2 = {
+        "raw_id": 2,
+        "bbox": [240, 100, 340, 260],
+        "kpts": [[290, 150, 0.9] for _ in range(17)],
+        "wrist_vec": (0.0, 0.0),
+        "torso_angle": 85.0
+    }
+    ranker.update_frame([det_s1, det_s2], 640, 480)
+
+    # Frame 2: Rung lắc nhẹ 2 pixel (sensor noise)
+    det_s1_f2 = {
+        "raw_id": 1,
+        "bbox": [100, 100, 200, 260],
+        "kpts": [[150, 150, 0.9] for _ in range(17)],
+        "torso_angle": 85.0
+    }
+    det_s1_f2["kpts"][9] = [152, 151, 0.9]  # 2 pixels jitter
+    det_s1_f2["kpts"][10] = [151, 150, 0.9]
+
+    det_s2_f2 = {
+        "raw_id": 2,
+        "bbox": [240, 100, 340, 260],
+        "kpts": [[290, 150, 0.9] for _ in range(17)],
+        "torso_angle": 85.0
+    }
+
+    res = ranker.update_frame([det_s1_f2, det_s2_f2], 640, 480)
+    s1_res = [d for d in res if d["raw_id"] == 1][0]
+    s2_res = [d for d in res if d["raw_id"] == 2][0]
+
+    # KHÔNG ĐƯỢC PHÉP kích hoạt tấn công hay phòng vệ với rung lắc cảm biến
+    assert s1_res["is_striking"] == False
+    assert s1_res["is_targeted"] == False
+    assert s2_res["is_striking"] == False
+    assert s2_res["is_targeted"] == False
+    assert s1_res["interaction_score"] == 0.0
+    assert s2_res["interaction_score"] == 0.0
 

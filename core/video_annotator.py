@@ -748,13 +748,19 @@ class KinematicAnomalyRanker:
             if is_danger:
                 posture_anomaly += 8.0
 
+            # Chuẩn hóa vận tốc dịch chuyển cổ tay theo chiều cao cơ thể (tránh nhiễu rung lắc 1-2 pixel)
+            wrist_speed_norm = 0.0
+            if wrist_vec != (0.0, 0.0):
+                wrist_speed_norm = math.hypot(wrist_vec[0], wrist_vec[1]) / max(35.0, float(h))
+
             det["kinetic_spike"] = kinetic_spike
             det["wrist_vec"] = wrist_vec
+            det["wrist_speed_norm"] = wrist_speed_norm
             det["posture_anomaly"] = posture_anomaly
             det["interaction_score"] = 0.0
             det["is_striking"] = False
             det["is_targeted"] = False
-            det["is_passive"] = (kinetic_spike < 0.6)
+            det["is_passive"] = (kinetic_spike < 0.85)
 
         # 2. Tính toán tương tác vật lý & Hướng đòn đánh giữa các cặp trong frame (Bộ tiêu chí 5 Trụ cột)
         n = len(detections)
@@ -791,37 +797,66 @@ class KinematicAnomalyRanker:
                 norm_vb = math.hypot(v_b[0], v_b[1])
                 cos_b = (-v_b[0] * r_ab_x - v_b[1] * r_ab_y) / (norm_vb * norm_ab) if norm_vb > 1e-4 else 0.0
 
+                w_speed_a = det_a.get("wrist_speed_norm", 0.0)
+                w_speed_b = det_b.get("wrist_speed_norm", 0.0)
+
                 # Nón Sát Thương Vũ Khí Kéo Dài (Extended Weapon / Tool Reach Cone):
                 # Khi cầm gậy hoặc hung khí dài thụt tới, hai thân người cách nhau tới 1.65 * chiều cao.
-                # Nếu véc-tơ cổ tay hướng thẳng về đối phương (cos > 0.35) và vận tốc đáng kể -> Mở rộng tầm sát thương
-                is_weapon_thrust_a = (dist < 1.65 * avg_h and cos_a > 0.35 and (det_a["kinetic_spike"] >= 1.4 or norm_va >= 1.4))
-                is_weapon_thrust_b = (dist < 1.65 * avg_h and cos_b > 0.35 and (det_b["kinetic_spike"] >= 1.4 or norm_vb >= 1.4))
+                # BẮT BUỘC ĐỒNG THỜI:
+                # 1. Không phải người thụ động (kinetic_spike >= 1.5)
+                # 2. Vận tốc cổ tay phóng mạnh (w_speed_a >= 0.12, tức di chuyển > 12% chiều cao thân trong 1 frame)
+                # 3. Véc-tơ cổ tay hướng thẳng về đối phương (cos_a > 0.45)
+                # 4. Khoảng cách nằm trong tầm vũ khí (dist < 1.65 * avg_h)
+                is_weapon_thrust_a = (
+                    not det_a.get("is_passive", False) and
+                    dist < 1.65 * avg_h and
+                    cos_a > 0.45 and
+                    det_a["kinetic_spike"] >= 1.5 and
+                    w_speed_a >= 0.12
+                )
+                is_weapon_thrust_b = (
+                    not det_b.get("is_passive", False) and
+                    dist < 1.65 * avg_h and
+                    cos_b > 0.45 and
+                    det_b["kinetic_spike"] >= 1.5 and
+                    w_speed_b >= 0.12
+                )
 
-                # Trụ cột 3: Bán kính sải tay hiệu dụng hoặc Nón sát thương vũ khí
-                in_reach = (iou > 0.05 or dist < 0.85 * avg_h or is_weapon_thrust_a or is_weapon_thrust_b)
+                # Đòn đánh sải tay thường (Hand strike):
+                is_hand_strike_a = (
+                    not det_a.get("is_passive", False) and
+                    (iou > 0.05 or dist < 0.85 * avg_h) and
+                    cos_a > 0.45 and
+                    det_a["kinetic_spike"] >= 1.5 and
+                    w_speed_a >= 0.10
+                )
+                is_hand_strike_b = (
+                    not det_b.get("is_passive", False) and
+                    (iou > 0.05 or dist < 0.85 * avg_h) and
+                    cos_b > 0.45 and
+                    det_b["kinetic_spike"] >= 1.5 and
+                    w_speed_b >= 0.10
+                )
 
-                if in_reach:
-                    # A tấn công B: Vận tốc cao và véc-tơ đâm trúng mục tiêu B
-                    if is_weapon_thrust_a or (det_a["kinetic_spike"] >= 1.4 and cos_a > 0.38):
-                        det_a["is_striking"] = True
-                        strike_pts = 6.0 if is_weapon_thrust_a else 5.0
-                        det_a["interaction_score"] = max(det_a["interaction_score"], strike_pts)
-                        det_b["is_targeted"] = True
+                # A tấn công B:
+                if is_weapon_thrust_a or is_hand_strike_a:
+                    det_a["is_striking"] = True
+                    det_a["interaction_score"] = max(det_a["interaction_score"], 6.0 if is_weapon_thrust_a else 5.0)
+                    det_b["is_targeted"] = True
 
-                    # B tấn công A: Vận tốc cao và véc-tơ đâm trúng mục tiêu A
-                    if is_weapon_thrust_b or (det_b["kinetic_spike"] >= 1.4 and cos_b > 0.38):
-                        det_b["is_striking"] = True
-                        strike_pts = 6.0 if is_weapon_thrust_b else 5.0
-                        det_b["interaction_score"] = max(det_b["interaction_score"], strike_pts)
-                        det_a["is_targeted"] = True
+                # B tấn công A:
+                if is_weapon_thrust_b or is_hand_strike_b:
+                    det_b["is_striking"] = True
+                    det_b["interaction_score"] = max(det_b["interaction_score"], 6.0 if is_weapon_thrust_b else 5.0)
+                    det_a["is_targeted"] = True
 
-                    # Tương tác áp sát giằng co chung (nếu cả 2 cùng di chuyển nhưng không có véc-tơ đâm thẳng)
-                    if (det_a["kinetic_spike"] > 1.2 or det_b["kinetic_spike"] > 1.2):
-                        clash_val = min(5.0, max(2.0, (1.0 - dist / max(1.0, avg_h)) * 5.0))
-                        if not det_a.get("is_passive"):
-                            det_a["interaction_score"] = max(det_a["interaction_score"], clash_val)
-                        if not det_b.get("is_passive"):
-                            det_b["interaction_score"] = max(det_b["interaction_score"], clash_val)
+                # Tương tác áp sát giằng co chung: CẢ HAI BÊN đều phải di chuyển mạnh và ở rất gần
+                if (not det_a.get("is_passive") and not det_b.get("is_passive") and
+                    det_a["kinetic_spike"] >= 1.8 and det_b["kinetic_spike"] >= 1.8 and
+                    (iou > 0.08 or dist < 0.70 * avg_h)):
+                    clash_val = min(5.0, max(2.0, (1.0 - dist / max(1.0, avg_h)) * 5.0))
+                    det_a["interaction_score"] = max(det_a["interaction_score"], clash_val)
+                    det_b["interaction_score"] = max(det_b["interaction_score"], clash_val)
 
         # 3. Tính điểm Saliency tổng hợp và làm mịn EMA
         for det in detections:
@@ -905,13 +940,12 @@ class TemporalActionStabilizer:
             st["action_history"].pop(0)
 
         # 2. Xử lý máy trạng thái Hysteresis cho Đòn Đánh
-        is_raw_strike = raw_danger or raw_role == "attacker" or (kinetic >= 2.2 and interaction >= 1.8)
+        is_raw_strike = (raw_danger and raw_role == "attacker") or (raw_role == "attacker" and kinetic >= 1.6) or (kinetic >= 2.2 and interaction >= 2.5)
         if is_raw_strike:
             st["strike_streak"] += 1
             # Kích hoạt tức thời (Impulse Shock Trigger):
-            # Nếu xung lực cực lớn (kinetic >= 2.2 hoặc threat_score >= 7.0 hoặc interaction >= 4.5),
-            # đòn đánh thật xảy ra rất nhanh (1-2 frames) -> kích hoạt ngay, không bắt buộc đợi 3 frames
-            req_thresh = 1 if (kinetic >= 2.2 or threat_score >= 7.0 or interaction >= 4.5) else self.trigger_thresh
+            # Chỉ khi có xung lực va chạm thực sự mạnh (kinetic >= 2.6 VÀ raw_role == "attacker" VÀ threat_score >= 8.0)
+            req_thresh = 1 if (kinetic >= 2.6 and raw_role == "attacker" and threat_score >= 8.0) else self.trigger_thresh
             if st["strike_streak"] >= req_thresh:
                 st["stable_role"] = "attacker"
                 st["stable_danger"] = True
@@ -1354,10 +1388,10 @@ class VideoAnnotatorEngine:
                             # =========================================================================
                             person_role_type = "bystander"
 
-                            # 1. Trụ cột 5: Khóa Bất Biến Cho Người Đứng/Ngồi Yên (Bystander Invariance Lock)
-                            # Nếu vận tốc khớp xương thấp (<0.65), người này ngồi/đứng yên / quan sát bình thường
+                            # 1. Trụ cột 5: Khóa Bất Biến Cho Người Ngồi Bàn / Đứng Yên (Bystander Invariance Lock)
+                            # Người ngồi sau bàn học (is_seated) hoặc người đứng yên (kinetic_spike < 0.85):
                             # TUYỆT ĐỐI KHÔNG BAO GIỜ bị gán điểm nguy hiểm hay bôi đỏ dù xung quanh có xô xát
-                            if kinetic_spike < 0.65 and not cand.get("is_striking", False):
+                            if (is_seated and kinetic_spike < 1.4) or (kinetic_spike < 0.85 and not cand.get("is_striking", False)):
                                 person_danger = False
                                 person_threat_score = 0.2
                                 person_role_type = "bystander"
@@ -1366,7 +1400,7 @@ class VideoAnnotatorEngine:
                                 elif aspect_ratio >= 1.70:
                                     person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
                                 else:
-                                    person_action = "Hoạt động bình thường / Quan sát"
+                                    person_action = "Sinh hoạt bình thường / Quan sát"
 
                             # 2. Phát hiện Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
                             elif torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
@@ -1380,8 +1414,8 @@ class VideoAnnotatorEngine:
                                     frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
 
                             # 3. Trụ cột 1 & 4: Kẻ Tấn Công / Ra Đòn (Striker / Attacker)
-                            # Có véc-tơ cổ tay đâm thẳng vào đối phương VÀ gia tốc xung lực đột biến
-                            elif cand.get("is_striking", False) or (kinetic_spike >= 2.6 and interaction_score >= 2.0):
+                            # Có véc-tơ cổ tay đâm thẳng vào đối phương VÀ gia tốc xung lực đột biến (kinetic_spike >= 1.8)
+                            elif (cand.get("is_striking", False) and kinetic_spike >= 1.8) or (kinetic_spike >= 2.6 and interaction_score >= 2.5):
                                 person_danger = True
                                 person_role_type = "attacker"
                                 person_action = "Vung tay ra đòn / Tấn công áp sát"
@@ -1390,10 +1424,10 @@ class VideoAnnotatorEngine:
                                 frame_alert = f"CẢNH BÁO: VUNG TAY TẤN CÔNG ({id_label})"
 
                             # 4. Trụ cột 2: Nạn Nhân / Người Bị Tấn Công Phòng Vệ (Defender / Target)
-                            # Đang bị nhắm tới HOẶC trong cự ly áp sát nhưng co tay thủ ngực/đầu hoặc né lùi
-                            elif cand.get("is_targeted", False) or (interaction_score >= 2.5 and (
+                            # Đang bị nhắm tới VÀ có vận tốc phản ứng né tránh/thủ thế (kinetic_spike >= 1.0)
+                            elif (cand.get("is_targeted", False) and kinetic_spike >= 1.0) or (interaction_score >= 2.5 and kinetic_spike >= 1.2 and (
                                 (l_wrist[2] > 0.20 and l_wrist[1] < hip_y and r_wrist[2] > 0.20 and r_wrist[1] < hip_y) or
-                                torso_angle > 95.0 or kinetic_spike < 1.2
+                                torso_angle > 95.0
                             )):
                                 person_danger = False
                                 person_role_type = "defender"
