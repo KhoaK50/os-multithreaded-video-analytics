@@ -29,5 +29,187 @@
     "status": "success",
     "model_tier": "Tier-2 Gemini 1.5",
     "token_usage": 0
+  },
+  "upload_1790783317_test_HDH.mp4": {
+    "threat_level": "AN TOÀN",
+    "is_safe_environment": true,
+    "primary_incident": "Sinh hoạt gia đình bình thường",
+    "detailed_diagnosis": "Môi trường giám sát ghi nhận hoạt động sinh hoạt gia đình bình thường trong nhà. Không có dấu hiệu bạo lực hay nguy cơ an ninh nào xảy ra.",
+    "recommended_action": "Tiếp tục giám sát tự động",
+    "scene_context": "Không gian trong phòng khách gia đình có cửa sổ lớn đón ánh sáng tự nhiên, các thành viên di chuyển và tương tác thân thiện với nhau.",
+    "chronological_evolution": "Khởi đầu các thành viên di chuyển trong phòng khách -> Diễn biến chính là sự tương tác và bế các bé sinh hoạt bình thường -> Kết thúc trong trạng thái an toàn, ổn định.",
+    "overall_conclusion": "Môi trường hoàn toàn an toàn, không có mối đe dọa động học nào được ghi nhận.",
+    "detected_actors": [
+      {
+        "actor_index": 1,
+        "role": "Người mẹ bế em bé",
+        "appearance": "Mặc váy hoa dài, tóc dài",
+        "true_action": "Bế và chăm sóc em bé",
+        "posture_desc": "Đang đứng và di chuyển nhẹ nhàng"
+      },
+      {
+        "actor_index": 2,
+        "role": "Người bố bế bé gái",
+        "appearance": "Mặc áo sáng màu",
+        "true_action": "Bế bé gái tương tác cùng gia đình",
+        "posture_desc": "Đứng vững vàng"
+      }
+    ],
+    "segment_analyses": [
+      {
+        "segment_id": "SEG-01",
+        "macro_narrative": "Ghi nhận 3 đối tượng di chuyển trong phòng khách.",
+        "detailed_action": "Di chuyển và quan sát",
+        "detailed_narrative": "Các đối tượng di chuyển tự nhiên trong không gian phòng khách có ánh sáng chiếu từ cửa sổ. Ngôn ngữ cơ thể thể hiện sự thư thái, không có biểu hiện căng thẳng hay xung đột.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Không gian trong nhà, ánh sáng tự nhiên.",
+        "prediction_next_4s": "Tiếp tục các hoạt động sinh hoạt bình thường trong nhà."
+      },
+      {
+        "segment_id": "SEG-02",
+        "macro_narrative": "Ghi nhận 4 đối tượng tương tác trong không gian phòng.",
+        "detailed_action": "Tương tác sinh hoạt",
+        "detailed_narrative": "Các thành viên trong gia đình quây quần và di chuyển gần khu vực cửa sổ. Tư thế cơ thể linh hoạt, động tác tự nhiên, thể hiện mối quan hệ gắn kết và sinh hoạt thường nhật.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Khu vực phòng khách gần cửa sổ lớn.",
+        "prediction_next_4s": "Duy trì hoạt động giao tiếp và sinh hoạt ổn định."
+      },
+      {
+        "segment_id": "SEG-03",
+        "macro_narrative": "Ghi nhận 4 đối tượng duy trì hoạt động sinh hoạt.",
+        "detailed_action": "Sinh hoạt bình thường",
+        "detailed_narrative": "Các đối tượng tiếp tục di chuyển và tương tác qua lại trong phòng. Trạng thái cơ thể thư giãn, không ghi nhận bất kỳ cử chỉ đe dọa hay bạo lực nào.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Không gian sinh hoạt chung trong nhà.",
+        "prediction_next_4s": "Tiếp tục các hoạt động sinh hoạt hàng ngày."
+      },
+      {
+        "segment_id": "SEG-04",
+        "macro_narrative": "Ghi nhận 4 đối tượng ổn định vị trí quan sát.",
+        "detailed_action": "Đứng quan sát và bế trẻ nhỏ",
+        "detailed_narrative": "Người lớn bế các em bé đứng gần cửa sổ, nét mặt và tư thế thả lỏng. Không có hành vi mang tính chất công kích hay xung đột thể xác.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Khu vực chiếu sáng tự nhiên trong phòng khách.",
+        "prediction_next_4s": "Duy trì trạng thái sinh hoạt ổn định."
+      },
+      {
+        "segment_id": "SEG-05",
+        "macro_narrative": "Ghi nhận 4 đối tượng kết thúc phân đoạn trong trạng thái an toàn.",
+        "detailed_action": "Hoàn tất sinh hoạt",
+        "detailed_narrative": "Toàn bộ các thành viên giữ vị trí ổn định, tương tác thân thiện. Hệ thống ghi nhận mức độ an toàn tuyệt đối, không có dấu hiệu bất thường.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Kết thúc chuỗi khung hình giám sát.",
+        "prediction_next_4s": "Tiếp tục duy trì trạng thái an toàn."
+      }
+    ],
+    "status": "success",
+    "model_tier": "Tier-1 Gemini 2.0",
+    "token_usage": 0
+  },
+  "upload_1790785811_test_HDH.mp4": {
+    "threat_level": "AN TOÀN",
+    "is_safe_environment": true,
+    "primary_incident": "Sinh hoạt gia đình bình thường",
+    "detailed_diagnosis": "Không phát hiện dấu hiệu bạo lực hay nguy cơ an ninh trong suốt đoạn video. Các thành viên trong gia đình tương tác thân thiện và sinh hoạt bình thường.",
+    "recommended_action": "Tiếp tục giám sát tự động",
+    "scene_context": "Không gian trong nhà gần cửa sổ lớn, ánh sáng tự nhiên, với các thành viên gia đình đang tương tác và sinh hoạt.",
+    "chronological_evolution": "Khởi đầu với việc các thành viên di chuyển trong phòng -> Diễn biến chính là các thành viên tương tác, bế trẻ em và quan sát nhau -> Kết thúc trong trạng thái ổn định, an toàn.",
+    "overall_conclusion": "Môi trường hoàn toàn an toàn, không có bất kỳ hành vi nguy hiểm hoặc đe dọa nào được ghi nhận.",
+    "detected_actors": [
+      {
+        "actor_index": 1,
+        "role": "Người phụ nữ mặc váy hoa",
+        "appearance": "Mặc váy trắng họa tiết hoa, tóc dài",
+        "true_action": "Di chuyển và bế trẻ em",
+        "posture_desc": "Đang đứng và di chuyển"
+      },
+      {
+        "actor_index": 2,
+        "role": "Người đàn ông mặc áo sáng màu",
+        "appearance": "Mặc áo thun trắng, quần sáng màu",
+        "true_action": "Đứng quan sát và bế trẻ em",
+        "posture_desc": "Đang đứng vững chắc"
+      }
+    ],
+    "segment_analyses": [
+      {
+        "segment_id": "SEG-01",
+        "macro_narrative": "Các thành viên di chuyển và tương tác trong phòng khách.",
+        "detailed_action": "Di chuyển và quan sát",
+        "detailed_narrative": "Các đối tượng di chuyển tự nhiên trong không gian nhà ở, không có biểu hiện hung hăng hay xung đột thể chất.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Không gian sinh hoạt trong nhà với ánh sáng tự nhiên.",
+        "prediction_next_4s": "Tiếp tục các hoạt động sinh hoạt bình thường."
+      },
+      {
+        "segment_id": "SEG-02",
+        "macro_narrative": "Các đối tượng đứng lại và tương tác gần cửa sổ.",
+        "detailed_action": "Tương tác gia đình",
+        "detailed_narrative": "Người lớn bế trẻ nhỏ và đứng quây quần bên nhau, thể hiện sự gắn kết và không có mối đe dọa nào.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Tương tác thân thiện giữa các thành viên gia đình.",
+        "prediction_next_4s": "Duy trì vị trí và tiếp tục trò chuyện, sinh hoạt."
+      },
+      {
+        "segment_id": "SEG-03",
+        "macro_narrative": "Gia đình tiếp tục quây quần trong không gian phòng khách.",
+        "detailed_action": "Sinh hoạt bình thường",
+        "detailed_narrative": "Các thành viên đứng và ôm trẻ em, ngôn ngữ cơ thể hoàn toàn thư giãn và thân thiện.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Bối cảnh gia đình đầm ấm, an toàn.",
+        "prediction_next_4s": "Tiếp tục sinh hoạt không có biến động."
+      },
+      {
+        "segment_id": "SEG-04",
+        "macro_narrative": "Ổn định vị trí và quan sát xung quanh.",
+        "detailed_action": "Đứng quan sát",
+        "detailed_narrative": "Các thành viên giữ nguyên vị trí, ôm trẻ nhỏ và trò chuyện nhẹ nhàng.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Không gian yên bình, không có yếu tố bất thường.",
+        "prediction_next_4s": "Kết thúc đoạn video trong trạng thái an toàn."
+      },
+      {
+        "segment_id": "SEG-05",
+        "macro_narrative": "Kết thúc phân tích với trạng thái sinh hoạt ổn định.",
+        "detailed_action": "Hoàn tất sinh hoạt",
+        "detailed_narrative": "Các đối tượng vẫn duy trì tư thế sinh hoạt gia đình bình thường, không ghi nhận rủi ro an ninh.",
+        "weapon_detected": null,
+        "posture_override": null,
+        "threat_score": 0.0,
+        "threat_level": "AN TOÀN",
+        "context_description": "Trạng thái cuối cùng ổn định và an toàn.",
+        "prediction_next_4s": "Hoàn tất chu trình giám sát."
+      }
+    ],
+    "status": "success",
+    "model_tier": "Tier-1 Gemini 2.0",
+    "token_usage": 0
   }
 }

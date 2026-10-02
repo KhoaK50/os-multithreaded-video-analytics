@@ -187,8 +187,8 @@ class QuotaTracker:
                 self.total_tokens_used_today = 0
             self.minute_window.append(now)
             self.daily_requests_count += 1
-            if token_count > 0:
-                self.total_tokens_used_today += token_count
+            if isinstance(token_count, (int, float)) and token_count > 0:
+                self.total_tokens_used_today += int(token_count)
 
     def get_stats(self) -> dict:
         with self._lock:
@@ -447,7 +447,9 @@ class HierarchicalModelOrchestrator:
             config=config
         )
         raw_text = getattr(response, "text", "") or "{}"
-        toks = getattr(getattr(response, "usage_metadata", None), "total_token_count", 0) or 0
+        meta = getattr(response, "usage_metadata", None)
+        toks = getattr(meta, "total_token_count", 0) if meta else 0
+        toks = toks if isinstance(toks, (int, float)) else 0
         self.quota_tracker.record_request(token_count=toks)
         return self._parse_gemini_json(raw_text)
 
@@ -554,7 +556,9 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                     config=config
                 )
                 raw_text = getattr(resp, "text", "") or "{}"
-                toks = getattr(getattr(resp, "usage_metadata", None), "total_token_count", 0) or 0
+                meta1 = getattr(resp, "usage_metadata", None)
+                toks = getattr(meta1, "total_token_count", 0) if meta1 else 0
+                toks = toks if isinstance(toks, (int, float)) else 0
                 self.quota_tracker.record_request(token_count=toks)
                 data = self._parse_gemini_json(raw_text)
                 return data, ModelTier.TIER_1_PRIMARY
@@ -575,7 +579,9 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                     config=config
                 )
                 raw_text = getattr(resp, "text", "") or "{}"
-                toks = getattr(getattr(resp, "usage_metadata", None), "total_token_count", 0) or 0
+                meta2 = getattr(resp, "usage_metadata", None)
+                toks = getattr(meta2, "total_token_count", 0) if meta2 else 0
+                toks = toks if isinstance(toks, (int, float)) else 0
                 self.quota_tracker.record_request(token_count=toks)
                 data = self._parse_gemini_json(raw_text)
                 return data, ModelTier.TIER_2_FALLBACK

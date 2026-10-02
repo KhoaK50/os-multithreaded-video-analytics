@@ -55,6 +55,7 @@ from core.video_annotator import VideoAnnotatorEngine, download_web_video, probe
 from core.token_guard import TokenGuard
 from core.enhancer import CameraEnhancer
 from core.model_orchestrator import get_model_orchestrator, ModelTier
+from core.capture import ThreadSafeBoundedBuffer
 
 MODEL_ORCHESTRATOR = get_model_orchestrator()
 
@@ -100,6 +101,7 @@ class LiveCameraPipeline:
         self.threads = []
 
         self.frame_lock = threading.Lock()
+        self.frame_buffer = ThreadSafeBoundedBuffer(capacity=getattr(CONFIG, "FRAME_QUEUE_MAXSIZE", 16))
         self.latest_raw_frame = None
         self.latest_hud_frame = None
         self.frame_count = 0
@@ -307,6 +309,8 @@ class LiveCameraPipeline:
                 self.cap.release()
             self.cap = None
             self.latest_hud_frame = None
+            if hasattr(self, "frame_buffer"):
+                self.frame_buffer.clear()
             print("[+] Live Camera Pipeline da giai phong camera an toan.")
 
     def ingest_client_frame(self, raw_frame):
@@ -317,6 +321,9 @@ class LiveCameraPipeline:
         if not self.running:
             self.start()
         frame = self.enhancer.enhance(raw_frame)
+        now_ts = time.time()
+        if hasattr(self, "frame_buffer"):
+            self.frame_buffer.put_drop_oldest((now_ts, frame))
         with self.frame_lock:
             self.latest_raw_frame = frame
             self.frame_count += 1
@@ -455,6 +462,9 @@ class LiveCameraPipeline:
                 continue
             # Tiền xử lý trực tiếp trên khung hình thu nhận: Lật gương, Chống chói đèn trần, Khử nhiễu
             frame = self.enhancer.enhance(frame)
+            now_ts = time.time()
+            if hasattr(self, "frame_buffer"):
+                self.frame_buffer.put_drop_oldest((now_ts, frame))
             with self.frame_lock:
                 self.latest_raw_frame = frame
                 self.frame_count += 1
@@ -464,12 +474,20 @@ class LiveCameraPipeline:
         prev_time = time.time()
         while self.running:
             raw = None
-            with self.frame_lock:
-                if self.latest_raw_frame is not None:
-                    raw = self.latest_raw_frame.copy()
+            # Consumer lấy khung hình trực tiếp từ Bounded Buffer (Blocking timeout 40ms)
+            if hasattr(self, "frame_buffer"):
+                pkg = self.frame_buffer.get(block=True, timeout=0.04)
+                if pkg is not None and isinstance(pkg, tuple) and len(pkg) == 2:
+                    _, raw = pkg
+
+            # Fallback nếu buffer chưa có dữ liệu
+            if raw is None:
+                with self.frame_lock:
+                    if self.latest_raw_frame is not None:
+                        raw = self.latest_raw_frame.copy()
 
             if raw is None:
-                time.sleep(0.02)
+                time.sleep(0.01)
                 continue
 
             results = self.yolo_model(raw, device=device, conf=CONFIG.YOLO_CONFIDENCE, verbose=False)
@@ -690,14 +708,22 @@ class LiveCameraPipeline:
                     pass
 
             tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
+            buf_stats = self.frame_buffer.get_stats() if hasattr(self, "frame_buffer") else {
+                "size": 0, "capacity": 16, "total_dropped": 0, "drop_rate_pct": 0.0, "latency_ms": 0.0
+            }
             telemetry = {
                 "cpu_percent": self.cpu_smoothed,
                 "ram_percent": psutil.virtual_memory().percent,
                 "gpu_vram_mb": vram_mb,
                 "gpu_vram_total_mb": vram_total,
                 "actual_fps": self.current_fps,
-                "raw_queue_size": 1,
-                "drop_count": 0,
+                "queue_size": buf_stats["size"],
+                "queue_max": buf_stats["capacity"],
+                "dropped_frames": buf_stats["total_dropped"],
+                "raw_queue_size": buf_stats["size"],
+                "drop_count": buf_stats["total_dropped"],
+                "drop_rate_pct": buf_stats["drop_rate_pct"],
+                "queue_latency_ms": buf_stats["latency_ms"],
                 "active_persons": len(boxes),
                 "active_model_tier": tier_info.get("active_tier", "tier_1"),
                 "active_tier_name": tier_info.get("tier_name", "gemini-2.0-flash"),
@@ -1268,15 +1294,23 @@ def get_telemetry():
         }
     }
 
+    buf_stats = LIVE_CAMERA.frame_buffer.get_stats() if (hasattr(LIVE_CAMERA, "frame_buffer") and LIVE_CAMERA.frame_buffer is not None) else {
+        "size": 0, "capacity": getattr(CONFIG, "FRAME_QUEUE_MAXSIZE", 16), "total_dropped": 0, "drop_rate_pct": 0.0, "latency_ms": 0.0, "high_water_mark": 0
+    }
+
     return {
         # Thông số hệ thống & Tiến trình Đa luồng (Hệ điều hành)
         "producer_running": LIVE_CAMERA.running,
         "producer_fps": round(LIVE_CAMERA.current_fps, 1),
         "consumer_status": LIVE_CAMERA.gemini_status,
-        "queue_size": 1,
-        "queue_max": 5,
-        "dropped_frames": 0,
-        "drop_rate_pct": 0.0,
+        "queue_size": buf_stats["size"],
+        "queue_max": buf_stats["capacity"],
+        "dropped_frames": buf_stats["total_dropped"],
+        "drop_rate_pct": buf_stats["drop_rate_pct"],
+        "queue_latency_ms": buf_stats["latency_ms"],
+        "high_water_mark": buf_stats["high_water_mark"],
+        "bounded_queue_size": buf_stats["size"],
+        "bounded_queue_capacity": buf_stats["capacity"],
         "cpu_percent": round(LIVE_CAMERA.cpu_smoothed, 1),
         "ram_percent": round(psutil.virtual_memory().percent, 1),
         "gpu_vram_used": round(vram_mb / 1024.0, 2),

@@ -26,7 +26,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 from core.cyber_hud import CyberHUDRenderer
 from core.config import CONFIG
+from core.capture import ThreadSafeBoundedBuffer
 
+import queue
 import json
 import urllib.request
 import urllib.parse
@@ -1210,451 +1212,548 @@ class VideoAnnotatorEngine:
 
         heatmap_samples = {}
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+        # === 3-STAGE MULTITHREADED PIPELINE (OS OVERLAPPED I/O & GPU INFERENCE) ===
+        raw_buffer = ThreadSafeBoundedBuffer(capacity=16)
+        writer_buffer = ThreadSafeBoundedBuffer(capacity=16)
+        stop_pipeline = threading.Event()
+        pipeline_errors = []
+        _SENTINEL = object()
 
-            current_frame_pos = start_frame + processed_count
-            if current_frame_pos >= end_frame:
-                break
-
-            processed_count += 1
-            t_frame_start = time.time()
-            current_time_sec = current_frame_pos / input_fps
-
-            # Chạy YOLOv8-Pose kết hợp ByteTrack trên GPU RTX 5060 (conf=0.35 lọc triệt để Bounding Box ma)
+        # STAGE 1: Video Reader Producer Thread (I/O Bound)
+        def reader_worker():
             try:
-                results = self.model.track(
-                    frame,
-                    persist=True,
-                    tracker="bytetrack.yaml",
-                    device=self.device,
-                    conf=0.35,
-                    verbose=False
-                )
-            except Exception:
-                results = self.model(
-                    frame,
-                    device=self.device,
-                    conf=0.35,
-                    verbose=False
-                )
+                frame_pos = start_frame
+                while not stop_pipeline.is_set() and frame_pos < end_frame:
+                    ret, frame = cap.read()
+                    if not ret or frame is None:
+                        break
 
-            has_frame_danger = False
-            frame_alert = ""
-            frame_threat_score = 0.0
-            detected_persons_count = 0
-            frame_entities = []
-
-            if results and len(results) > 0:
-                res = results[0]
-                boxes = res.boxes
-                kpts_data = res.keypoints
-
-                if boxes is not None and len(boxes) > 0:
-                    detected_persons_count = len(boxes)
-
-                    candidates = []
-                    for p_idx, box in enumerate(boxes):
-                        conf = float(box.conf[0].item())
-                        x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
-                        raw_track_id = int(box.id[0].item()) if (hasattr(box, "id") and box.id is not None and len(box.id) > 0) else (p_idx + 1)
-
-                        kpts = None
-                        if kpts_data is not None and len(kpts_data) > p_idx:
-                            kpts = kpts_data[p_idx].data[0].cpu().numpy()
-
-                        torso_angle = 90.0
-                        if kpts is not None:
-                            nose = kpts[0]
-                            l_sh, r_sh = kpts[5], kpts[6]
-                            l_hip, r_hip = kpts[11], kpts[12]
-                            sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
-                            hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
-                            if l_sh[2] > 0.30 and r_sh[2] > 0.30:
-                                sh_x = (l_sh[0] + r_sh[0]) / 2.0
-                                sh_y = (l_sh[1] + r_sh[1]) / 2.0
-                            if l_hip[2] > 0.25 and r_hip[2] > 0.25:
-                                hip_x = (l_hip[0] + r_hip[0]) / 2.0
-                                hip_y = (l_hip[1] + r_hip[1]) / 2.0
-                                dx = abs(sh_x - hip_x)
-                                dy = abs(sh_y - hip_y)
-                            else:
-                                dx = abs(nose[0] - sh_x) if nose[2] > 0.25 else 10.0
-                                dy = abs(sh_y - nose[1]) if nose[2] > 0.25 else 50.0
-                            if dx + dy > 1e-4:
-                                torso_angle = math.degrees(math.atan2(dy, dx))
-
-                        candidates.append({
-                            "p_idx": p_idx,
-                            "raw_id": raw_track_id,
-                            "bbox": (x1, y1, x2, y2),
-                            "conf": conf,
-                            "kpts": kpts,
-                            "torso_angle": torso_angle,
-                            "threat_score": 0.0,
-                            "person_danger": False
-                        })
-
-                    # Nếu bật lọc tiêu điểm bất thường (Top-4 Saliency Focus)
-                    if anomaly_ranker is not None:
-                        candidates = anomaly_ranker.update_frame(candidates, orig_w, orig_h)
-                    else:
-                        for cand in candidates:
-                            cand["is_focus"] = True
-                            cand["is_ghost"] = False
-
-                    # Xử lý và hiển thị phân tầng
-                    for cand in candidates:
-                        x1, y1, x2, y2 = cand["bbox"]
-                        conf = cand["conf"]
-                        kpts = cand["kpts"]
-                        torso_angle = cand["torso_angle"]
-                        raw_track_id = cand["raw_id"]
-                        is_focus = cand.get("is_focus", True)
-                        is_ghost = cand.get("is_ghost", False)
-
-                        # Nếu là người ngoài cuộc (Ghosted Bystander): Vẽ mờ tối giản tránh rối mắt
-                        if is_ghost and not is_focus:
-                            if kpts is not None:
-                                kpts_scaled = [(pt[0], pt[1], pt[2]) for pt in kpts]
-                                self.hud.draw_ghost_skeleton(frame, kpts_scaled)
-                            self.hud.draw_ghost_bbox(frame, x1, y1, x2, y2)
+                    # Nạp frame vào raw_buffer có kiểm soát backpressure
+                    while not stop_pipeline.is_set():
+                        try:
+                            raw_buffer.put((frame_pos, frame), block=True, timeout=0.1)
+                            break
+                        except queue.Full:
                             continue
+                    frame_pos += 1
+            except Exception as e_r:
+                pipeline_errors.append(e_r)
+                stop_pipeline.set()
+            finally:
+                # Gửi sentinel kết thúc cho Stage 2
+                while not stop_pipeline.is_set():
+                    try:
+                        raw_buffer.put(_SENTINEL, block=True, timeout=0.1)
+                        break
+                    except queue.Full:
+                        continue
 
-                        # Nếu là người trong tiêu điểm (Top-K Focus):
-                        c_id = stabilizer.update(raw_track_id, (x1, y1, x2, y2), processed_count, orig_w, orig_h)
-                        id_label = f"ID #{c_id:02d}"
+        # STAGE 2: Video AI & Biomechanics Worker Thread (Compute Bound - GPU/CPU)
+        worker_frame_count = 0
+        def inference_worker():
+            nonlocal worker_frame_count, max_danger_score, peak_danger_reason
+            try:
+                while not stop_pipeline.is_set():
+                    item = raw_buffer.get(block=True, timeout=0.1)
+                    if item is None:
+                        continue
+                    if item is _SENTINEL:
+                        break
 
-                        person_danger = False
-                        person_action = "Đang đứng / Hoạt động trong phòng"
-                        person_threat_score = 0.0
+                    current_frame_pos, frame = item
+                    worker_frame_count += 1
+                    current_time_sec = current_frame_pos / input_fps
 
-                        if kpts is not None:
-                            nose = kpts[0]
-                            l_sh, r_sh = kpts[5], kpts[6]
-                            l_hip, r_hip = kpts[11], kpts[12]
-                            l_wrist, r_wrist = kpts[9], kpts[10]
-
-                            # 1. Kiểm tra Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
-                            if torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
-                                fall_streaks[c_id] = fall_streaks.get(c_id, 0) + 1
+                    # Chạy YOLOv8-Pose kết hợp ByteTrack trên GPU RTX 5060 (conf=0.35 lọc triệt để Bounding Box ma)
+                    try:
+                        results = self.model.track(
+                            frame,
+                            persist=True,
+                            tracker="bytetrack.yaml",
+                            device=self.device,
+                            conf=0.35,
+                            verbose=False
+                        )
+                    except Exception:
+                        results = self.model(
+                            frame,
+                            device=self.device,
+                            conf=0.35,
+                            verbose=False
+                        )
+    
+                    has_frame_danger = False
+                    frame_alert = ""
+                    frame_threat_score = 0.0
+                    detected_persons_count = 0
+                    frame_entities = []
+    
+                    if results and len(results) > 0:
+                        res = results[0]
+                        boxes = res.boxes
+                        kpts_data = res.keypoints
+    
+                        if boxes is not None and len(boxes) > 0:
+                            detected_persons_count = len(boxes)
+    
+                            candidates = []
+                            for p_idx, box in enumerate(boxes):
+                                conf = float(box.conf[0].item())
+                                x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
+                                raw_track_id = int(box.id[0].item()) if (hasattr(box, "id") and box.id is not None and len(box.id) > 0) else (p_idx + 1)
+    
+                                kpts = None
+                                if kpts_data is not None and len(kpts_data) > p_idx:
+                                    kpts = kpts_data[p_idx].data[0].cpu().numpy()
+    
+                                torso_angle = 90.0
+                                if kpts is not None:
+                                    nose = kpts[0]
+                                    l_sh, r_sh = kpts[5], kpts[6]
+                                    l_hip, r_hip = kpts[11], kpts[12]
+                                    sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
+                                    hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
+                                    if l_sh[2] > 0.30 and r_sh[2] > 0.30:
+                                        sh_x = (l_sh[0] + r_sh[0]) / 2.0
+                                        sh_y = (l_sh[1] + r_sh[1]) / 2.0
+                                    if l_hip[2] > 0.25 and r_hip[2] > 0.25:
+                                        hip_x = (l_hip[0] + r_hip[0]) / 2.0
+                                        hip_y = (l_hip[1] + r_hip[1]) / 2.0
+                                        dx = abs(sh_x - hip_x)
+                                        dy = abs(sh_y - hip_y)
+                                    else:
+                                        dx = abs(nose[0] - sh_x) if nose[2] > 0.25 else 10.0
+                                        dy = abs(sh_y - nose[1]) if nose[2] > 0.25 else 50.0
+                                    if dx + dy > 1e-4:
+                                        torso_angle = math.degrees(math.atan2(dy, dx))
+    
+                                candidates.append({
+                                    "p_idx": p_idx,
+                                    "raw_id": raw_track_id,
+                                    "bbox": (x1, y1, x2, y2),
+                                    "conf": conf,
+                                    "kpts": kpts,
+                                    "torso_angle": torso_angle,
+                                    "threat_score": 0.0,
+                                    "person_danger": False
+                                })
+    
+                            # Nếu bật lọc tiêu điểm bất thường (Top-4 Saliency Focus)
+                            if anomaly_ranker is not None:
+                                candidates = anomaly_ranker.update_frame(candidates, orig_w, orig_h)
                             else:
-                                fall_streaks[c_id] = max(0, fall_streaks.get(c_id, 0) - 1)
-
-                            if fall_streaks.get(c_id, 0) >= 15:
-                                person_danger = True
-                                person_action = "Té ngã / Nằm bất động"
-                                person_threat_score = 9.0
-                                has_frame_danger = True
-                                frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
-
-                            kinetic_spike = cand.get("kinetic_spike", 0.0)
-                            interaction_score = cand.get("interaction_score", 0.0)
-
-                            sh_w = math.hypot(l_sh[0] - r_sh[0], l_sh[1] - r_sh[1]) if l_sh[2] > 0.25 and r_sh[2] > 0.25 else 50.0
-                            bbox_h = max(1, y2 - y1)
-                            bbox_w = max(1, x2 - x1)
-                            aspect_ratio = bbox_h / bbox_w
-                            sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
-                            hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
-                            if l_sh[2] > 0.30 and r_sh[2] > 0.30:
-                                sh_x = (l_sh[0] + r_sh[0]) / 2.0
-                                sh_y = (l_sh[1] + r_sh[1]) / 2.0
-                            if l_hip[2] > 0.25 and r_hip[2] > 0.25:
-                                hip_x = (l_hip[0] + r_hip[0]) / 2.0
-                                hip_y = (l_hip[1] + r_hip[1]) / 2.0
-
-                            # Nhận diện tư thế ngồi (Sitting / Desk Occlusion):
-                            # Trường hợp 1: Thấy cả chân và đầu gối gập ngang (Full body sitting)
-                            has_knee_kpts = (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35)
-                            is_seated_full = (has_knee_kpts and l_hip[2] > 0.30 and abs(kpts[13][1] - l_hip[1]) < 0.30 * bbox_h and abs(kpts[13][0] - l_hip[0]) > 0.18 * bbox_w)
-
-                            # Trường hợp 2: Bị bàn học / mặt bàn che khuất chân (Desk / Classroom Occlusion):
-                            # Thường gặp trong lớp học/văn phòng: bbox thấp/bè (aspect_ratio < 1.62),
-                            # trục thân thẳng đứng (60 <= torso_angle <= 120), đầu/vai rõ ràng, kinetic_spike thấp (< 0.85)
-                            is_seated_desk = (
-                                (not has_knee_kpts or aspect_ratio < 1.62) and
-                                60.0 <= torso_angle <= 120.0 and
-                                (l_sh[2] > 0.30 or r_sh[2] > 0.30) and
-                                nose[2] > 0.30 and
-                                kinetic_spike < 0.85 and
-                                (aspect_ratio < 1.55 or (l_hip[2] > 0.20 and abs(hip_y - y2) < 0.45 * bbox_h))
-                            )
-                            is_seated = (is_seated_full or is_seated_desk)
-
-                            # =========================================================================
-                            # BỘ TIÊU CHÍ ĐỘNG HỌC 5 TRỤ CỘT TRIỆT TIÊU GÁN OAN (5-PILLAR DISAMBIGUATION)
-                            # =========================================================================
-                            person_role_type = "bystander"
-
-                            # 1. Trụ cột 5: Khóa Bất Biến Cho Người Ngồi Bàn / Đứng Yên (Bystander Invariance Lock)
-                            # Người ngồi sau bàn học (is_seated) hoặc người đứng yên (kinetic_spike < 0.85):
-                            # TUYỆT ĐỐI KHÔNG BAO GIỜ bị gán điểm nguy hiểm hay bôi đỏ dù xung quanh có xô xát
-                            if (is_seated and kinetic_spike < 1.4) or (kinetic_spike < 0.85 and not cand.get("is_striking", False)):
+                                for cand in candidates:
+                                    cand["is_focus"] = True
+                                    cand["is_ghost"] = False
+    
+                            # Xử lý và hiển thị phân tầng
+                            for cand in candidates:
+                                x1, y1, x2, y2 = cand["bbox"]
+                                conf = cand["conf"]
+                                kpts = cand["kpts"]
+                                torso_angle = cand["torso_angle"]
+                                raw_track_id = cand["raw_id"]
+                                is_focus = cand.get("is_focus", True)
+                                is_ghost = cand.get("is_ghost", False)
+    
+                                # Nếu là người ngoài cuộc (Ghosted Bystander): Vẽ mờ tối giản tránh rối mắt
+                                if is_ghost and not is_focus:
+                                    if kpts is not None:
+                                        kpts_scaled = [(pt[0], pt[1], pt[2]) for pt in kpts]
+                                        self.hud.draw_ghost_skeleton(frame, kpts_scaled)
+                                    self.hud.draw_ghost_bbox(frame, x1, y1, x2, y2)
+                                    continue
+    
+                                # Nếu là người trong tiêu điểm (Top-K Focus):
+                                c_id = stabilizer.update(raw_track_id, (x1, y1, x2, y2), worker_frame_count, orig_w, orig_h)
+                                id_label = f"ID #{c_id:02d}"
+    
                                 person_danger = False
-                                person_threat_score = 0.2
-                                person_role_type = "bystander"
+                                person_action = "Đang đứng / Hoạt động trong phòng"
+                                person_threat_score = 0.0
+    
+                                if kpts is not None:
+                                    nose = kpts[0]
+                                    l_sh, r_sh = kpts[5], kpts[6]
+                                    l_hip, r_hip = kpts[11], kpts[12]
+                                    l_wrist, r_wrist = kpts[9], kpts[10]
+    
+                                    # 1. Kiểm tra Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
+                                    if torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
+                                        fall_streaks[c_id] = fall_streaks.get(c_id, 0) + 1
+                                    else:
+                                        fall_streaks[c_id] = max(0, fall_streaks.get(c_id, 0) - 1)
+    
+                                    if fall_streaks.get(c_id, 0) >= 15:
+                                        person_danger = True
+                                        person_action = "Té ngã / Nằm bất động"
+                                        person_threat_score = 9.0
+                                        has_frame_danger = True
+                                        frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
+    
+                                    kinetic_spike = cand.get("kinetic_spike", 0.0)
+                                    interaction_score = cand.get("interaction_score", 0.0)
+    
+                                    sh_w = math.hypot(l_sh[0] - r_sh[0], l_sh[1] - r_sh[1]) if l_sh[2] > 0.25 and r_sh[2] > 0.25 else 50.0
+                                    bbox_h = max(1, y2 - y1)
+                                    bbox_w = max(1, x2 - x1)
+                                    aspect_ratio = bbox_h / bbox_w
+                                    sh_x, sh_y = (x1 + x2) / 2.0, y1 + 0.25 * (y2 - y1)
+                                    hip_x, hip_y = (x1 + x2) / 2.0, y1 + 0.55 * (y2 - y1)
+                                    if l_sh[2] > 0.30 and r_sh[2] > 0.30:
+                                        sh_x = (l_sh[0] + r_sh[0]) / 2.0
+                                        sh_y = (l_sh[1] + r_sh[1]) / 2.0
+                                    if l_hip[2] > 0.25 and r_hip[2] > 0.25:
+                                        hip_x = (l_hip[0] + r_hip[0]) / 2.0
+                                        hip_y = (l_hip[1] + r_hip[1]) / 2.0
+    
+                                    # Nhận diện tư thế ngồi (Sitting / Desk Occlusion):
+                                    # Trường hợp 1: Thấy cả chân và đầu gối gập ngang (Full body sitting)
+                                    has_knee_kpts = (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35)
+                                    is_seated_full = (has_knee_kpts and l_hip[2] > 0.30 and abs(kpts[13][1] - l_hip[1]) < 0.30 * bbox_h and abs(kpts[13][0] - l_hip[0]) > 0.18 * bbox_w)
+    
+                                    # Trường hợp 2: Bị bàn học / mặt bàn che khuất chân (Desk / Classroom Occlusion):
+                                    # Thường gặp trong lớp học/văn phòng: bbox thấp/bè (aspect_ratio < 1.62),
+                                    # trục thân thẳng đứng (60 <= torso_angle <= 120), đầu/vai rõ ràng, kinetic_spike thấp (< 0.85)
+                                    is_seated_desk = (
+                                        (not has_knee_kpts or aspect_ratio < 1.62) and
+                                        60.0 <= torso_angle <= 120.0 and
+                                        (l_sh[2] > 0.30 or r_sh[2] > 0.30) and
+                                        nose[2] > 0.30 and
+                                        kinetic_spike < 0.85 and
+                                        (aspect_ratio < 1.55 or (l_hip[2] > 0.20 and abs(hip_y - y2) < 0.45 * bbox_h))
+                                    )
+                                    is_seated = (is_seated_full or is_seated_desk)
+    
+                                    # =========================================================================
+                                    # BỘ TIÊU CHÍ ĐỘNG HỌC 5 TRỤ CỘT TRIỆT TIÊU GÁN OAN (5-PILLAR DISAMBIGUATION)
+                                    # =========================================================================
+                                    person_role_type = "bystander"
+    
+                                    # 1. Trụ cột 5: Khóa Bất Biến Cho Người Ngồi Bàn / Đứng Yên (Bystander Invariance Lock)
+                                    # Người ngồi sau bàn học (is_seated) hoặc người đứng yên (kinetic_spike < 0.85):
+                                    # TUYỆT ĐỐI KHÔNG BAO GIỜ bị gán điểm nguy hiểm hay bôi đỏ dù xung quanh có xô xát
+                                    if (is_seated and kinetic_spike < 1.4) or (kinetic_spike < 0.85 and not cand.get("is_striking", False)):
+                                        person_danger = False
+                                        person_threat_score = 0.2
+                                        person_role_type = "bystander"
+                                        if is_seated:
+                                            person_action = "Ngồi tại bàn / Quan sát tĩnh"
+                                        elif aspect_ratio >= 1.70:
+                                            person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
+                                        else:
+                                            person_action = "Sinh hoạt bình thường / Quan sát"
+    
+                                    # 2. Phát hiện Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
+                                    elif torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
+                                        fall_streaks[c_id] = fall_streaks.get(c_id, 0) + 1
+                                        if fall_streaks.get(c_id, 0) >= 15:
+                                            person_danger = True
+                                            person_role_type = "victim"
+                                            person_action = "Té ngã / Nằm bất động"
+                                            person_threat_score = 9.0
+                                            has_frame_danger = True
+                                            frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
+    
+                                    # 3. Trụ cột 1 & 4: Kẻ Tấn Công / Ra Đòn (Striker / Attacker)
+                                    # Có véc-tơ cổ tay đâm thẳng vào đối phương VÀ gia tốc xung lực đột biến (kinetic_spike >= 1.8)
+                                    elif (cand.get("is_striking", False) and kinetic_spike >= 1.8) or (kinetic_spike >= 2.6 and interaction_score >= 2.5):
+                                        person_danger = True
+                                        person_role_type = "attacker"
+                                        person_action = "Vung tay ra đòn / Tấn công áp sát"
+                                        person_threat_score = 8.5
+                                        has_frame_danger = True
+                                        frame_alert = f"CẢNH BÁO: VUNG TAY TẤN CÔNG ({id_label})"
+    
+                                    # 4. Trụ cột 2: Nạn Nhân / Người Bị Tấn Công Phòng Vệ (Defender / Target)
+                                    # Đang bị nhắm tới VÀ có vận tốc phản ứng né tránh/thủ thế (kinetic_spike >= 1.0)
+                                    elif (cand.get("is_targeted", False) and kinetic_spike >= 1.0) or (interaction_score >= 2.5 and kinetic_spike >= 1.2 and (
+                                        (l_wrist[2] > 0.20 and l_wrist[1] < hip_y and r_wrist[2] > 0.20 and r_wrist[1] < hip_y) or
+                                        torso_angle > 95.0
+                                    )):
+                                        person_danger = False
+                                        person_role_type = "defender"
+                                        person_action = "Phòng vệ / Chắn đỡ né đòn"
+                                        person_threat_score = 4.5
+    
+                                    # 5. Xung Đột Thể Xác Giằng Co Chung (Physical Clash)
+                                    elif interaction_score >= 3.5 and kinetic_spike >= 1.5:
+                                        person_danger = True
+                                        person_role_type = "attacker"
+                                        person_action = "Xung đột thể xác / Giằng co va chạm"
+                                        person_threat_score = 8.0
+                                        has_frame_danger = True
+                                        frame_alert = f"CẢNH BÁO: XUNG ĐỘT THỂ XÁC ({id_label})"
+    
+                                    # 6. Thủ thế đối đầu / Căng thẳng (Boxing Guard / Confrontation Stance)
+                                    elif (interaction_score >= 1.5 and
+                                          l_wrist[2] > 0.25 and r_wrist[2] > 0.25 and
+                                          l_wrist[1] < hip_y - 10 and r_wrist[1] < hip_y - 10 and
+                                          abs(l_wrist[0] - r_wrist[0]) < 1.0 * sh_w):
+                                        person_danger = False
+                                        person_role_type = "defender"
+                                        person_action = "Thủ thế đối đầu / Căng thẳng"
+                                        person_threat_score = 6.0
+    
+                                    # 7. Phân loại Tư thế Sinh cơ học & Động học Vật lý Khách quan (Objective Physical States)
+                                    elif not person_danger:
+                                        # A. Nhóm Ngồi (Seated)
+                                        if is_seated:
+                                            if kinetic_spike < 0.65:
+                                                person_action = "Ngồi tại bàn / Quan sát tĩnh"
+                                            else:
+                                                person_action = "Ngồi làm việc / Thao tác tay"
+                                            person_threat_score = 0.1
+    
+                                        # B. Nhóm Đứng thẳng (Upright Standing)
+                                        elif aspect_ratio >= 1.62 and torso_angle >= 70.0:
+                                            if kinetic_spike < 0.65:
+                                                person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
+                                            else:
+                                                person_action = "Đang đứng / Di chuyển vận động"
+                                            person_threat_score = 0.2
+    
+                                        # C. Nhóm Cúi người / Tập trung (Bent Torso)
+                                        elif 40.0 <= torso_angle < 70.0:
+                                            person_action = "Cúi gập thân / Tập trung"
+                                            person_threat_score = 0.3
+    
+                                        # D. Nhóm Ngả lưng thư giãn (Reclining)
+                                        elif torso_angle > 102.0:
+                                            person_action = "Ngả lưng thư giãn"
+                                            person_threat_score = 0.2
+    
+                                        # E. Nhóm Vận động / Sinh hoạt tự nhiên
+                                        else:
+                                            if kinetic_spike >= 0.85:
+                                                person_action = "Vận động trong phòng / Di chuyển"
+                                            else:
+                                                person_action = "Sinh hoạt bình thường / Quan sát"
+                                            person_threat_score = 0.2
+    
+                                    # Lọc trễ thời gian (Temporal Hysteresis) + Cửa sổ trượt đồng thuận đa số để khử giật nhãn/màu
+                                    stab_res = temporal_stabilizer.update(
+                                        c_id=c_id,
+                                        raw_action=person_action,
+                                        raw_role=person_role_type,
+                                        raw_danger=person_danger,
+                                        threat_score=person_threat_score,
+                                        kinetic=kinetic_spike,
+                                        interaction=interaction_score
+                                    )
+                                    stable_action = stab_res["action"]
+                                    stable_role = stab_res["role"]
+                                    stable_danger = stab_res["is_danger"]
+                                    color = stab_res["color"]
+                                    role_prefix = stab_res["role_prefix"]
+                                    stable_threat_score = stab_res["threat_score"]
+    
+                                    # Bounding Box góc ngoặc mượt mà, không nhấp nháy
+                                    label_str = f"{id_label}{role_prefix}: {stable_action.upper()}"
+                                    self.hud.draw_corner_bracket_bbox(frame, x1, y1, x2, y2, color, label_str, conf)
+    
+                                    # Khung xương 17 khớp nối thanh mảnh
+                                    kpts_scaled = [(pt[0], pt[1], pt[2]) for pt in kpts]
+                                    self.hud.draw_cyber_skeleton(frame, kpts_scaled, color)
+    
+                                action_counts[stable_action] = action_counts.get(stable_action, 0) + 1
                                 if is_seated:
-                                    person_action = "Ngồi tại bàn / Quan sát tĩnh"
-                                elif aspect_ratio >= 1.70:
-                                    person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
+                                    sitting_streaks[c_id] = sitting_streaks.get(c_id, 0) + 1
+                                    max_sitting_streaks[c_id] = max(max_sitting_streaks.get(c_id, 0), sitting_streaks[c_id])
                                 else:
-                                    person_action = "Sinh hoạt bình thường / Quan sát"
-
-                            # 2. Phát hiện Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
-                            elif torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58:
-                                fall_streaks[c_id] = fall_streaks.get(c_id, 0) + 1
-                                if fall_streaks.get(c_id, 0) >= 15:
-                                    person_danger = True
-                                    person_role_type = "victim"
-                                    person_action = "Té ngã / Nằm bất động"
-                                    person_threat_score = 9.0
+                                    sitting_streaks[c_id] = 0
+    
+                                if torso_angle >= 75.0:
+                                    posture_distribution["upright"] += 1
+                                elif 45.0 <= torso_angle < 75.0:
+                                    posture_distribution["bent"] += 1
+                                else:
+                                    posture_distribution["slouched"] += 1
+    
+                                if stable_danger:
                                     has_frame_danger = True
-                                    frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
-
-                            # 3. Trụ cột 1 & 4: Kẻ Tấn Công / Ra Đòn (Striker / Attacker)
-                            # Có véc-tơ cổ tay đâm thẳng vào đối phương VÀ gia tốc xung lực đột biến (kinetic_spike >= 1.8)
-                            elif (cand.get("is_striking", False) and kinetic_spike >= 1.8) or (kinetic_spike >= 2.6 and interaction_score >= 2.5):
-                                person_danger = True
-                                person_role_type = "attacker"
-                                person_action = "Vung tay ra đòn / Tấn công áp sát"
-                                person_threat_score = 8.5
-                                has_frame_danger = True
-                                frame_alert = f"CẢNH BÁO: VUNG TAY TẤN CÔNG ({id_label})"
-
-                            # 4. Trụ cột 2: Nạn Nhân / Người Bị Tấn Công Phòng Vệ (Defender / Target)
-                            # Đang bị nhắm tới VÀ có vận tốc phản ứng né tránh/thủ thế (kinetic_spike >= 1.0)
-                            elif (cand.get("is_targeted", False) and kinetic_spike >= 1.0) or (interaction_score >= 2.5 and kinetic_spike >= 1.2 and (
-                                (l_wrist[2] > 0.20 and l_wrist[1] < hip_y and r_wrist[2] > 0.20 and r_wrist[1] < hip_y) or
-                                torso_angle > 95.0
-                            )):
-                                person_danger = False
-                                person_role_type = "defender"
-                                person_action = "Phòng vệ / Chắn đỡ né đòn"
-                                person_threat_score = 4.5
-
-                            # 5. Xung Đột Thể Xác Giằng Co Chung (Physical Clash)
-                            elif interaction_score >= 3.5 and kinetic_spike >= 1.5:
-                                person_danger = True
-                                person_role_type = "attacker"
-                                person_action = "Xung đột thể xác / Giằng co va chạm"
-                                person_threat_score = 8.0
-                                has_frame_danger = True
-                                frame_alert = f"CẢNH BÁO: XUNG ĐỘT THỂ XÁC ({id_label})"
-
-                            # 6. Thủ thế đối đầu / Căng thẳng (Boxing Guard / Confrontation Stance)
-                            elif (interaction_score >= 1.5 and
-                                  l_wrist[2] > 0.25 and r_wrist[2] > 0.25 and
-                                  l_wrist[1] < hip_y - 10 and r_wrist[1] < hip_y - 10 and
-                                  abs(l_wrist[0] - r_wrist[0]) < 1.0 * sh_w):
-                                person_danger = False
-                                person_role_type = "defender"
-                                person_action = "Thủ thế đối đầu / Căng thẳng"
-                                person_threat_score = 6.0
-
-                            # 7. Phân loại Tư thế Sinh cơ học & Động học Vật lý Khách quan (Objective Physical States)
-                            elif not person_danger:
-                                # A. Nhóm Ngồi (Seated)
-                                if is_seated:
-                                    if kinetic_spike < 0.65:
-                                        person_action = "Ngồi tại bàn / Quan sát tĩnh"
-                                    else:
-                                        person_action = "Ngồi làm việc / Thao tác tay"
-                                    person_threat_score = 0.1
-
-                                # B. Nhóm Đứng thẳng (Upright Standing)
-                                elif aspect_ratio >= 1.62 and torso_angle >= 70.0:
-                                    if kinetic_spike < 0.65:
-                                        person_action = "Đang đứng quan sát / Giữ nguyên vị trí"
-                                    else:
-                                        person_action = "Đang đứng / Di chuyển vận động"
-                                    person_threat_score = 0.2
-
-                                # C. Nhóm Cúi người / Tập trung (Bent Torso)
-                                elif 40.0 <= torso_angle < 70.0:
-                                    person_action = "Cúi gập thân / Tập trung"
-                                    person_threat_score = 0.3
-
-                                # D. Nhóm Ngả lưng thư giãn (Reclining)
-                                elif torso_angle > 102.0:
-                                    person_action = "Ngả lưng thư giãn"
-                                    person_threat_score = 0.2
-
-                                # E. Nhóm Vận động / Sinh hoạt tự nhiên
-                                else:
-                                    if kinetic_spike >= 0.85:
-                                        person_action = "Vận động trong phòng / Di chuyển"
-                                    else:
-                                        person_action = "Sinh hoạt bình thường / Quan sát"
-                                    person_threat_score = 0.2
-
-                            # Lọc trễ thời gian (Temporal Hysteresis) + Cửa sổ trượt đồng thuận đa số để khử giật nhãn/màu
-                            stab_res = temporal_stabilizer.update(
-                                c_id=c_id,
-                                raw_action=person_action,
-                                raw_role=person_role_type,
-                                raw_danger=person_danger,
-                                threat_score=person_threat_score,
-                                kinetic=kinetic_spike,
-                                interaction=interaction_score
-                            )
-                            stable_action = stab_res["action"]
-                            stable_role = stab_res["role"]
-                            stable_danger = stab_res["is_danger"]
-                            color = stab_res["color"]
-                            role_prefix = stab_res["role_prefix"]
-                            stable_threat_score = stab_res["threat_score"]
-
-                            # Bounding Box góc ngoặc mượt mà, không nhấp nháy
-                            label_str = f"{id_label}{role_prefix}: {stable_action.upper()}"
-                            self.hud.draw_corner_bracket_bbox(frame, x1, y1, x2, y2, color, label_str, conf)
-
-                            # Khung xương 17 khớp nối thanh mảnh
-                            kpts_scaled = [(pt[0], pt[1], pt[2]) for pt in kpts]
-                            self.hud.draw_cyber_skeleton(frame, kpts_scaled, color)
-
-                        action_counts[stable_action] = action_counts.get(stable_action, 0) + 1
-                        if is_seated:
-                            sitting_streaks[c_id] = sitting_streaks.get(c_id, 0) + 1
-                            max_sitting_streaks[c_id] = max(max_sitting_streaks.get(c_id, 0), sitting_streaks[c_id])
-                        else:
-                            sitting_streaks[c_id] = 0
-
-                        if torso_angle >= 75.0:
-                            posture_distribution["upright"] += 1
-                        elif 45.0 <= torso_angle < 75.0:
-                            posture_distribution["bent"] += 1
-                        else:
-                            posture_distribution["slouched"] += 1
-
-                        if stable_danger:
-                            has_frame_danger = True
-                            if not frame_alert:
-                                frame_alert = f"CẢNH BÁO: XUNG ĐỘT ({id_label})"
-
-                        frame_threat_score = max(frame_threat_score, stable_threat_score)
-                        frame_entities.append({
-                            "canonical_id": c_id,
-                            "id_label": id_label,
-                            "action": stable_action,
-                            "role": stable_role,
-                            "angle": torso_angle,
-                            "threat_score": stable_threat_score,
-                            "is_danger": stable_danger,
-                            "kinetic_spike": kinetic_spike,
-                            "interaction_score": interaction_score
+                                    if not frame_alert:
+                                        frame_alert = f"CẢNH BÁO: XUNG ĐỘT ({id_label})"
+    
+                                frame_threat_score = max(frame_threat_score, stable_threat_score)
+                                frame_entities.append({
+                                    "canonical_id": c_id,
+                                    "id_label": id_label,
+                                    "action": stable_action,
+                                    "role": stable_role,
+                                    "angle": torso_angle,
+                                    "threat_score": stable_threat_score,
+                                    "is_danger": stable_danger,
+                                    "kinetic_spike": kinetic_spike,
+                                    "interaction_score": interaction_score
+                                })
+    
+                    # Ghi nhận vào phân đoạn timeline tương ứng
+                    seg_idx = min(len(segments_data) - 1, max(0, int((current_time_sec - start_time) / seg_len)))
+                    current_seg = segments_data[seg_idx]
+    
+                    for ent in frame_entities:
+                        c_id_key = ent["canonical_id"]
+                        if c_id_key not in current_seg["persons_history"]:
+                            current_seg["persons_history"][c_id_key] = {
+                                "actions": [],
+                                "angles": [],
+                                "max_threat": 0.0,
+                                "danger_count": 0,
+                                "defender_count": 0,
+                                "kinetic_spikes": [],
+                                "interaction_scores": []
+                            }
+                        current_seg["persons_history"][c_id_key]["actions"].append(ent["action"])
+                        current_seg["persons_history"][c_id_key]["angles"].append(ent["angle"])
+                        current_seg["persons_history"][c_id_key]["max_threat"] = max(current_seg["persons_history"][c_id_key]["max_threat"], ent["threat_score"])
+                        current_seg["persons_history"][c_id_key]["kinetic_spikes"].append(ent.get("kinetic_spike", 0.0))
+                        current_seg["persons_history"][c_id_key]["interaction_scores"].append(ent.get("interaction_score", 0.0))
+                        if ent.get("role") == "attacker" or ent["is_danger"]:
+                            current_seg["persons_history"][c_id_key]["danger_count"] += 1
+                        elif ent.get("role") == "defender":
+                            current_seg["persons_history"][c_id_key]["defender_count"] += 1
+    
+                    if has_frame_danger:
+                        current_seg["has_danger"] = True
+    
+                    # Giữ ảnh tiêu biểu có Bounding Box và Khung xương cho phân đoạn
+                    if current_seg["peak_frame"] is None or frame_threat_score >= current_seg["peak_threat"]:
+                        current_seg["peak_threat"] = frame_threat_score
+                        current_seg["peak_frame"] = frame.copy()
+    
+                    # Lấy mẫu Heatmap (mỗi 0.5 giây)
+                    sec_slot = round((current_time_sec - start_time) * 2) / 2.0
+                    if sec_slot not in heatmap_samples or frame_threat_score > heatmap_samples[sec_slot]:
+                        heatmap_samples[sec_slot] = frame_threat_score
+    
+                    # Cập nhật danh sách sự kiện và lưu ảnh ứng viên cho TokenGuard
+                    if has_frame_danger:
+                        max_danger_score = max(max_danger_score, int(frame_threat_score))
+                        peak_danger_reason = frame_alert
+                        time_str = format_time(current_time_sec - start_time)
+    
+                        if len(timeline_events) == 0 or (current_time_sec - timeline_events[-1]["second"] >= 2.0):
+                            timeline_events.append({
+                                "second": round(current_time_sec - start_time, 2),
+                                "time": time_str,
+                                "event": frame_alert,
+                                "severity": "🔴 NGUY HIỂM"
+                            })
+    
+                        threat_event_log.append({
+                            "timestamp": round(current_time_sec - start_time, 2),
+                            "threat_type": frame_alert,
+                            "threat_score": frame_threat_score,
+                            "details": f"Thời điểm {time_str}"
                         })
+                        candidate_keyframes[round(current_time_sec - start_time, 2)] = frame.copy()
+    
+                    # Lưu ít nhất 1 frame ở giữa nếu không có nguy hiểm
+                    if len(candidate_keyframes) == 0 and worker_frame_count == target_total_frames // 2:
+                        candidate_keyframes[round(current_time_sec - start_time, 2)] = frame.copy()
 
-            # Ghi nhận vào phân đoạn timeline tương ứng
-            seg_idx = min(len(segments_data) - 1, max(0, int((current_time_sec - start_time) / seg_len)))
-            current_seg = segments_data[seg_idx]
+                    # Đẩy sang Writer Queue cho Stage 3 (Pillow HUD Overlay + VideoWriter.write)
+                    while not stop_pipeline.is_set():
+                        try:
+                            writer_buffer.put((current_frame_pos, frame, has_frame_danger, frame_alert, detected_persons_count), block=True, timeout=0.1)
+                            break
+                        except queue.Full:
+                            continue
+            except Exception as e_w:
+                pipeline_errors.append(e_w)
+                stop_pipeline.set()
+            finally:
+                # Gửi sentinel kết thúc cho Stage 3
+                while not stop_pipeline.is_set():
+                    try:
+                        writer_buffer.put(_SENTINEL, block=True, timeout=0.1)
+                        break
+                    except queue.Full:
+                        continue
 
-            for ent in frame_entities:
-                c_id_key = ent["canonical_id"]
-                if c_id_key not in current_seg["persons_history"]:
-                    current_seg["persons_history"][c_id_key] = {
-                        "actions": [],
-                        "angles": [],
-                        "max_threat": 0.0,
-                        "danger_count": 0,
-                        "defender_count": 0,
-                        "kinetic_spikes": [],
-                        "interaction_scores": []
-                    }
-                current_seg["persons_history"][c_id_key]["actions"].append(ent["action"])
-                current_seg["persons_history"][c_id_key]["angles"].append(ent["angle"])
-                current_seg["persons_history"][c_id_key]["max_threat"] = max(current_seg["persons_history"][c_id_key]["max_threat"], ent["threat_score"])
-                current_seg["persons_history"][c_id_key]["kinetic_spikes"].append(ent.get("kinetic_spike", 0.0))
-                current_seg["persons_history"][c_id_key]["interaction_scores"].append(ent.get("interaction_score", 0.0))
-                if ent.get("role") == "attacker" or ent["is_danger"]:
-                    current_seg["persons_history"][c_id_key]["danger_count"] += 1
-                elif ent.get("role") == "defender":
-                    current_seg["persons_history"][c_id_key]["defender_count"] += 1
+        # STAGE 3: Video Writer & Encoder Consumer Thread (Render & I/O Bound)
+        writer_frame_count = 0
+        def writer_worker():
+            nonlocal writer_frame_count
+            try:
+                while not stop_pipeline.is_set():
+                    item = writer_buffer.get(block=True, timeout=0.1)
+                    if item is None:
+                        continue
+                    if item is _SENTINEL:
+                        break
 
-            if has_frame_danger:
-                current_seg["has_danger"] = True
+                    current_frame_pos, frame, has_frame_danger, frame_alert, detected_persons_count = item
+                    writer_frame_count += 1
+                    t_frame_start = time.time()
+                    current_time_sec = current_frame_pos / input_fps
 
-            # Giữ ảnh tiêu biểu có Bounding Box và Khung xương cho phân đoạn
-            if current_seg["peak_frame"] is None or frame_threat_score >= current_seg["peak_threat"]:
-                current_seg["peak_threat"] = frame_threat_score
-                current_seg["peak_frame"] = frame.copy()
+                    # Tính toán FPS xử lý tức thời
+                    dt = max(1e-4, time.time() - t_frame_start)
+                    proc_fps = 1.0 / dt
+                    fps_tracker.append(proc_fps)
+                    if len(fps_tracker) > 30:
+                        fps_tracker.pop(0)
+                    avg_proc_fps = sum(fps_tracker) / len(fps_tracker)
 
-            # Lấy mẫu Heatmap (mỗi 0.5 giây)
-            sec_slot = round((current_time_sec - start_time) * 2) / 2.0
-            if sec_slot not in heatmap_samples or frame_threat_score > heatmap_samples[sec_slot]:
-                heatmap_samples[sec_slot] = frame_threat_score
+                    # --- DÁN NHÃN HUD BẰNG PILLOW UNICODE (KHÔNG VỠ FONT TIẾNG VIỆT) ---
+                    header_h = 45
+                    overlay_hdr = frame.copy()
+                    cv2.rectangle(overlay_hdr, (0, 0), (orig_w, header_h), (15, 20, 28), -1)
+                    banner_color = (68, 68, 239) if has_frame_danger else (16, 185, 129)
+                    cv2.rectangle(overlay_hdr, (0, 0), (8, header_h), banner_color, -1)
+                    cv2.addWeighted(overlay_hdr, 0.85, frame, 0.15, 0, frame)
 
-            # Cập nhật danh sách sự kiện và lưu ảnh ứng viên cho TokenGuard
-            if has_frame_danger:
-                max_danger_score = max(max_danger_score, int(frame_threat_score))
-                peak_danger_reason = frame_alert
-                time_str = format_time(current_time_sec - start_time)
+                    cur_time_str = format_time(current_time_sec - start_time)
+                    dev_hw = self.device_name
+                    hdr_text = f"FRAME: {writer_frame_count:05d}/{target_total_frames:05d} [{cur_time_str}]  |  XỬ LÝ: {avg_proc_fps:.0f} FPS ({dev_hw})  |  ĐỐI TƯỢNG: {detected_persons_count}"
+                    status_tag = f"[ {frame_alert} ]" if has_frame_danger else "[ AN TOÀN ]"
 
-                if len(timeline_events) == 0 or (current_time_sec - timeline_events[-1]["second"] >= 2.0):
-                    timeline_events.append({
-                        "second": round(current_time_sec - start_time, 2),
-                        "time": time_str,
-                        "event": frame_alert,
-                        "severity": "🔴 NGUY HIỂM"
-                    })
+                    # Vẽ text tiếng Việt Unicode mượt mà bằng Pillow ImageDraw
+                    hdr_roi = frame[0:header_h, 0:orig_w]
+                    pil_hdr = Image.fromarray(cv2.cvtColor(hdr_roi, cv2.COLOR_BGR2RGB))
+                    draw_hdr = ImageDraw.Draw(pil_hdr)
+                    font_hdr = getattr(self.hud, "font_body_bold", None) or getattr(self.hud, "font_body", None)
+                    font_status = getattr(self.hud, "font_section", None) or getattr(self.hud, "font_body_bold", None)
 
-                threat_event_log.append({
-                    "timestamp": round(current_time_sec - start_time, 2),
-                    "threat_type": frame_alert,
-                    "threat_score": frame_threat_score,
-                    "details": f"Thời điểm {time_str}"
-                })
-                candidate_keyframes[round(current_time_sec - start_time, 2)] = frame.copy()
+                    draw_hdr.text((20, 14), hdr_text, font=font_hdr, fill=(245, 247, 250))
+                    tag_color_rgb = (banner_color[2], banner_color[1], banner_color[0])
+                    status_x = max(orig_w - 320, int(orig_w * 0.70))
+                    draw_hdr.text((status_x, 14), status_tag, font=font_status, fill=tag_color_rgb)
 
-            # Lưu ít nhất 1 frame ở giữa nếu không có nguy hiểm
-            if len(candidate_keyframes) == 0 and processed_count == target_total_frames // 2:
-                candidate_keyframes[round(current_time_sec - start_time, 2)] = frame.copy()
+                    frame[0:header_h, 0:orig_w] = cv2.cvtColor(np.array(pil_hdr), cv2.COLOR_RGB2BGR)
 
-            # Tính toán FPS xử lý tức thời
-            dt = max(1e-4, time.time() - t_frame_start)
-            proc_fps = 1.0 / dt
-            fps_tracker.append(proc_fps)
-            if len(fps_tracker) > 30:
-                fps_tracker.pop(0)
-            avg_proc_fps = sum(fps_tracker) / len(fps_tracker)
+                    # Ghi frame thành phẩm vào VideoWriter
+                    out.write(frame)
 
-            # --- DÁN NHÃN HUD BẰNG PILLOW UNICODE (KHÔNG VỠ FONT TIẾNG VIỆT) ---
-            header_h = 45
-            overlay_hdr = frame.copy()
-            cv2.rectangle(overlay_hdr, (0, 0), (orig_w, header_h), (15, 20, 28), -1)
-            banner_color = (68, 68, 239) if has_frame_danger else (16, 185, 129)
-            cv2.rectangle(overlay_hdr, (0, 0), (8, header_h), banner_color, -1)
-            cv2.addWeighted(overlay_hdr, 0.85, frame, 0.15, 0, frame)
+                    if progress_callback and (writer_frame_count % 3 == 0 or writer_frame_count == target_total_frames):
+                        progress_callback(writer_frame_count, target_total_frames, avg_proc_fps)
+            except Exception as e_wr:
+                pipeline_errors.append(e_wr)
+                stop_pipeline.set()
 
-            cur_time_str = format_time(current_time_sec - start_time)
-            dev_hw = self.device_name
-            hdr_text = f"FRAME: {processed_count:05d}/{target_total_frames:05d} [{cur_time_str}]  |  XỬ LÝ: {avg_proc_fps:.0f} FPS ({dev_hw})  |  ĐỐI TƯỢNG: {detected_persons_count}"
-            status_tag = f"[ {frame_alert} ]" if has_frame_danger else "[ AN TOÀN ]"
+        # Khởi động đồng thời cả 3 luồng Pipeline
+        t_reader = threading.Thread(target=reader_worker, name="VideoPipeReader", daemon=True)
+        t_worker = threading.Thread(target=inference_worker, name="VideoPipeInference", daemon=True)
+        t_writer = threading.Thread(target=writer_worker, name="VideoPipeWriter", daemon=True)
 
-            # Vẽ text tiếng Việt Unicode mượt mà bằng Pillow ImageDraw
-            hdr_roi = frame[0:header_h, 0:orig_w]
-            pil_hdr = Image.fromarray(cv2.cvtColor(hdr_roi, cv2.COLOR_BGR2RGB))
-            draw_hdr = ImageDraw.Draw(pil_hdr)
-            font_hdr = getattr(self.hud, "font_body_bold", None) or getattr(self.hud, "font_body", None)
-            font_status = getattr(self.hud, "font_section", None) or getattr(self.hud, "font_body_bold", None)
+        t_reader.start()
+        t_worker.start()
+        t_writer.start()
 
-            draw_hdr.text((20, 14), hdr_text, font=font_hdr, fill=(245, 247, 250))
-            tag_color_rgb = (banner_color[2], banner_color[1], banner_color[0])
-            status_x = max(orig_w - 320, int(orig_w * 0.70))
-            draw_hdr.text((status_x, 14), status_tag, font=font_status, fill=tag_color_rgb)
-
-            frame[0:header_h, 0:orig_w] = cv2.cvtColor(np.array(pil_hdr), cv2.COLOR_RGB2BGR)
-
-            # Tuyệt đối không vẽ viền đỏ toàn màn hình (chỉ hiển thị viền/khung xương của đối tượng ra đòn)
-            out.write(frame)
-
-            if progress_callback and processed_count % 3 == 0:
-                progress_callback(processed_count, target_total_frames, avg_proc_fps)
+        t_reader.join()
+        t_worker.join()
+        t_writer.join()
 
         cap.release()
         out.release()
+
+        # Đồng bộ biến đếm số lượng frame thực tế đã xử lý
+        processed_count = writer_frame_count
+
+        if pipeline_errors:
+            raise pipeline_errors[0]
 
         # Xác định vai trò cho các đối tượng bền vững
         stabilizer.finalize_roles(orig_h)
@@ -2183,6 +2282,7 @@ class VideoAnnotatorEngine:
             "input_path": input_path,
             "output_path": output_path,
             "total_frames": processed_count,
+            "frame_count": processed_count,
             "duration_seconds": round(processed_count / input_fps, 1),
             "processing_time_seconds": round(total_elapsed, 1),
             "overall_fps": round(overall_fps, 1),

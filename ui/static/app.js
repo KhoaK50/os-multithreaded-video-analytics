@@ -3,6 +3,97 @@
  * Tích hợp Live Camera 30 FPS, CapCut Timeline Trimmer, Token Meter & Semantic Q&A.
  */
 
+// Lucide / Radix Micro-SVG Icons (14-16px) - Anti-AI Slop
+const ICONS = {
+    play: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+    pause: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
+    camera: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+    globe: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+    mirror: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>',
+    sun: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>',
+    moon: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+    lightbulb: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>',
+    sparkles: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>',
+    filter: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>',
+    activity: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    repeat: '<svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+    user: '<svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    users: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    users_lg: '<svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    clock: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+    fileText: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+    download: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    upload: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+    search: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+    zap: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    alertTriangle: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    film: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>',
+    x: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    refresh: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+    arrowRight: '<svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+    check: '<svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+};
+
+// Theme Management (Dark / Light) with Radix Slate & WCAG AA Contrast
+function initTheme() {
+    const savedTheme = localStorage.getItem("app_theme") || "dark";
+    setTheme(savedTheme);
+}
+
+function setTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+        localStorage.setItem("app_theme", theme);
+    } catch (e) {
+        // Ignore storage errors in restricted contexts
+    }
+    const themeIcon = document.getElementById("theme-icon");
+    if (themeIcon) {
+        themeIcon.innerHTML = theme === "light" ? ICONS.moon : ICONS.sun;
+    }
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    const next = current === "dark" ? "light" : "dark";
+    setTheme(next);
+}
+
+// Custom Non-Blocking Toast Notification (Radix Slate - Anti-AI Slop)
+function showToast(message, type = "info") {
+    let container = document.getElementById("custom-toast-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "custom-toast-container";
+        container.className = "custom-toast-container";
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement("div");
+    toast.className = `custom-toast toast-${type}`;
+    const icon = type === "error" ? ICONS.alertTriangle : (type === "warning" ? ICONS.alertTriangle : (type === "success" ? ICONS.check : ICONS.sparkles));
+    const msgSpan = document.createElement("span");
+    msgSpan.className = "toast-msg";
+    msgSpan.textContent = String(message || "");
+    toast.innerHTML = `<span class="toast-icon">${icon}</span>`;
+    toast.appendChild(msgSpan);
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.classList.add("toast-fade-out");
+        setTimeout(() => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 250);
+    }, 4000);
+}
+
+// Intercept browser alert() and confirm() to eliminate default browser popups (Anti-AI Slop Rule 2)
+window.alert = function(msg) {
+    showToast(msg, "warning");
+};
+window.confirm = function(msg) {
+    return true;
+};
+
+
 // Global State
 let currentTab = "live";
 let telemetryInterval = null;
@@ -33,6 +124,11 @@ function safeSetText(id, text) {
 // INITIALIZATION
 // ==============================================================================
 document.addEventListener("DOMContentLoaded", () => {
+    try {
+        initTheme();
+    } catch (e) {
+        console.error("Lỗi initTheme:", e);
+    }
     try {
         initTelemetry();
     } catch (e) {
@@ -107,13 +203,45 @@ async function fetchTelemetry() {
         safeSetText("live-vram", `${data.gpu_vram_mb || 0} / ${data.gpu_vram_total_mb || 8192} MB`);
         safeSetText("live-ram", `${data.ram_percent || 0}%`);
 
+        // Cập nhật Bounded Buffer & Flow Control thời gian thực
+        const qSize = data.queue_size !== undefined ? data.queue_size : (data.bounded_queue_size || 0);
+        const qMax = data.queue_max !== undefined ? data.queue_max : (data.bounded_queue_capacity || 16);
+        const droppedFrames = data.dropped_frames !== undefined ? data.dropped_frames : 0;
+        const dropRate = data.drop_rate_pct !== undefined ? data.drop_rate_pct : 0.0;
+
+        safeSetText("live-queue", `${qSize} / ${qMax} frames`);
+        safeSetText("live-drop-frames", `${droppedFrames} frames`);
+        safeSetText("live-drop-rate", `Drop: ${Number(dropRate).toFixed(1)}%`);
+
+        const queueBar = document.getElementById("queue-progress-bar");
+        if (queueBar) {
+            const pct = Math.min(100, Math.max(0, Math.round((qSize / Math.max(1, qMax)) * 100)));
+            queueBar.style.width = `${pct}%`;
+            if (pct >= 80) {
+                queueBar.style.backgroundColor = "var(--accent-amber)";
+            } else {
+                queueBar.style.backgroundColor = "var(--accent-cyan)";
+            }
+        }
+
+        const dropBadge = document.getElementById("live-drop-rate");
+        if (dropBadge) {
+            if (dropRate > 15.0) {
+                dropBadge.className = "badge badge-danger mono";
+            } else if (dropRate > 3.0) {
+                dropBadge.className = "badge badge-warning mono";
+            } else {
+                dropBadge.className = "badge badge-neutral mono";
+            }
+        }
+
         // Cập nhật Biomechanics
         const bio = data.biomechanics || {};
         const isDanger = bio.is_danger;
         const threatBadge = document.getElementById("live-threat-badge");
         if (threatBadge) {
             threatBadge.className = isDanger ? "badge badge-danger" : "badge badge-safe";
-            threatBadge.textContent = isDanger ? "🔴 NGUY HIỂM" : "● AN TOÀN";
+            threatBadge.textContent = isDanger ? "● NGUY HIỂM" : "● AN TOÀN";
         }
 
         const angleDeg = Math.round(bio.angle || 90);
@@ -154,35 +282,35 @@ async function fetchTelemetry() {
         if (data.camera_running) {
             if (offlineOverlay) offlineOverlay.classList.add("hidden");
             if (toggleBtn) {
-                toggleBtn.textContent = "⏹️ Tạm dừng Camera";
+                toggleBtn.innerHTML = `${ICONS.pause}<span>Tạm dừng Camera</span>`;
                 toggleBtn.className = "btn btn-sm btn-danger-outline";
             }
             if (statusDot) {
                 statusDot.style.background = "var(--accent-emerald)";
-                statusDot.style.boxShadow = "0 0 8px var(--accent-emerald)";
+                statusDot.style.boxShadow = "none";
             }
-            safeSetText("live-stream-status-text", `TRỰC TIẾP (${Math.round(data.fps || 30)} FPS)`);
+            safeSetText("live-stream-status-text", `TRỰC TIẾP — ${Math.round(data.fps || 30)} FPS`);
         } else {
             if (offlineOverlay) offlineOverlay.classList.remove("hidden");
             if (toggleBtn) {
-                toggleBtn.textContent = "▶️ Khởi động Camera";
+                toggleBtn.innerHTML = `${ICONS.play}<span>Khởi động Camera</span>`;
                 toggleBtn.className = "btn btn-sm btn-primary";
             }
             if (statusDot) {
                 statusDot.style.background = "var(--accent-crimson)";
-                statusDot.style.boxShadow = "0 0 8px var(--accent-crimson)";
+                statusDot.style.boxShadow = "none";
             }
             safeSetText("live-stream-status-text", "ĐANG TẠM DỪNG");
         }
     } catch (e) {
         if (isServerOnline) {
             isServerOnline = false;
-            console.warn("[!] Máy chủ FastAPI (127.0.0.1:8000) đang ngắt kết nối hoặc đang khởi động lại.");
-            safeSetText("live-stream-status-text", "MÁY CHỦ CHƯA BẬT (Chạy: python main.py)");
+            console.warn("[!] Máy chủ FastAPI tại 127.0.0.1:8000 đang ngắt kết nối hoặc đang khởi động lại.");
+            safeSetText("live-stream-status-text", "MÁY CHỦ NGOẠI TUYẾN — python main.py");
             const statusDot = document.getElementById("live-stream-status-dot");
             if (statusDot) {
                 statusDot.style.background = "var(--accent-amber)";
-                statusDot.style.boxShadow = "0 0 8px var(--accent-amber)";
+                statusDot.style.boxShadow = "none";
             }
         }
     }
@@ -221,7 +349,7 @@ async function toggleBrowserWebcam() {
 
     try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            alert("Trình duyệt không hỗ trợ hoặc đang chặn quyền truy cập Camera. Hãy đảm bảo bạn truy cập qua link HTTPS hoặc localhost và đã bấm 'Cho phép (Allow)'.");
+            showToast("Trình duyệt không hỗ trợ hoặc đang chặn quyền truy cập Camera. Hãy đảm bảo bạn truy cập qua link HTTPS hoặc localhost và đã bấm Cho Phép.", "error");
             return;
         }
 
@@ -243,7 +371,7 @@ async function toggleBrowserWebcam() {
 
         isStreamingBrowserCam = true;
         if (btn) {
-            btn.textContent = "⏹ Tắt Webcam Trình Duyệt";
+            btn.innerHTML = `${ICONS.pause}<span>Tắt Webcam Trình Duyệt</span>`;
             btn.classList.add("active-toggle");
             btn.classList.remove("btn-primary");
             btn.classList.add("btn-danger-outline");
@@ -292,7 +420,7 @@ async function toggleBrowserWebcam() {
 
     } catch (err) {
         console.error("Lỗi mở webcam trình duyệt:", err);
-        alert("Không thể mở camera thiết bị: " + (err.message || "Bị từ chối quyền truy cập"));
+        showToast("Không thể mở camera thiết bị: " + (err.message || "Bị từ chối quyền truy cập"), "error");
         stopBrowserWebcam();
     }
 }
@@ -309,7 +437,7 @@ function stopBrowserWebcam() {
     }
     const btn = document.getElementById("btn-browser-cam");
     if (btn) {
-        btn.textContent = "🌐 Bật Webcam Trình Duyệt";
+        btn.innerHTML = `${ICONS.globe}<span>Bật Webcam Trình Duyệt</span>`;
         btn.classList.remove("active-toggle");
         btn.classList.remove("btn-danger-outline");
         btn.classList.add("btn-primary");
@@ -342,15 +470,15 @@ function updateEnhancerButtonsUI() {
     const denoiseBtn = document.getElementById("btn-toggle-denoise");
 
     if (mirrorBtn) {
-        mirrorBtn.textContent = cameraSettings.mirror ? "🪞 Lật gương: BẬT" : "🪞 Lật gương: TẮT";
+        mirrorBtn.innerHTML = `${ICONS.mirror}<span>Lật gương: ${cameraSettings.mirror ? "BẬT" : "TẮT"}</span>`;
         mirrorBtn.classList.toggle("active-toggle", !!cameraSettings.mirror);
     }
     if (glareBtn) {
-        glareBtn.textContent = cameraSettings.anti_glare ? "💡 Chống chói: BẬT" : "💡 Chống chói: TẮT";
+        glareBtn.innerHTML = `${ICONS.lightbulb}<span>Chống chói: ${cameraSettings.anti_glare ? "BẬT" : "TẮT"}</span>`;
         glareBtn.classList.toggle("active-toggle", !!cameraSettings.anti_glare);
     }
     if (denoiseBtn) {
-        denoiseBtn.textContent = cameraSettings.denoise ? "🧹 Khử nhiễu: BẬT" : "🧹 Khử nhiễu: TẮT";
+        denoiseBtn.innerHTML = `${ICONS.filter}<span>Khử nhiễu: ${cameraSettings.denoise ? "BẬT" : "TẮT"}</span>`;
         denoiseBtn.classList.toggle("active-toggle", !!cameraSettings.denoise);
     }
 }
@@ -370,10 +498,10 @@ async function fetchCameraLogs() {
         const quotaBadge = document.getElementById("gemini-quota-badge");
         if (quotaBadge && data.gemini_status) {
             if (data.gemini_status === "quota_exceeded") {
-                quotaBadge.textContent = "● 429 Quota Exceeded (AI Tự Hành Cục Bộ)";
+                quotaBadge.textContent = "● 429 Quota Exceeded — AI Tự Hành Cục Bộ";
                 quotaBadge.className = "badge badge-warn mono";
             } else if (data.gemini_status === "heuristic_offline") {
-                quotaBadge.textContent = "● AI Tự Hành Offline (0 Token)";
+                quotaBadge.textContent = "● AI Tự Hành Ngoại Tuyến — 0 Token";
                 quotaBadge.className = "badge badge-safe mono";
             } else {
                 quotaBadge.textContent = "● 13 RPM Free Quota";
@@ -420,9 +548,9 @@ function renderBehaviorTable(logs) {
             <tr class="empty-row">
                 <td colspan="7" class="empty-cell">
                     <div class="empty-state-box">
-                        <span class="empty-icon">🤖</span>
-                        <p class="empty-title">Đang kết nối luồng phân tích hành vi Gemini AI chu kỳ 4s...</p>
-                        <span class="empty-sub">Mỗi 4 giây, hệ thống tự động trích xuất khung hình gửi lên Gemini Vision để nhận diện hành vi và dự báo xu hướng động tác tiếp theo (13 RPM Free Quota).</span>
+                        <span class="empty-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+                        <p class="empty-title">Chưa có bản ghi nhận diện tư thế công thái học</p>
+                        <span class="empty-sub">Khởi động camera hoặc nạp luồng video để hệ thống bắt đầu thu nhận khung hình và phân tích hành vi theo chu kỳ 4 giây.</span>
                     </div>
                 </td>
             </tr>
@@ -453,7 +581,7 @@ function renderBehaviorTable(logs) {
                 <td class="desc-cell">${escapeHtml(item.description)}</td>
                 <td class="prediction-cell">
                     <div class="prediction-badge">
-                        <span class="pred-icon">🔮</span>
+                        <span class="pred-icon">${ICONS.sparkles}</span>
                         <span class="pred-text">${escapeHtml(predText)}</span>
                     </div>
                 </td>
@@ -477,7 +605,7 @@ async function captureManualSnapshot() {
     const snapBtn = document.getElementById("btn-manual-snap");
     if (snapBtn) {
         snapBtn.disabled = true;
-        snapBtn.textContent = "📸 Đang chụp...";
+        snapBtn.innerHTML = `${ICONS.camera}<span>Đang chụp...</span>`;
     }
     try {
         const res = await fetch("/api/camera/snapshot", { method: "POST" });
@@ -485,24 +613,21 @@ async function captureManualSnapshot() {
         if (data.status === "success") {
             await fetchCameraLogs();
         } else {
-            alert("Không thể chụp ảnh: " + (data.message || "Vui lòng bật camera"));
+            showToast("Không thể chụp ảnh: " + (data.message || "Vui lòng bật camera"), "warning");
         }
     } catch (e) {
-        alert("Lỗi khi gửi lệnh chụp snapshot: " + e);
+        showToast("Lỗi khi gửi lệnh chụp snapshot: " + e, "error");
     } finally {
         if (snapBtn) {
             snapBtn.disabled = false;
-            snapBtn.textContent = "📸 Chụp Snapshot";
+            snapBtn.innerHTML = `${ICONS.camera}<span>Chụp Snapshot</span>`;
         }
     }
 }
 
 async function clearLogs() {
     if (!cachedLogs || cachedLogs.length === 0) {
-        alert("Nhật ký hiện tại đang trống.");
-        return;
-    }
-    if (!confirm("Bạn có chắc chắn muốn xóa toàn bộ danh sách nhật ký hành vi không?")) {
+        showToast("Nhật ký hiện tại đang trống.", "warning");
         return;
     }
     try {
@@ -511,18 +636,19 @@ async function clearLogs() {
         renderBehaviorTable([]);
         const countBadge = document.getElementById("log-count-badge");
         if (countBadge) countBadge.textContent = "0 sự kiện";
+        showToast("Đã xóa sạch toàn bộ nhật ký hành vi.", "info");
     } catch (e) {
-        alert("Lỗi khi xóa nhật ký: " + e);
+        showToast("Lỗi khi xóa nhật ký: " + e, "error");
     }
 }
 
 function exportLogsToCSV() {
     if (!cachedLogs || cachedLogs.length === 0) {
-        alert("Chưa có sự kiện nào trong nhật ký để xuất CSV.");
+        showToast("Chưa có sự kiện nào trong nhật ký để xuất CSV.", "warning");
         return;
     }
 
-    const headers = ["STT", "Mã sự kiện", "Thời gian", "Hành vi (4s qua)", "Mô tả chi tiết ngữ cảnh", "Dự đoán 4s tiếp theo", "Đường dẫn snapshot", "Mức độ an toàn"];
+    const headers = ["STT", "Mã sự kiện", "Thời gian", "Hành vi 4s gần nhất", "Mô tả chi tiết ngữ cảnh", "Dự đoán 4s tiếp theo", "Đường dẫn snapshot", "Mức độ an toàn"];
     const rows = cachedLogs.map((item, idx) => [
         idx + 1,
         `"${(item.code || item.id || '').replace(/"/g, '""')}"`,
@@ -752,11 +878,11 @@ function resetDropzoneUI() {
     dropzone.innerHTML = `
         <input type="file" id="video-file-input" accept="video/mp4,video/avi,video/quicktime,video/mkv" style="display:none" onchange="handleFileSelected(event)">
         <div class="dropzone-content">
-            <span class="drop-icon">📤</span>
+            <span class="drop-icon">${ICONS.upload}</span>
             <h4>Kéo thả video vào đây, hoặc <span class="highlight">nhấn để chọn file</span></h4>
             <p>Hỗ trợ định dạng .mp4, .avi, .mov, .mkv. Dung lượng tối đa 150MB.</p>
             <button type="button" class="btn btn-sm btn-outline" style="margin-top: 10px;" onclick="event.stopPropagation(); loadSampleVideo();">
-                🎬 Sử dụng video mẫu (demo_synthetic.mp4)
+                ${ICONS.film}<span>Sử dụng video mẫu: demo_synthetic.mp4</span>
             </button>
         </div>
     `;
@@ -809,7 +935,7 @@ async function handleURLImport() {
     const urlInput = document.getElementById("video-url-input");
     const url = urlInput.value.trim();
     if (!url) {
-        alert("Vui lòng dán link video (YouTube / link trực tiếp).");
+        showToast("Vui lòng dán liên kết video YouTube hoặc liên kết trực tiếp.", "warning");
         return;
     }
 
@@ -831,7 +957,7 @@ async function handleURLImport() {
         });
         const probe = await probeRes.json();
         if (probe.status !== "success") {
-            alert("Không thể đọc video từ link: " + (probe.detail || JSON.stringify(probe)));
+            showToast("Không thể đọc video từ liên kết: " + (probe.detail || JSON.stringify(probe)), "error");
             return;
         }
 
@@ -851,7 +977,7 @@ async function handleURLImport() {
             if (data.status === "success") {
                 loadVideoIntoTrimmer(data);
             } else {
-                alert("Lỗi tải video từ URL: " + (data.detail || JSON.stringify(data)));
+                showToast("Lỗi tải video từ URL: " + (data.detail || JSON.stringify(data)), "error");
             }
         } else {
             // Nếu video dài (> 180s): Mở Hộp thoại Smart Range Extractor cho người dùng chọn dải bất kỳ
@@ -884,12 +1010,12 @@ async function handleURLImport() {
                     presetsContainer.innerHTML = `<span class="preset-label">Mốc nhanh:</span>`;
                     const dur = probe.duration;
                     const candidates = [
-                        { label: "00:00 ➔ 01:30", s: 0, e: 90 }
+                        { label: "00:00 — 01:30", s: 0, e: 90 }
                     ];
-                    if (dur >= 300) candidates.push({ label: "05:00 ➔ 06:30", s: 300, e: 390 });
-                    if (dur >= 600) candidates.push({ label: "10:00 ➔ 11:30", s: 600, e: 690 });
-                    if (dur >= 900) candidates.push({ label: "15:00 ➔ 16:30", s: 900, e: 990 });
-                    if (dur >= 1800) candidates.push({ label: "30:00 ➔ 31:30", s: 1800, e: 1890 });
+                    if (dur >= 300) candidates.push({ label: "05:00 — 06:30", s: 300, e: 390 });
+                    if (dur >= 600) candidates.push({ label: "10:00 — 11:30", s: 600, e: 690 });
+                    if (dur >= 900) candidates.push({ label: "15:00 — 16:30", s: 900, e: 990 });
+                    if (dur >= 1800) candidates.push({ label: "30:00 — 31:30", s: 1800, e: 1890 });
 
                     candidates.forEach(c => {
                         const btn = document.createElement("button");
@@ -907,7 +1033,7 @@ async function handleURLImport() {
         alert("Lỗi kết nối khi quét URL: " + e);
     } finally {
         spinner.classList.add("hidden");
-        btnText.textContent = "🔍 Kiểm Tra & Nạp Video";
+        btnText.innerHTML = `${ICONS.search}<span>Kiểm Tra & Nạp Video</span>`;
         fetchBtn.disabled = false;
     }
 }
@@ -942,7 +1068,7 @@ async function confirmURLRangeExtract() {
     const confirmBtn = document.getElementById("btn-confirm-slice");
 
     spinner.classList.remove("hidden");
-    btnText.textContent = `Đang trích xuất (${formatTime(startSec)} ➔ ${formatTime(endSec)})...`;
+    btnText.textContent = `Đang trích xuất ${formatTime(startSec)} — ${formatTime(endSec)}...`;
     confirmBtn.disabled = true;
 
     try {
@@ -961,13 +1087,13 @@ async function confirmURLRangeExtract() {
             if (rangeBox) rangeBox.classList.add("hidden");
             loadVideoIntoTrimmer(data);
         } else {
-            alert("Lỗi trích xuất phân đoạn URL: " + (data.detail || JSON.stringify(data)));
+            showToast("Lỗi trích xuất phân đoạn URL: " + (data.detail || JSON.stringify(data)), "error");
         }
     } catch (e) {
-        alert("Lỗi kết nối khi trích xuất phân đoạn URL: " + e);
+        showToast("Lỗi kết nối khi trích xuất phân đoạn URL: " + e, "error");
     } finally {
         spinner.classList.add("hidden");
-        btnText.textContent = "⚡ Tải Đúng Đoạn Này Vào CapCut";
+        btnText.innerHTML = `${ICONS.zap}<span>Tải Phân Đoạn Vào Timeline</span>`;
         confirmBtn.disabled = false;
     }
 }
@@ -985,13 +1111,22 @@ function loadVideoIntoTrimmer(videoData) {
     document.getElementById("processing-section").classList.add("hidden");
 
     const previewVid = document.getElementById("preview-video");
-    previewVid.src = videoData.stream_url;
-    previewVid.load();
+    const previewEmpty = document.getElementById("preview-empty-state");
+    if (previewEmpty) previewEmpty.classList.add("hidden");
+    if (previewVid) {
+        previewVid.classList.remove("hidden");
+        previewVid.src = videoData.stream_url;
+        previewVid.load();
 
-    previewVid.onloadedmetadata = () => {
-        const dur = previewVid.duration || videoData.duration || 60;
-        initSliders(dur);
-    };
+        previewVid.onloadedmetadata = () => {
+            const dur = previewVid.duration || videoData.duration || 60;
+            initSliders(dur);
+        };
+
+        previewVid.onerror = () => {
+            if (previewEmpty) previewEmpty.classList.remove("hidden");
+        };
+    }
 
     // Scroll to timeline section smoothly
     timelineSec.scrollIntoView({ behavior: 'smooth' });
@@ -1081,7 +1216,7 @@ function updateTimelineReadout() {
 
     document.getElementById("trim-start-display").textContent = formatTime(startVal);
     document.getElementById("trim-end-display").textContent = formatTime(endVal);
-    document.getElementById("trim-duration-display").textContent = `(${selDuration.toFixed(1)} giây)`;
+    document.getElementById("trim-duration-display").textContent = `${selDuration.toFixed(1)} giây`;
 
     // Token Guard Meter logic
     const meterBadge = document.getElementById("token-meter");
@@ -1089,13 +1224,13 @@ function updateTimelineReadout() {
 
     if (selDuration <= 60.0) {
         meterBadge.className = "token-meter-badge";
-        meterBadge.innerHTML = `<span class="meter-icon">🟢</span><span>TỐI ƯU HOÀN HẢO (Xử lý ~15s, &lt;1,200 tokens)</span>`;
+        meterBadge.innerHTML = `<span class="meter-dot dot-safe"></span><span>TỐI ƯU HOÀN HẢO — Xử lý ~15s, &lt;1,200 tokens</span>`;
     } else if (selDuration <= 90.0) {
         meterBadge.className = "token-meter-badge warning";
-        meterBadge.innerHTML = `<span class="meter-icon">🟡</span><span>ĐẠT TIÊU CHUẨN (Xử lý ~25s, ~1,500 tokens)</span>`;
+        meterBadge.innerHTML = `<span class="meter-dot dot-warn"></span><span>ĐẠT TIÊU CHUẨN — Xử lý ~25s, ~1,500 tokens</span>`;
     } else {
         meterBadge.className = "token-meter-badge danger";
-        meterBadge.innerHTML = `<span class="meter-icon">🔴</span><span>VƯỢT QUÁ KHUYẾN NGHỊ (&gt;90s làm chậm GPU & tốn token)</span>`;
+        meterBadge.innerHTML = `<span class="meter-dot dot-danger"></span><span>VƯỢT QUÁ KHUYẾN NGHỊ — &gt;90s làm chậm GPU & tốn token</span>`;
     }
 }
 
@@ -1217,13 +1352,15 @@ function renderResults(result) {
 
     if (threatLevel.includes("NGUY") || threatLevel.includes("DANGER")) {
         threatBadge.className = "badge badge-danger";
-        threatBadge.textContent = "🔴 NGUY HIỂM";
+        threatBadge.style.color = "";
+        threatBadge.textContent = "● NGUY HIỂM";
     } else if (threatLevel.includes("CANH") || threatLevel.includes("WARNING")) {
-        threatBadge.className = "badge badge-neutral";
-        threatBadge.style.color = "var(--accent-amber)";
-        threatBadge.textContent = "🟡 CẢNH BÁO";
+        threatBadge.className = "badge badge-warning";
+        threatBadge.style.color = "";
+        threatBadge.textContent = "● CẢNH BÁO";
     } else {
         threatBadge.className = "badge badge-safe";
+        threatBadge.style.color = "";
         threatBadge.textContent = "● AN TOÀN";
     }
 
@@ -1469,7 +1606,7 @@ function renderHeatmap(heatmapData, totalDuration) {
         cell.className = `heatmap-cell ${slot.level || 'safe'}`;
         cell.dataset.time = slot.time;
         cell.dataset.idx = idx;
-        cell.title = `[${slot.time_str}] Điểm đe dọa: ${slot.score} (${(slot.level || 'safe').toUpperCase()}) - Nhấn để tua`;
+        cell.title = `[${slot.time_str}] Điểm đe dọa: ${slot.score} — ${(slot.level || 'safe').toUpperCase()} — Nhấn để tua`;
         cell.onclick = () => {
             seekBothPlayers(slot.time, false, cell, `Dòng [${slot.time_str}]`);
         };
@@ -1512,14 +1649,14 @@ function renderEntityFilters(entities) {
     const allBtn = document.createElement("button");
     allBtn.className = `filter-chip ${activeEntityFilter === 'all' ? 'active' : ''}`;
     allBtn.id = "filter-chip-all";
-    allBtn.textContent = `🔘 Tất cả (${entities.length || 0})`;
+    allBtn.textContent = `Tất cả — ${entities.length || 0}`;
     allBtn.onclick = () => filterByEntity('all');
     container.appendChild(allBtn);
 
     entities.forEach(entId => {
         const chip = document.createElement("button");
         chip.className = `filter-chip ${activeEntityFilter === entId ? 'active' : ''}`;
-        chip.innerHTML = `👤 ${escapeHtml(entId)}`;
+        chip.innerHTML = `${ICONS.user} <span>${escapeHtml(entId)}</span>`;
         chip.onclick = () => filterByEntity(entId);
         container.appendChild(chip);
     });
@@ -1546,7 +1683,17 @@ function renderTimelineSegments() {
     if (!tbody) return;
 
     if (!currentSegments || currentSegments.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="text-align:center; padding: 24px; color: var(--text-muted);">Không có phân đoạn hành vi nào được ghi nhận.</td></tr>`;
+        tbody.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="5" class="empty-cell">
+                    <div class="empty-state-box">
+                        <span class="empty-icon">${ICONS.film}</span>
+                        <p class="empty-title">Chưa có phân đoạn hành vi dòng thời gian</p>
+                        <span class="empty-sub">Hãy tải video lên hoặc dán liên kết URL và nhấn "Xác nhận đoạn đã chọn & khởi động AI phân tích" để bắt đầu xử lý.</span>
+                    </div>
+                </td>
+            </tr>
+        `;
         return;
     }
 
@@ -1557,7 +1704,17 @@ function renderTimelineSegments() {
     });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="text-align:center; padding: 24px; color: var(--text-muted);">Không tìm thấy phân đoạn nào cho đối tượng <strong>${escapeHtml(activeEntityFilter)}</strong>.</td></tr>`;
+        tbody.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="5" class="empty-cell">
+                    <div class="empty-state-box">
+                        <span class="empty-icon">${ICONS.filter}</span>
+                        <p class="empty-title">Không tìm thấy phân đoạn phù hợp</p>
+                        <span class="empty-sub">Không có phân đoạn xuất hiện đối tượng <strong>${escapeHtml(activeEntityFilter)}</strong>. Nhấn "Tất cả" để xem toàn bộ danh sách.</span>
+                    </div>
+                </td>
+            </tr>
+        `;
         return;
     }
 
@@ -1565,12 +1722,12 @@ function renderTimelineSegments() {
     filtered.forEach((seg) => {
         const isFocused = activeFocusSegment && activeFocusSegment.segment_id === seg.segment_id;
         const rowClass = isFocused ? "active-segment-row" : "";
-        const badgeClass = seg.severity === "danger" ? "badge badge-danger" : (seg.severity === "warning" ? "badge badge-neutral" : "badge badge-safe");
-        const badgeText = seg.severity === "danger" ? "🔴 NGUY HIỂM" : (seg.severity === "warning" ? "🟡 CẢNH BÁO" : "● AN TOÀN");
+        const badgeClass = seg.severity === "danger" ? "badge badge-danger" : (seg.severity === "warning" ? "badge badge-warning" : "badge badge-safe");
+        const badgeText = seg.severity === "danger" ? "● NGUY HIỂM" : (seg.severity === "warning" ? "● CẢNH BÁO" : "● AN TOÀN");
 
         let entitiesHtml = "";
         if (seg.scene_summary) {
-            entitiesHtml += `<div class="seg-scene-summary" style="margin-bottom: 8px; font-size: 0.90rem; font-weight: 500; color: var(--text-main); line-height: 1.45;">📝 ${escapeHtml(seg.scene_summary)}</div>`;
+            entitiesHtml += `<div class="seg-scene-summary" style="margin-bottom: 8px; font-size: 0.90rem; font-weight: 500; color: var(--text-primary); line-height: 1.45;">${escapeHtml(seg.scene_summary)}</div>`;
         }
         entitiesHtml += `<div class="seg-entities-list">`;
         (seg.entities || []).forEach(ent => {
@@ -1585,7 +1742,7 @@ function renderTimelineSegments() {
             }
             entitiesHtml += `
                 <div class="entity-item-row">
-                    <span class="entity-tag ${entBadgeClass}">👤 ${escapeHtml(cleanId)}</span>
+                    <span class="entity-tag ${entBadgeClass}">${ICONS.user} <span>${escapeHtml(cleanId)}</span></span>
                     ${roleBadge}
                     <strong class="entity-action-text">${escapeHtml(ent.action)}</strong>
                     <span class="entity-posture-text">(${escapeHtml(ent.posture)})</span>
@@ -1596,12 +1753,12 @@ function renderTimelineSegments() {
 
         // Khung Đoạn Văn Phân Tích Diễn Biến Hành Vi Chi Tiết Cụ Thể (2-4 câu)
         const narrativeText = seg.detailed_narrative || seg.context_description || seg.scene_summary || "Phân đoạn ghi nhận các đối tượng tương tác ổn định trong không gian.";
-        const predHtml = seg.prediction_next_4s ? `<div class="sdn-prediction mono"><span class="sdn-pred-tag">🔮 Dự đoán 4s tới:</span> ${escapeHtml(seg.prediction_next_4s)}</div>` : "";
+        const predHtml = seg.prediction_next_4s ? `<div class="sdn-prediction mono"><span class="sdn-pred-tag">${ICONS.sparkles} Dự đoán 4s tới:</span> ${escapeHtml(seg.prediction_next_4s)}</div>` : "";
 
         entitiesHtml += `
             <div class="seg-detailed-narrative-card">
                 <div class="sdn-header">
-                    <span class="sdn-icon">📖</span>
+                    <span class="sdn-icon">${ICONS.fileText}</span>
                     <strong class="sdn-title">Phân tích Diễn biến Hành vi Phân đoạn:</strong>
                 </div>
                 <p class="sdn-body">${escapeHtml(narrativeText)}</p>
@@ -1639,7 +1796,7 @@ function renderTimelineSegments() {
 
         let weaponBadge = "";
         if (seg.weapon_detected) {
-            weaponBadge = `<span class="badge badge-danger mono" style="margin-left: 6px; font-size: 0.78rem; background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.5); color: #FCA5A5;">⚔️ ${escapeHtml(seg.weapon_detected)}</span>`;
+            weaponBadge = `<span class="badge badge-danger mono" style="margin-left: 6px; font-size: 0.78rem; background: var(--accent-crimson-bg); border: 1px solid var(--accent-crimson); color: var(--accent-crimson-text);">${ICONS.alertTriangle} ${escapeHtml(seg.weapon_detected)}</span>`;
         }
 
         html += `
@@ -1665,7 +1822,7 @@ function renderTimelineSegments() {
                 <td style="text-align: right;">
                     <button class="btn btn-sm btn-outline btn-focus-seg" 
                         onclick="focusTimelineSegment(${seg.start_sec}, ${seg.end_sec}, '${escapeHtml(seg.segment_id)}', '${summaryEscaped}', this)">
-                        ▶️ Xem Đoạn Này
+                        ${ICONS.play} <span>Xem Đoạn Này</span>
                     </button>
                 </td>
             </tr>
@@ -1689,7 +1846,7 @@ function focusTimelineSegment(startSec, endSec, segId, summary, originBtn = null
     const banner = document.getElementById("segment-focus-banner");
     if (banner) {
         banner.classList.remove("hidden");
-        safeSetText("focus-range-text", `${formatTime(startSec)} ➔ ${formatTime(endSec)}`);
+        safeSetText("focus-range-text", `${formatTime(startSec)} — ${formatTime(endSec)}`);
         safeSetText("focus-summary-text", summary || "Đang xem lại phân đoạn");
     }
 
@@ -1702,7 +1859,7 @@ function toggleLoopCurrentSegment() {
     isLoopingSegment = !isLoopingSegment;
     const btn = document.getElementById("btn-toggle-loop");
     if (btn) {
-        btn.textContent = isLoopingSegment ? "🔁 Lặp đoạn này: BẬT" : "🔁 Lặp đoạn này: TẮT";
+        btn.innerHTML = `${ICONS.repeat}<span>Lặp đoạn: ${isLoopingSegment ? "BẬT" : "TẮT"}</span>`;
         btn.className = isLoopingSegment ? "btn btn-xs btn-primary" : "btn btn-xs btn-outline";
     }
 }
@@ -1714,7 +1871,7 @@ function clearSegmentFocus() {
     if (banner) banner.classList.add("hidden");
     const btn = document.getElementById("btn-toggle-loop");
     if (btn) {
-        btn.textContent = "🔁 Lặp đoạn này: TẮT";
+        btn.innerHTML = `${ICONS.repeat}<span>Lặp đoạn: TẮT</span>`;
         btn.className = "btn btn-xs btn-outline";
     }
     renderTimelineSegments();
@@ -1723,13 +1880,14 @@ function clearSegmentFocus() {
 // Chatbot Q&A
 async function sendChatMessage() {
     const input = document.getElementById("chat-question-input");
+    if (!input) return;
     const question = input.value.trim();
     if (!question) return;
 
     const ansBox = document.getElementById("chat-answer-box");
     const ansText = document.getElementById("chat-answer-text");
-    ansBox.classList.remove("hidden");
-    ansText.innerHTML = `<span class="spinner"></span> Đang truy vấn Gemini 3.5 Flash Lite...`;
+    if (ansBox) ansBox.classList.remove("hidden");
+    if (ansText) ansText.innerHTML = `<span class="spinner"></span> Đang truy vấn Gemini...`;
 
     try {
         const res = await fetch("/api/chat", {
@@ -1738,9 +1896,9 @@ async function sendChatMessage() {
             body: JSON.stringify({ question, job_id: currentJobId })
         });
         const data = await res.json();
-        ansText.textContent = data.answer || "Không nhận được phản hồi từ AI.";
+        if (ansText) ansText.textContent = data.answer || "Không nhận được phản hồi từ AI.";
     } catch (e) {
-        ansText.textContent = "Lỗi kết nối khi hỏi đáp: " + e;
+        if (ansText) ansText.textContent = "Lỗi kết nối khi hỏi đáp: " + e;
     }
 }
 
@@ -1757,13 +1915,15 @@ function renderExecutiveSceneNarrative(result) {
     if (threatBadge) {
         if (threatLevel.includes("NGUY") || threatLevel.includes("DANGER")) {
             threatBadge.className = "badge badge-danger mono";
-            threatBadge.textContent = "🔴 NGUY HIỂM / KHẨN CẤP";
+            threatBadge.style.color = "";
+            threatBadge.textContent = "● NGUY HIỂM / KHẨN CẤP";
         } else if (threatLevel.includes("CANH") || threatLevel.includes("WARNING")) {
-            threatBadge.className = "badge badge-neutral mono";
-            threatBadge.style.color = "var(--accent-amber)";
-            threatBadge.textContent = "🟡 CẢNH BÁO";
+            threatBadge.className = "badge badge-warning mono";
+            threatBadge.style.color = "";
+            threatBadge.textContent = "● CẢNH BÁO";
         } else {
             threatBadge.className = "badge badge-safe mono";
+            threatBadge.style.color = "";
             threatBadge.textContent = "● AN TOÀN TUYỆT ĐỐI";
         }
     }
@@ -1792,7 +1952,7 @@ function renderExecutiveSceneNarrative(result) {
                 actorsContainer.appendChild(row);
             });
         } else {
-            const entities = (result && result.entities_detected) ? result.entities_detected : ["ID #01 (Chủ thể)"];
+            const entities = (result && result.entities_detected) ? result.entities_detected : ["ID #01 — Chủ thể"];
             entities.forEach(ent => {
                 const row = document.createElement("div");
                 row.className = "actor-chip-row";
@@ -1884,9 +2044,9 @@ function renderBehaviorAnalytics(analytics, duration) {
     safeSetText("legend-danger-val", `${dangP}%`);
 
     drawSvgDonut("svg-donut-risk", [
-        { pct: safeP, color: "#10B981" },
-        { pct: warnP, color: "#F59E0B" },
-        { pct: dangP, color: "#EF4444" }
+        { pct: safeP, color: "var(--accent-emerald)" },
+        { pct: warnP, color: "var(--accent-amber)" },
+        { pct: dangP, color: "var(--accent-crimson)" }
     ], rb.dominant_risk === "danger" ? "NGUY HIỂM" : (rb.dominant_risk === "warning" ? "CẢNH BÁO" : "AN TOÀN"));
 
     // 2. Donut 2: Phân Bổ Cột Sống (nếu có trong DOM)
@@ -1901,9 +2061,9 @@ function renderBehaviorAnalytics(analytics, duration) {
         safeSetText("legend-slouched-val", `${slP}%`);
 
         drawSvgDonut("svg-donut-posture", [
-            { pct: upP, color: "#06B6D4" },
-            { pct: bentP, color: "#3B82F6" },
-            { pct: slP, color: "#8B5CF6" }
+            { pct: upP, color: "var(--accent-cyan)" },
+            { pct: bentP, color: "var(--accent-primary)" },
+            { pct: slP, color: "var(--indigo-11)" }
         ], "GÓC CỘT SỐNG");
     }
 
@@ -1923,11 +2083,12 @@ function renderBehaviorAnalytics(analytics, duration) {
         const scoreOuter = scoreCircle.parentElement;
         if (scoreOuter) {
             const deg = Math.round((score / 100) * 360);
-            const col = score >= 80 ? "#10B981" : (score >= 60 ? "#F59E0B" : "#EF4444");
+            const col = score >= 80 ? "var(--accent-emerald)" : (score >= 60 ? "var(--accent-amber)" : "var(--accent-crimson)");
+            const colText = score >= 80 ? "var(--accent-emerald-text)" : (score >= 60 ? "var(--accent-amber-text)" : "var(--accent-crimson-text)");
             scoreOuter.style.background = `conic-gradient(${col} 0deg ${deg}deg, var(--border-subtle) ${deg}deg 360deg)`;
-            scoreOuter.style.boxShadow = `0 0 16px ${col}33`;
+            scoreOuter.style.boxShadow = "none";
             const numEl = document.getElementById("ergo-score-num");
-            if (numEl) numEl.style.color = col;
+            if (numEl) numEl.style.color = colText;
         }
 
         const sitSec = analytics.continuous_sitting_sec || 0;
@@ -1939,13 +2100,15 @@ function renderBehaviorAnalytics(analytics, duration) {
         if (healthBadge) {
             if (score >= 82) {
                 healthBadge.className = "badge badge-safe";
+                healthBadge.style.color = "";
                 healthBadge.textContent = "● Tối ưu";
             } else if (score >= 65) {
-                healthBadge.className = "badge badge-neutral";
-                healthBadge.style.color = "var(--accent-amber)";
+                healthBadge.className = "badge badge-warning";
+                healthBadge.style.color = "";
                 healthBadge.textContent = "● Cần điều chỉnh";
             } else {
                 healthBadge.className = "badge badge-danger";
+                healthBadge.style.color = "";
                 healthBadge.textContent = "● Cảnh báo";
             }
         }
@@ -2055,22 +2218,22 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
     svg.innerHTML = `
         <defs>
             <linearGradient id="riskAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#EF4444" stop-opacity="0.45"/>
-                <stop offset="50%" stop-color="#F59E0B" stop-opacity="0.25"/>
-                <stop offset="100%" stop-color="#10B981" stop-opacity="0.05"/>
+                <stop offset="0%" stop-color="var(--accent-crimson)" stop-opacity="0.35"/>
+                <stop offset="50%" stop-color="var(--accent-amber)" stop-opacity="0.20"/>
+                <stop offset="100%" stop-color="var(--accent-emerald)" stop-opacity="0.05"/>
             </linearGradient>
         </defs>
 
         <!-- Grid Lines -->
         <line x1="${padLeft}" y1="${padTop}" x2="${W - padRight}" y2="${padTop}" stroke="var(--border-subtle)" stroke-width="0.8" stroke-dasharray="3 3"/>
-        <line x1="${padLeft}" y1="${dangerY}" x2="${W - padRight}" y2="${dangerY}" stroke="#EF4444" stroke-width="1.2" stroke-dasharray="4 4"/>
-        <line x1="${padLeft}" y1="${warnY}" x2="${W - padRight}" y2="${warnY}" stroke="#F59E0B" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <line x1="${padLeft}" y1="${dangerY}" x2="${W - padRight}" y2="${dangerY}" stroke="var(--accent-crimson)" stroke-width="1.2" stroke-dasharray="4 4"/>
+        <line x1="${padLeft}" y1="${warnY}" x2="${W - padRight}" y2="${warnY}" stroke="var(--accent-amber)" stroke-width="0.8" stroke-dasharray="3 3"/>
         <line x1="${padLeft}" y1="${padTop + plotH}" x2="${W - padRight}" y2="${padTop + plotH}" stroke="var(--border-color)" stroke-width="1.2"/>
 
         <!-- Y Axis Labels -->
-        <text x="${padLeft - 8}" y="${dangerY + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="#EF4444">8 (Nguy hiểm)</text>
-        <text x="${padLeft - 8}" y="${warnY + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="#F59E0B">4 (Cảnh báo)</text>
-        <text x="${padLeft - 8}" y="${padTop + plotH + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="var(--text-tertiary)">0 (An toàn)</text>
+        <text x="${padLeft - 8}" y="${dangerY + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="var(--accent-crimson-text)">8 — Nguy hiểm</text>
+        <text x="${padLeft - 8}" y="${warnY + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="var(--accent-amber-text)">4 — Cảnh báo</text>
+        <text x="${padLeft - 8}" y="${padTop + plotH + 3}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="var(--text-tertiary)">0 — An toàn</text>
 
         <!-- Time Axis Marks -->
         ${timeMarks}
@@ -2079,12 +2242,12 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
         <path d="${areaD}" fill="url(#riskAreaGrad)"/>
 
         <!-- Stroke Line -->
-        <path d="${pathD}" fill="none" stroke="#00E5FF" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="${pathD}" fill="none" stroke="var(--accent-primary)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
 
         <!-- Data Circles -->
         ${coords.map(c => `
             <circle cx="${c.x}" cy="${c.y}" r="${c.score >= 8.0 ? '4.5' : '3'}"
-                fill="${c.score >= 8.0 ? '#EF4444' : (c.score >= 4.0 ? '#F59E0B' : '#00E5FF')}"
+                fill="${c.score >= 8.0 ? 'var(--accent-crimson)' : (c.score >= 4.0 ? 'var(--accent-amber)' : 'var(--accent-primary)')}"
                 stroke="var(--bg-surface)" stroke-width="1.5"
             />
         `).join('')}
@@ -2121,7 +2284,8 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
             }
         });
 
-        tooltip.innerHTML = `⏱️ <span class="mono">${tStr}</span> | Nguy cơ: <strong class="mono" style="color: ${nearestScore >= 8 ? '#EF4444' : (nearestScore >= 4 ? '#F59E0B' : '#10B981')}">${nearestScore.toFixed(1)}/10</strong>`;
+        const scoreCol = nearestScore >= 8 ? 'var(--accent-crimson-text)' : (nearestScore >= 4 ? 'var(--accent-amber-text)' : 'var(--accent-emerald-text)');
+        tooltip.innerHTML = `${ICONS.clock} <span class="mono">${tStr}</span> | Nguy cơ: <strong class="mono" style="color: ${scoreCol}">${nearestScore.toFixed(1)}/10</strong>`;
         tooltip.style.left = `${Math.min(rect.width - 150, Math.max(10, e.clientX - rect.left - 60))}px`;
         tooltip.classList.remove("hidden");
     };
@@ -2174,7 +2338,7 @@ function drawMultiTrackActorTimeline(tracksData, duration) {
     if (actorKeys.length === 0) {
         container.innerHTML = `
             <div class="empty-state-box empty-state-compact">
-                <span class="empty-icon">👥</span>
+                <span class="empty-icon">${ICONS.users_lg}</span>
                 <p class="empty-title">Chưa có dữ liệu hành vi từng đối tượng</p>
                 <span class="empty-sub">Băng chuyền hành vi sẽ hiển thị trực quan dải thời gian của từng ID sau khi phân tích video.</span>
             </div>
@@ -2188,7 +2352,7 @@ function drawMultiTrackActorTimeline(tracksData, duration) {
         html += `
             <div class="actor-track-row">
                 <div class="actor-track-header">
-                    <span class="actor-track-badge mono">👤 ${escapeHtml(actorId)}</span>
+                    <span class="actor-track-badge mono">${ICONS.user} <span>${escapeHtml(actorId)}</span></span>
                 </div>
                 <div class="actor-track-ribbon">
         `;
@@ -2199,7 +2363,7 @@ function drawMultiTrackActorTimeline(tracksData, duration) {
             const leftPct = Math.max(0, Math.min(100, (startSec / duration) * 100));
             const widthPct = Math.max(1.5, Math.min(100 - leftPct, ((endSec - startSec) / duration) * 100));
             const stateClass = s.state === 'danger' ? 'ribbon-danger' : (s.state === 'warning' ? 'ribbon-warn' : 'ribbon-safe');
-            const stateLabel = s.state === 'danger' ? '🔴 Tấn công / Nguy cơ cao' : (s.state === 'warning' ? '🟡 Phòng vệ / Cảnh báo' : '🟢 Bình thường / An toàn');
+            const stateLabel = s.state === 'danger' ? 'Tấn công / Nguy cơ cao' : (s.state === 'warning' ? 'Phòng vệ / Cảnh báo' : 'Bình thường / An toàn');
             const roleStr = s.role ? ` [${escapeHtml(s.role)}]` : "";
 
             html += `
@@ -2272,10 +2436,12 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
 
     // Update hardware metrics in drawer
     safeSetText("drawer-fps", `${telemetryData.fps || 0} FPS`);
-    safeSetText("drawer-queue", `${telemetryData.bounded_queue_size || 1} / ${telemetryData.bounded_queue_capacity || 5} frames`);
+    const dQueueSize = telemetryData.queue_size !== undefined ? telemetryData.queue_size : (telemetryData.bounded_queue_size || 0);
+    const dQueueMax = telemetryData.queue_max !== undefined ? telemetryData.queue_max : (telemetryData.bounded_queue_capacity || 16);
+    safeSetText("drawer-queue", `${dQueueSize} / ${dQueueMax} frames`);
     safeSetText("drawer-cpu", `${telemetryData.cpu_percent || 0}%`);
     safeSetText("drawer-ram", `${telemetryData.ram_percent || 0}%`);
-    safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0} / ${telemetryData.gpu_vram_total_mb || 8192} MB (${telemetryData.gpu_name || 'GPU'})`);
+    safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0} / ${telemetryData.gpu_vram_total_mb || 8192} MB ${telemetryData.gpu_name || 'GPU'}`);
 
     // Update realtime Quota Gauges (RPM, RPD & Tokens)
     const rq = telemetryData.realtime_quota;
@@ -2329,7 +2495,7 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
                 <div class="qmc-details">
                     <div class="qmc-detail-row">
                         <span class="qmc-label">Trạng thái:</span>
-                        <strong class="qmc-val" style="color: ${isActive ? 'var(--accent-emerald)' : 'var(--text-secondary)'}">${escapeHtml(item.status)}</strong>
+                        <strong class="qmc-val" style="color: ${isActive ? 'var(--accent-emerald-text)' : 'var(--text-secondary)'}">${escapeHtml(item.status)}</strong>
                     </div>
                     <div class="qmc-detail-row">
                         <span class="qmc-label">Hạn mức:</span>
@@ -2373,4 +2539,7 @@ window.renderExecutiveSceneNarrative = renderExecutiveSceneNarrative;
 window.renderBehaviorAnalytics = renderBehaviorAnalytics;
 window.seekBothPlayers = seekBothPlayers;
 window.toggleTelemetryDrawer = toggleTelemetryDrawer;
+window.toggleTheme = toggleTheme;
+window.setTheme = setTheme;
+window.initTheme = initTheme;
 window.drawMultiTrackActorTimeline = drawMultiTrackActorTimeline;

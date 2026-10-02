@@ -39,8 +39,8 @@ class TestTrackStabilizer(unittest.TestCase):
         self.assertLess(stabilizer.canonical_counts[3], 15)
 
         # Roles
-        self.assertEqual(stabilizer.get_role(1), "Người lớn")
-        self.assertEqual(stabilizer.get_role(2), "Trẻ nhỏ / Em bé")
+        self.assertEqual(stabilizer.get_role(1), "Đối tượng #01")
+        self.assertEqual(stabilizer.get_role(2), "Người quan sát ở xa")
 
 if __name__ == "__main__":
     unittest.main()

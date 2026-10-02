@@ -214,8 +214,21 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Chặn API Key
+# Security & Sensitive Files (Credentials, Environment & Databases)
 .env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+*.cert
+secrets/
+secrets.*
+credentials.json
+token.json
+tokens.json
 config.json
 
 # Chặn file video nặng kẻo làm treo Git
