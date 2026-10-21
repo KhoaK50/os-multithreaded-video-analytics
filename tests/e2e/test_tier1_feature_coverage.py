@@ -73,7 +73,7 @@ class TestHierarchicalFailoverAndContextMemory:
         # Configure client mock: Tier 1 raises 429, Tier 2 succeeds
         mock_client = MagicMock()
         def side_effect(model, contents, **kwargs):
-            if "2.0" in model or "2.5" in model:
+            if any(k in model for k in ["2.0", "2.5", "3.8"]):
                 raise Exception("429 RESOURCE_EXHAUSTED: Rate limit exceeded (15 RPM).")
             return MockGeminiResponse(make_mock_inference_payload(
                 action="Đi lại quan sát",
@@ -461,3 +461,73 @@ class TestBackpressureTokenGuardAndFlowSync:
         
         res = subprocess.run(["node", "-c", str(js_file)], capture_output=True, text=True)
         assert res.returncode == 0, f"JavaScript syntax check failed on app.js:\n{res.stderr}"
+
+
+# ==============================================================================
+# Area 5: Silberschatz 10th Ed. OS Synchronization Lab & 3-Stage Pipeline Report
+# ==============================================================================
+
+class TestSilberschatzOSLabAndPipelineMetrics:
+    """Tests Silberschatz 10th Ed. Bounded-Buffer primitives, OS Lab API, and 3-Stage Pipeline telemetry."""
+
+    def test_t1_f20_bounded_buffer_sync_primitives_and_resize(self, sample_bgr_frame):
+        """F20: Verify ThreadSafeBoundedBuffer tracks mutex_lock_count, condition_signal_count, and resize_capacity."""
+        from core.capture import ThreadSafeBoundedBuffer
+        buf = ThreadSafeBoundedBuffer(capacity=8)
+        assert buf.capacity == 8
+        assert buf.ram_ceiling_mb > 0
+
+        for _ in range(12):
+            buf.put_drop_oldest((time.time(), sample_bgr_frame))
+
+        assert buf.size <= 8
+        assert buf.high_water_mark == 8
+        assert buf.total_dropped == 4
+        assert buf.mutex_lock_count >= 12
+        assert buf.condition_signal_count >= 8
+
+        # Resize downward to 4 slots and verify excess frames are evicted
+        new_cap = buf.resize_capacity(4)
+        assert new_cap == 4
+        assert buf.size <= 4
+        assert buf.total_dropped >= 8
+
+    def test_t1_f21_os_lab_api_and_telemetry_contract(self, client):
+        """F21: Verify /api/os_lab/config and /api/telemetry expose Silberschatz OS primitives and thread states."""
+        resp_cfg = client.post("/api/os_lab/config", json={
+            "buffer_capacity": 12,
+            "consumer_delay_ms": 45,
+            "trigger_burst": True,
+        })
+        assert resp_cfg.status_code == 200
+        cfg_data = resp_cfg.json()
+        assert cfg_data["status"] == "ok"
+        assert cfg_data["buffer_capacity"] == 12
+        assert cfg_data["consumer_delay_ms"] == 45
+
+        resp_tel = client.get("/api/telemetry")
+        assert resp_tel.status_code == 200
+        tel = resp_tel.json()
+        for key in (
+            "mutex_lock_count",
+            "condition_signal_count",
+            "not_empty_wait_count",
+            "not_full_wait_count",
+            "ram_ceiling_mb",
+            "ram_active_mb",
+            "thread_states",
+            "consumer_fps",
+            "consumer_delay_ms",
+        ):
+            assert key in tel, f"Missing OS telemetry field '{key}' in /api/telemetry"
+        assert isinstance(tel["thread_states"], dict)
+        assert "CamProducer" in tel["thread_states"]
+        assert "CamEdgeAI" in tel["thread_states"]
+
+        # Reset back to default
+        client.post("/api/os_lab/config", json={
+            "buffer_capacity": 32,
+            "consumer_delay_ms": 0,
+            "reset_counters": True,
+        })
+

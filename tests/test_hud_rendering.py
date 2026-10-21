@@ -68,7 +68,7 @@ class TestHUDRenderingNoSlopTerms(unittest.TestCase):
             "action": "Ngồi làm việc với máy tính",
             "context": "Văn phòng làm việc",
             "danger_reason": "Bình thường",
-            "model_tier_str": "● Tier-1 Gemini 2.0"
+            "model_tier_str": "● Tier-1 Gemini 3.8"
         }
         entities = {"person": 1, "laptop": 1}
         metrics = {
@@ -221,34 +221,34 @@ class TestDynamicModelTierDisplay(unittest.TestCase):
     def test_resolve_tier_explicit_string(self):
         """Ưu tiên chuỗi hiển thị model_tier_str nếu có."""
         hud = CyberHUDRenderer()
-        diag = {"model_tier_str": "● Tier-1 Gemini 2.0"}
+        diag = {"model_tier_str": "● Tier-1 Gemini 3.8"}
         metrics = {}
         res = hud.resolve_model_tier_display(diag, metrics)
-        self.assertEqual(res, "● Tier-1 Gemini 2.0")
+        self.assertEqual(res, "Tier-1 Gemini 3.8")
 
     def test_resolve_tier_from_tier1_key(self):
-        """Phân giải tier_1 sang ● Tier-1 Gemini 2.0."""
+        """Phân giải tier_1 sang Tier-1 Gemini 3.8."""
         hud = CyberHUDRenderer()
         diag = {"model_tier": "tier_1"}
         metrics = {}
         res = hud.resolve_model_tier_display(diag, metrics)
-        self.assertEqual(res, "● Tier-1 Gemini 2.0")
+        self.assertEqual(res, "Tier-1 Gemini 3.8")
 
     def test_resolve_tier_from_tier2_key(self):
-        """Phân giải tier_2 sang ● Tier-2 Gemini 1.5 Failover."""
+        """Phân giải tier_2 sang Tier-2 Gemini 3.5 Failover."""
         hud = CyberHUDRenderer()
         diag = {"model_tier": "tier_2"}
         metrics = {}
         res = hud.resolve_model_tier_display(diag, metrics)
-        self.assertEqual(res, "● Tier-2 Gemini 1.5 Failover")
+        self.assertEqual(res, "Tier-2 Gemini 3.5 Failover")
 
     def test_resolve_tier_from_tier3_key(self):
-        """Phân giải tier_3 sang ● AI Tự Hành (Local Heuristic)."""
+        """Phân giải tier_3 sang AI Tự Hành (Local Heuristic)."""
         hud = CyberHUDRenderer()
         diag = {"model_tier": "tier_3"}
         metrics = {}
         res = hud.resolve_model_tier_display(diag, metrics)
-        self.assertEqual(res, "● AI Tự Hành (Local Heuristic)")
+        self.assertEqual(res, "AI Tự Hành (Local Heuristic)")
 
     def test_resolve_tier_from_metrics_active_tier_name(self):
         """Phân giải tầng từ metrics nếu diagnosis không có thông tin."""
@@ -256,13 +256,13 @@ class TestDynamicModelTierDisplay(unittest.TestCase):
         diag = {}
         metrics = {"model_tier": "tier_2"}
         res = hud.resolve_model_tier_display(diag, metrics)
-        self.assertEqual(res, "● Tier-2 Gemini 1.5 Failover")
+        self.assertEqual(res, "Tier-2 Gemini 3.5 Failover")
 
     def test_resolve_tier_default(self):
-        """Mặc định khi không có dữ liệu là ● Tier-1 Gemini 2.0."""
+        """Mặc định khi không có dữ liệu là Tier-1 Gemini 3.8."""
         hud = CyberHUDRenderer()
         res = hud.resolve_model_tier_display({}, {})
-        self.assertEqual(res, "● Tier-1 Gemini 2.0")
+        self.assertEqual(res, "Tier-1 Gemini 3.8")
 
 
 class TestHUDBackwardCompatibility(unittest.TestCase):

@@ -74,13 +74,13 @@ class TestRealWorldWorkflows:
         mock_client = MagicMock()
         def mock_generate(model, contents, **kwargs):
             nonlocal tier1_call_count, tier2_call_count
-            if "2.0" in model or "2.5" in model:
+            if any(k in model for k in ["2.0", "2.5", "3.8"]):
                 tier1_call_count += 1
                 if tier1_call_count > 3:
                     # Chạm trần 15 RPM ở cycle 4
                     raise Exception("429 RESOURCE_EXHAUSTED: Rate limit exceeded (15 RPM).")
                 return MockGeminiResponse(make_mock_inference_payload(action=f"Hành vi Tier 1 cycle {tier1_call_count}"))
-            elif "1.5" in model:
+            elif any(k in model for k in ["1.5", "3.5"]):
                 tier2_call_count += 1
                 return MockGeminiResponse(make_mock_inference_payload(action=f"Hành vi Tier 2 cycle {tier2_call_count}"))
             raise Exception("Unknown model")

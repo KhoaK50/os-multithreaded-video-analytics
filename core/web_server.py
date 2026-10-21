@@ -73,10 +73,12 @@ STATIC_DIR = os.path.join(BASE_DIR, "ui", "static")
 TEMPLATES_DIR = os.path.join(BASE_DIR, "ui", "templates")
 RECORDINGS_DIR = os.path.join(BASE_DIR, "recordings")
 SNAPSHOTS_DIR = os.path.join(RECORDINGS_DIR, "snapshots")
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
 os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
+os.makedirs(ASSETS_DIR, exist_ok=True)
 
 
 # ==============================================================================
@@ -99,6 +101,9 @@ class LiveCameraPipeline:
         self.camera_device_available = True
         self.cap = None
         self.threads = []
+        self.user_stopped = True
+        self.last_client_frame_time = 0.0
+        self.is_client_streaming = False
 
         self.frame_lock = threading.Lock()
         self.frame_buffer = ThreadSafeBoundedBuffer(capacity=getattr(CONFIG, "FRAME_QUEUE_MAXSIZE", 16))
@@ -118,10 +123,20 @@ class LiveCameraPipeline:
         }
         self.prev_wrists = None
 
-        # Telemetry
+        # Telemetry & OS Kernel Lab State (Synchronization & Bounded Buffer)
         self.cpu_smoothed = psutil.cpu_percent()
         self.fps_queue = deque(maxlen=30)
         self.current_fps = 30.0
+        self.consumer_fps_queue = deque(maxlen=30)
+        self.consumer_fps = 30.0
+        self.consumer_delay_ms = 0
+        self.stress_test_active = False
+        self.thread_states = {
+            "CamProducer": "READY",
+            "CamEdgeAI": "READY",
+            "CamCompositor": "READY",
+            "CamGeminiAI": "READY"
+        }
         self.active_clients = 0
         self.clients_lock = threading.Lock()
 
@@ -137,10 +152,110 @@ class LiveCameraPipeline:
         self.window_candidates = []
         self.snapshots_dir = os.path.join(RECORDINGS_DIR, "snapshots")
         # Cloud AI: Hierarchical Model Orchestrator (Tier 1 -> Tier 2 -> Tier 3 Failover)
-        self.gemini_model = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-2.0-flash")
+        self.gemini_model = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
         self.gemini_client = MODEL_ORCHESTRATOR.client
         self.gemini_status = "active" if MODEL_ORCHESTRATOR.client is not None else "heuristic_offline"
         print(f"[+] LiveCameraPipeline: Ket noi Model Orchestrator ({self.gemini_model}) - Trang thai: {self.gemini_status}")
+
+    def configure_os_lab(
+        self,
+        buffer_capacity: Optional[int] = None,
+        consumer_delay_ms: Optional[int] = None,
+        reset_counters: bool = False,
+        trigger_burst: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Cập nhật tham số Thực nghiệm Hệ Điều Hành (Bounded-Buffer Lab):
+        - buffer_capacity: Dung lượng hàng đợi giới hạn N (2 -> 64 frames).
+        - consumer_delay_ms: Độ trễ xử lý giả lập trên luồng Consumer (0 -> 200 ms).
+        - reset_counters: Đặt lại bộ đếm thống kê đồng bộ hóa.
+        """
+        if buffer_capacity is not None and hasattr(self, "frame_buffer"):
+            self.frame_buffer.resize_capacity(int(buffer_capacity))
+        if consumer_delay_ms is not None:
+            self.consumer_delay_ms = max(0, min(200, int(consumer_delay_ms)))
+        if reset_counters and hasattr(self, "frame_buffer"):
+            with self.frame_buffer.lock:
+                self.frame_buffer.total_produced = 0
+                self.frame_buffer.total_consumed = 0
+                self.frame_buffer.total_dropped = 0
+                self.frame_buffer.high_water_mark = len(self.frame_buffer._buffer)
+                self.frame_buffer.mutex_lock_count = 0
+                self.frame_buffer.not_empty_wait_count = 0
+                self.frame_buffer.not_full_wait_count = 0
+                self.frame_buffer.condition_signal_count = 0
+                self.frame_buffer.latency_samples.clear()
+
+        if trigger_burst and not self.running and not self.stress_test_active:
+            threading.Thread(target=self._os_lab_burst_worker, name="OSLabBurstSim", daemon=True).start()
+
+        stats = self.frame_buffer.get_stats() if hasattr(self, "frame_buffer") else {}
+        return {
+            "buffer_capacity": stats.get("capacity", 16),
+            "consumer_delay_ms": self.consumer_delay_ms,
+            "ram_ceiling_mb": stats.get("ram_ceiling_mb", 42.19),
+            "stats": stats
+        }
+
+    def _os_lab_burst_worker(self):
+        """
+        Mô phỏng chu kỳ xung tải Producer-Consumer thực tế trên ThreadSafeBoundedBuffer
+        khi Camera vật lý đang tắt, giúp giảng viên kiểm chứng trực tiếp Mutex, Condition Variable
+        và Drop-Oldest Flow Control ngay lập tức.
+        """
+        if self.stress_test_active:
+            return
+        self.stress_test_active = True
+        stop_sim = threading.Event()
+        dummy_frame = np.zeros((360, 640, 3), dtype=np.uint8)
+
+        def sim_producer():
+            for _ in range(75):
+                if self.running or stop_sim.is_set():
+                    break
+                self.thread_states["CamProducer"] = "CRITICAL_SECTION"
+                self.frame_buffer.put_drop_oldest((time.time(), dummy_frame))
+                self.thread_states["CamProducer"] = "RUNNING"
+                t_p = time.time()
+                self.fps_queue.append(33.3)
+                self.current_fps = 30.0
+                time.sleep(0.030)
+            stop_sim.set()
+
+        def sim_consumer():
+            while not stop_sim.is_set() and not self.running:
+                self.thread_states["CamEdgeAI"] = "WAITING"
+                item = self.frame_buffer.get(block=True, timeout=0.05)
+                if item is None:
+                    continue
+                if self.consumer_delay_ms > 0:
+                    self.thread_states["CamEdgeAI"] = "THROTTLED"
+                    time.sleep(self.consumer_delay_ms / 1000.0)
+                else:
+                    self.thread_states["CamEdgeAI"] = "RUNNING"
+                    time.sleep(0.018)
+                dt_c = max(0.018, (self.consumer_delay_ms / 1000.0) + 0.012)
+                self.consumer_fps = round(1.0 / dt_c, 1)
+
+        try:
+            self.thread_states["CamCompositor"] = "RUNNING"
+            self.thread_states["CamGeminiAI"] = "WAITING"
+            tp = threading.Thread(target=sim_producer, daemon=True)
+            tc = threading.Thread(target=sim_consumer, daemon=True)
+            tp.start()
+            tc.start()
+            tp.join(timeout=3.5)
+            stop_sim.set()
+            tc.join(timeout=1.0)
+        finally:
+            self.stress_test_active = False
+            if not self.running:
+                self.thread_states = {
+                    "CamProducer": "READY",
+                    "CamEdgeAI": "READY",
+                    "CamCompositor": "READY",
+                    "CamGeminiAI": "READY"
+                }
 
     def get_settings(self) -> Dict[str, bool]:
         return self.enhancer.get_settings()
@@ -228,6 +343,7 @@ class LiveCameraPipeline:
         with self.start_lock:
             if self.running or self.is_starting:
                 return
+            self.user_stopped = False
             self.is_starting = True
 
             print("[*] Khoi dong Live Camera Pipeline da luong...")
@@ -305,10 +421,15 @@ class LiveCameraPipeline:
                 return
             print("[*] Dung Live Camera Pipeline...")
             self.running = False
+            self.user_stopped = True
+            self.is_client_streaming = False
+            self.last_client_frame_time = 0.0
             if self.cap and self.cap.isOpened():
                 self.cap.release()
             self.cap = None
-            self.latest_hud_frame = None
+            with self.frame_lock:
+                self.latest_raw_frame = None
+                self.latest_hud_frame = None
             if hasattr(self, "frame_buffer"):
                 self.frame_buffer.clear()
             print("[+] Live Camera Pipeline da giai phong camera an toan.")
@@ -318,8 +439,11 @@ class LiveCameraPipeline:
         Tiếp nhận khung hình trực tiếp từ Webcam trình duyệt của người dùng (Client Browser).
         Cho phép Live Camera hoạt động mượt mà ngay cả khi máy chủ chạy trên Cloud (Google Colab).
         """
+        # Tuyệt đối không tự ý khởi động lại pipeline nếu người dùng đã bấm tắt
         if not self.running:
-            self.start()
+            return
+        self.last_client_frame_time = time.time()
+        self.is_client_streaming = True
         frame = self.enhancer.enhance(raw_frame)
         now_ts = time.time()
         if hasattr(self, "frame_buffer"):
@@ -409,7 +533,7 @@ class LiveCameraPipeline:
                     if severity_val not in ("safe", "warning", "danger"):
                         severity_val = "safe"
 
-                    raw_tier = ai_result.get("model_tier", "Tier-1 Gemini 2.0")
+                    raw_tier = ai_result.get("model_tier", "Tier-1 Gemini 3.8")
                     if "Tier-1" in str(raw_tier) or str(raw_tier) == "tier_1":
                         tier_key = "tier_1"
                     elif "Tier-2" in str(raw_tier) or str(raw_tier) == "tier_2":
@@ -453,21 +577,39 @@ class LiveCameraPipeline:
 
     def _capture_worker(self):
         while self.running:
+            # Nếu đang có luồng Webcam Trình Duyệt gửi tới, nhường hoàn toàn cho client frame để không bị xung đột
+            if time.time() - self.last_client_frame_time < 1.5:
+                self.thread_states["CamProducer"] = "RUNNING"
+                time.sleep(0.04)
+                continue
+
             if not self.cap or not self.cap.isOpened():
+                self.thread_states["CamProducer"] = "WAITING"
                 time.sleep(0.1)
                 continue
+            self.thread_states["CamProducer"] = "RUNNING"
             ret, frame = self.cap.read()
             if not ret or frame is None:
                 time.sleep(0.01)
                 continue
+
+            # Kiểm tra và bỏ qua khung xám lỗi UVC driver Windows (std < 1.8 và mean ~128)
+            if frame.shape[0] > 10 and frame.shape[1] > 10:
+                if float(np.std(frame)) < 1.8 and 110 < float(np.mean(frame)) < 145:
+                    time.sleep(0.03)
+                    continue
+
             # Tiền xử lý trực tiếp trên khung hình thu nhận: Lật gương, Chống chói đèn trần, Khử nhiễu
             frame = self.enhancer.enhance(frame)
             now_ts = time.time()
             if hasattr(self, "frame_buffer"):
+                self.thread_states["CamProducer"] = "CRITICAL_SECTION"
                 self.frame_buffer.put_drop_oldest((now_ts, frame))
+                self.thread_states["CamProducer"] = "RUNNING"
             with self.frame_lock:
                 self.latest_raw_frame = frame
                 self.frame_count += 1
+        self.thread_states["CamProducer"] = "READY"
 
     def _ai_worker(self):
         device = CONFIG.DEVICE
@@ -476,6 +618,7 @@ class LiveCameraPipeline:
             raw = None
             # Consumer lấy khung hình trực tiếp từ Bounded Buffer (Blocking timeout 40ms)
             if hasattr(self, "frame_buffer"):
+                self.thread_states["CamEdgeAI"] = "WAITING"
                 pkg = self.frame_buffer.get(block=True, timeout=0.04)
                 if pkg is not None and isinstance(pkg, tuple) and len(pkg) == 2:
                     _, raw = pkg
@@ -490,9 +633,17 @@ class LiveCameraPipeline:
                 time.sleep(0.01)
                 continue
 
+            # Nếu giảng viên/người dùng kích hoạt độ trễ giả lập Consumer trong OS Kernel Lab
+            if self.consumer_delay_ms > 0:
+                self.thread_states["CamEdgeAI"] = "THROTTLED"
+                time.sleep(self.consumer_delay_ms / 1000.0)
+
+            self.thread_states["CamEdgeAI"] = "RUNNING"
             results = self.yolo_model(raw, device=device, conf=CONFIG.YOLO_CONFIDENCE, verbose=False)
             dt = max(1e-4, time.time() - prev_time)
             prev_time = time.time()
+            self.consumer_fps_queue.append(1.0 / dt)
+            self.consumer_fps = sum(self.consumer_fps_queue) / len(self.consumer_fps_queue)
 
             boxes_list = []
             kpts_list = []
@@ -517,7 +668,7 @@ class LiveCameraPipeline:
                         # Lọc box nhỏ / bóng phản chiếu
                         if (x2 - x1) * (y2 - y1) < (raw.shape[0] * raw.shape[1] * 0.04):
                             continue
-                        boxes_list.append((x1, y1, x2, y2, "NGƯỜI", conf))
+                        boxes_list.append((x1, y1, x2, y2, f"ID #{i+1:02d}", conf))
 
                     if kpts_data is not None and len(kpts_data) > 0:
                         kpts = kpts_data[0].data[0].cpu().numpy()
@@ -726,7 +877,7 @@ class LiveCameraPipeline:
                 "queue_latency_ms": buf_stats["latency_ms"],
                 "active_persons": len(boxes),
                 "active_model_tier": tier_info.get("active_tier", "tier_1"),
-                "active_tier_name": tier_info.get("tier_name", "gemini-2.0-flash"),
+                "active_tier_name": tier_info.get("tier_name", "gemini-3.8-flash"),
                 "cooldown_remaining": tier_info.get("cooldown_remaining", 0.0)
             }
 
@@ -737,7 +888,7 @@ class LiveCameraPipeline:
                 "danger_score": 9 if bio["is_danger"] else 1,
                 "danger_reason": bio["alert"],
                 "timestamp": time.strftime("%H:%M:%S"),
-                "model_tier_str": tier_info.get("tier_badge", "● Tier-1 Gemini 2.0")
+                "model_tier_str": tier_info.get("tier_badge", "Tier-1 Gemini 3.8")
             }
 
             is_danger = bio.get("is_danger", False)
@@ -745,13 +896,14 @@ class LiveCameraPipeline:
             danger_score = 9 if is_danger else 1
             danger_level = "NGUY HIEM" if is_danger else "AN TOAN"
 
-            # Resize sang Viewport (900x720)
-            cam_viewport = cv2.resize(raw, (self.hud_renderer.viewport_w, self.hud_renderer.viewport_h))
+            # Khung hiển thị Camera chuẩn 16:9 Widescreen (1280x720) toàn màn hình, không bị ép tỉ lệ
+            target_w, target_h = 1280, 720
+            cam_viewport = cv2.resize(raw, (target_w, target_h))
 
-            # Scale coordinates từ raw sang viewport
+            # Scale coordinates từ raw sang viewport 1280x720
             raw_h, raw_w = raw.shape[:2]
-            scale_x = self.hud_renderer.viewport_w / max(1, raw_w)
-            scale_y = self.hud_renderer.viewport_h / max(1, raw_h)
+            scale_x = target_w / max(1, raw_w)
+            scale_y = target_h / max(1, raw_h)
 
             # Vẽ Skeleton
             if kpts:
@@ -762,9 +914,9 @@ class LiveCameraPipeline:
             for (x1, y1, x2, y2, label, conf) in boxes:
                 vx1, vy1 = int(x1 * scale_x), int(y1 * scale_y)
                 vx2, vy2 = int(x2 * scale_x), int(y2 * scale_y)
-                self.hud_renderer.draw_corner_bracket_bbox(cam_viewport, vx1, vy1, vx2, vy2, status_color, label, conf)
+                self.hud_renderer.draw_corner_bracket_bbox(cam_viewport, vx1, vy1, vx2, vy2, status_color, label, 0.0)
 
-            # Vẽ trang trí Camera HUD
+            # Vẽ trang trí Camera HUD tối giản (chỉ giữ REC & nhãn thời gian góc khung hình)
             self.hud_renderer.draw_camera_decorations(
                 cam_viewport,
                 fps=self.current_fps,
@@ -772,46 +924,8 @@ class LiveCameraPipeline:
                 danger_level=danger_level
             )
 
-            # Nhận diện GPU name cho metrics HUD
-            gpu_name = getattr(CONFIG, "_cached_gpu_name", None)
-            if not gpu_name:
-                try:
-                    import torch
-                    if torch.cuda.is_available():
-                        raw_gpu = torch.cuda.get_device_name(0)
-                        gpu_name = "RTX 5060" if "5060" in raw_gpu else raw_gpu
-                    else:
-                        gpu_name = "CPU Only"
-                except Exception:
-                    gpu_name = "CPU Only"
-
-            # Render Glass Sidebar bằng Pillow Unicode
-            metrics = {
-                "cpu_percent": self.cpu_smoothed,
-                "ram_percent": psutil.virtual_memory().percent,
-                "gpu_vram_used": vram_mb / 1024.0,
-                "gpu_vram_total": vram_total / 1024.0 if vram_total > 0 else 8.0,
-                "gpu_name": gpu_name,
-                "queue_size": 1,
-                "queue_max": 5,
-                "dropped_frames": 0,
-                "drop_rate_pct": 0.0,
-                "active_model_tier": tier_info.get("active_tier", "tier_1"),
-                "active_tier_name": tier_info.get("tier_name", "Tier-1 Gemini 2.0"),
-                "cooldown_remaining": tier_info.get("cooldown_remaining", 0.0)
-            }
-
-            sidebar_bgr = self.hud_renderer.render_sidebar_pil(
-                diagnosis=diagnosis,
-                entities={"person": len(boxes)},
-                metrics=metrics,
-                danger_score=danger_score,
-                danger_level=danger_level,
-                biomechanics=bio
-            )
-
-            # Ghép ngang thành canvas 1280x720 Widescreen
-            hud_canvas = np.hstack([cam_viewport, sidebar_bgr])
+            # Khung camera toàn cảnh sạch sẽ 1280x720 (Đã loại bỏ sidebar thông số gây vướng, thông số hiển thị ở dashboard UI)
+            hud_canvas = cam_viewport
 
             with self.frame_lock:
                 self.latest_hud_frame = hud_canvas
@@ -874,7 +988,13 @@ async def lifespan(app: FastAPI):
         if _warmup_cancel_event.wait(timeout=0.5):
             return  # Server đã tắt trong thời gian chờ, hủy nạp để không lãng phí GPU/GIL
         if not _warmup_cancel_event.is_set():
-            ANNOTATOR_ENGINE.warmup()
+            try:
+                ANNOTATOR_ENGINE.warmup()
+            except Exception as e_warm:
+                try:
+                    print(f"[*] Background warmup completed with notification: {e_warm}")
+                except Exception:
+                    pass
 
     warmup_thread = threading.Thread(
         target=_background_warmup,
@@ -909,11 +1029,23 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/api/snapshots", StaticFiles(directory=SNAPSHOTS_DIR), name="snapshots")
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 
 # ==============================================================================
 # WEB ENDPOINTS
 # ==============================================================================
+@app.get("/whitepaper", response_class=HTMLResponse)
+async def get_whitepaper():
+    """
+    Phục vụ tài liệu bạch thư kỹ thuật hệ thống (Academic Whitepaper).
+    """
+    whitepaper_path = os.path.join(BASE_DIR, "BACH_THU_KY_THUAT_HE_THONG.html")
+    if os.path.exists(whitepaper_path):
+        with open(whitepaper_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    raise HTTPException(status_code=404, detail="Whitepaper not found")
+
 @app.get("/health")
 @app.get("/api/health")
 async def health_check():
@@ -972,10 +1104,8 @@ async def serve_index():
 def stream_live():
     """
     Truyền luồng video MJPEG thời gian thực 30 FPS với Cyber HUD 1280x720 vào thẻ <img> của trình duyệt.
+    Camera không bao giờ tự động bật; chỉ khởi động khi người dùng bấm nút [Bật Camera]
     """
-    if not LIVE_CAMERA.running:
-        LIVE_CAMERA.start()
-
     def frame_generator():
         try:
             with LIVE_CAMERA.clients_lock:
@@ -991,9 +1121,9 @@ def stream_live():
                         )
                 else:
                     standby = np.zeros((720, 1280, 3), dtype=np.uint8)
-                    cv2.putText(standby, "HE THONG GIAM SAT VIDEO DA LUONG - CHO NGUON KHUNG HINH...", (260, 340),
+                    cv2.putText(standby, "HE THONG GIAM SAT VIDEO DA LUONG - CAMERA DANG TAM DUNG", (270, 340),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 229, 255), 2, cv2.LINE_AA)
-                    cv2.putText(standby, "Bam [Bat Webcam Trinh Duyet] hoac kiem tra ket noi camera", (310, 390),
+                    cv2.putText(standby, "Bam [Bat Camera] ben duoi de khoi dong luong giam sat", (340, 390),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (148, 163, 184), 1, cv2.LINE_AA)
                     ret, jpeg = cv2.imencode(".jpg", standby, [cv2.IMWRITE_JPEG_QUALITY, 60])
                     if ret:
@@ -1059,18 +1189,36 @@ async def toggle_camera(request: Request):
         action = request.query_params.get("action")
 
     if action == "start":
+        LIVE_CAMERA.user_stopped = False
         LIVE_CAMERA.start()
-        return {"status": "started", "camera_running": LIVE_CAMERA.running}
+        return {
+            "status": "started",
+            "camera_running": LIVE_CAMERA.running,
+            "device_available": LIVE_CAMERA.camera_device_available
+        }
     elif action == "stop":
         LIVE_CAMERA.stop()
-        return {"status": "stopped", "camera_running": LIVE_CAMERA.running}
+        return {
+            "status": "stopped",
+            "camera_running": LIVE_CAMERA.running,
+            "device_available": LIVE_CAMERA.camera_device_available
+        }
     else:
         if LIVE_CAMERA.running:
             LIVE_CAMERA.stop()
-            return {"status": "stopped", "camera_running": False}
+            return {
+                "status": "stopped",
+                "camera_running": False,
+                "device_available": LIVE_CAMERA.camera_device_available
+            }
         else:
+            LIVE_CAMERA.user_stopped = False
             LIVE_CAMERA.start()
-            return {"status": "started", "camera_running": LIVE_CAMERA.running}
+            return {
+                "status": "started",
+                "camera_running": LIVE_CAMERA.running,
+                "device_available": LIVE_CAMERA.camera_device_available
+            }
 
 
 @app.get("/api/camera/logs")
@@ -1089,8 +1237,8 @@ def get_camera_logs():
         "logs": logs_copy,
         "gemini_status": LIVE_CAMERA.gemini_status,
         "active_tier": tier_info.get("active_tier", "tier_1"),
-        "tier_name": tier_info.get("tier_name", "Tier-1 Gemini 2.0"),
-        "tier_badge": tier_info.get("tier_badge", "● Tier-1 Gemini 2.0"),
+        "tier_name": tier_info.get("tier_name", "Tier-1 Gemini 3.8"),
+        "tier_badge": tier_info.get("tier_badge", "Tier-1 Gemini 3.8"),
         "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
         "is_cooldown": tier_info.get("is_cooldown", False)
     }
@@ -1257,15 +1405,15 @@ def get_telemetry():
         curr_ergo = 58.0
 
     quota_stats = tier_info.get("quota_stats") or MODEL_ORCHESTRATOR.quota_tracker.get_stats()
-    tier1_m = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-2.0-flash")
-    tier2_m = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-1.5-flash")
+    tier1_m = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
+    tier2_m = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-3.5-flash")
     quota_matrix = {
         "tier_1": {
             "name": "Tier 1: Cloud Vision Cao Cấp",
             "model": tier1_m,
             "status": "Đang hoạt động" if not tier_info.get("is_cooldown") else f"Hồi hạn mức ({round(tier_info.get('cooldown_remaining', 0), 1)}s)",
             "limit": f"{quota_stats['rpd_used']}/{quota_stats['rpd_limit']} RPD | {quota_stats['rpm_used']}/{quota_stats['rpm_limit']} RPM",
-            "badge": "● Sẵn sàng",
+            "badge": "Sẵn sàng",
             "is_active": (tier_info.get("active_tier") == "tier_1")
         },
         "tier_2": {
@@ -1273,7 +1421,7 @@ def get_telemetry():
             "model": tier2_m,
             "status": "Đang hoạt động (Dự phòng)" if (tier_info.get("active_tier") == "tier_2") else "Sẵn sàng dự phòng",
             "limit": f"{quota_stats['rpd_used']}/{quota_stats['rpd_limit']} RPD | {quota_stats['rpm_used']}/{quota_stats['rpm_limit']} RPM",
-            "badge": "● Dự phòng",
+            "badge": "Dự phòng",
             "is_active": (tier_info.get("active_tier") == "tier_2")
         },
         "tier_2_5": {
@@ -1281,7 +1429,7 @@ def get_telemetry():
             "model": "gemini-flash-lite-latest",
             "status": "Sẵn sàng dự phòng",
             "limit": "1,500 RPD / 15 RPM",
-            "badge": "● Dự phòng phụ",
+            "badge": "Dự phòng phụ",
             "is_active": False
         },
         "tier_3": {
@@ -1289,19 +1437,24 @@ def get_telemetry():
             "model": "Local Kinematic Engine (RTX 5060)",
             "status": "Vĩnh viễn sẵn sàng (Offline 0 Token)",
             "limit": "Vô hạn (0 Token)",
-            "badge": "● Ngoại tuyến",
+            "badge": "Ngoại tuyến",
             "is_active": (tier_info.get("active_tier") == "tier_3")
         }
     }
 
     buf_stats = LIVE_CAMERA.frame_buffer.get_stats() if (hasattr(LIVE_CAMERA, "frame_buffer") and LIVE_CAMERA.frame_buffer is not None) else {
-        "size": 0, "capacity": getattr(CONFIG, "FRAME_QUEUE_MAXSIZE", 16), "total_dropped": 0, "drop_rate_pct": 0.0, "latency_ms": 0.0, "high_water_mark": 0
+        "size": 0, "capacity": getattr(CONFIG, "FRAME_QUEUE_MAXSIZE", 16), "total_dropped": 0, "drop_rate_pct": 0.0, "latency_ms": 0.0, "high_water_mark": 0,
+        "mutex_lock_count": 0, "not_empty_wait_count": 0, "not_full_wait_count": 0, "condition_signal_count": 0, "ram_ceiling_mb": 42.19, "ram_active_mb": 0.0,
+        "total_produced": 0, "total_consumed": 0, "utilization_pct": 0.0
     }
 
     return {
-        # Thông số hệ thống & Tiến trình Đa luồng (Hệ điều hành)
-        "producer_running": LIVE_CAMERA.running,
+        # Thông số hệ thống & Tiến trình Đa luồng (Hệ điều hành - Bounded Buffer)
+        "producer_running": LIVE_CAMERA.running or LIVE_CAMERA.stress_test_active,
         "producer_fps": round(LIVE_CAMERA.current_fps, 1),
+        "consumer_fps": round(LIVE_CAMERA.consumer_fps, 1),
+        "consumer_delay_ms": LIVE_CAMERA.consumer_delay_ms,
+        "stress_test_active": LIVE_CAMERA.stress_test_active,
         "consumer_status": LIVE_CAMERA.gemini_status,
         "queue_size": buf_stats["size"],
         "queue_max": buf_stats["capacity"],
@@ -1311,14 +1464,23 @@ def get_telemetry():
         "high_water_mark": buf_stats["high_water_mark"],
         "bounded_queue_size": buf_stats["size"],
         "bounded_queue_capacity": buf_stats["capacity"],
+        "total_produced": buf_stats.get("total_produced", 0),
+        "total_consumed": buf_stats.get("total_consumed", 0),
+        "mutex_lock_count": buf_stats.get("mutex_lock_count", 0),
+        "not_empty_wait_count": buf_stats.get("not_empty_wait_count", 0),
+        "not_full_wait_count": buf_stats.get("not_full_wait_count", 0),
+        "condition_signal_count": buf_stats.get("condition_signal_count", 0),
+        "ram_ceiling_mb": buf_stats.get("ram_ceiling_mb", 42.19),
+        "ram_active_mb": buf_stats.get("ram_active_mb", 0.0),
+        "thread_states": dict(LIVE_CAMERA.thread_states),
         "cpu_percent": round(LIVE_CAMERA.cpu_smoothed, 1),
         "ram_percent": round(psutil.virtual_memory().percent, 1),
         "gpu_vram_used": round(vram_mb / 1024.0, 2),
         "gpu_vram_total": round(vram_total / 1024.0, 2) if vram_total > 0 else 8.0,
         "gpu_name": gpu_name,
         "active_model_tier": tier_info.get("active_tier", "tier_1"),
-        "active_tier_name": tier_info.get("tier_name", "Tier-1 Gemini 2.0"),
-        "tier_badge": tier_info.get("tier_badge", "● Tier-1 Gemini 2.0"),
+        "active_tier_name": tier_info.get("tier_name", "Tier-1 Gemini 3.8"),
+        "tier_badge": tier_info.get("tier_badge", "Tier-1 Gemini 3.8"),
         "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
         "is_cooldown": tier_info.get("is_cooldown", False),
         "quota_matrix": quota_matrix,
@@ -1337,6 +1499,8 @@ def get_telemetry():
 
         # Tương thích ngược với UI và test suite hiện hành
         "camera_running": LIVE_CAMERA.running,
+        "camera_device_available": LIVE_CAMERA.camera_device_available,
+        "is_client_streaming": LIVE_CAMERA.is_client_streaming,
         "fps": round(LIVE_CAMERA.current_fps, 1),
         "gpu_vram_mb": vram_mb,
         "gpu_vram_total_mb": vram_total,
@@ -1351,6 +1515,41 @@ def get_telemetry():
         "current_ergonomic_score": curr_ergo,
         "continuous_sitting_sec": 0.0,
     }
+
+
+class OSLabConfigPayload(BaseModel):
+    buffer_capacity: Optional[int] = None
+    consumer_delay_ms: Optional[int] = None
+    reset_counters: bool = False
+    trigger_burst: bool = False
+
+
+@app.post("/api/os_lab/config")
+async def update_os_lab_config(req: OSLabConfigPayload):
+    """
+    Điều chỉnh trực tiếp tham số Thực nghiệm Hệ Điều Hành (Bounded-Buffer Capacity N & Consumer Throttling Delay).
+    """
+    res = LIVE_CAMERA.configure_os_lab(
+        buffer_capacity=req.buffer_capacity,
+        consumer_delay_ms=req.consumer_delay_ms,
+        reset_counters=req.reset_counters,
+        trigger_burst=req.trigger_burst
+    )
+    return {"status": "ok", **res}
+
+
+@app.get("/api/os_lab/config")
+def get_os_lab_config():
+    """Lấy cấu hình hiện tại của bộ Thực nghiệm Hệ Điều Hành."""
+    stats = LIVE_CAMERA.frame_buffer.get_stats() if hasattr(LIVE_CAMERA, "frame_buffer") else {}
+    return {
+        "status": "ok",
+        "buffer_capacity": stats.get("capacity", 16),
+        "consumer_delay_ms": LIVE_CAMERA.consumer_delay_ms,
+        "ram_ceiling_mb": stats.get("ram_ceiling_mb", 42.19),
+        "stats": stats
+    }
+
 
 
 # ==============================================================================
@@ -1476,9 +1675,19 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
     JOBS[job_id] = {
         "status": "processing",
         "progress_percent": 0.0,
+        "stage": "Đang khởi tạo luồng xử lý...",
         "current_frame": 0,
         "total_frames": 0,
         "current_fps": 0.0,
+        "pipeline_live": {
+            "reader_frames": 0,
+            "infer_frames": 0,
+            "writer_frames": 0,
+            "raw_q": 0,
+            "writer_q": 0,
+            "q_max": 16,
+            "infer_stride": 1
+        },
         "result": None,
         "error": None,
         "output_filename": output_filename
@@ -1486,12 +1695,25 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
 
     def run_worker():
         try:
-            def on_progress(cur, total, fps):
-                pct = round((cur / total) * 100.0, 1) if total > 0 else 0
+            def on_progress(cur, total, fps, stage="Đang phân tích khung hình & trích xuất tư thế...", pipe_live=None):
+                # Frame analysis maps strictly to 0% - 90%
+                if stage and "hội chẩn" in stage.lower():
+                    pct = 95.0
+                elif stage and "mã hóa" in stage.lower():
+                    pct = 92.0
+                elif stage and "tổng hợp" in stage.lower():
+                    pct = 98.0
+                else:
+                    frame_ratio = (cur / total) if total > 0 else 0
+                    pct = min(90.0, round(frame_ratio * 90.0, 1))
+
                 JOBS[job_id]["current_frame"] = cur
                 JOBS[job_id]["total_frames"] = total
                 JOBS[job_id]["current_fps"] = round(fps, 1)
                 JOBS[job_id]["progress_percent"] = pct
+                JOBS[job_id]["stage"] = stage
+                if isinstance(pipe_live, dict):
+                    JOBS[job_id]["pipeline_live"] = pipe_live
 
             res = ANNOTATOR_ENGINE.process_video(
                 input_path=req.video_path,
@@ -1502,6 +1724,10 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
                 call_gemini=req.call_gemini,
                 anomaly_focus=req.anomaly_focus
             )
+
+            # Đang hoàn tất và trích xuất đoạn đối sánh song song
+            JOBS[job_id]["progress_percent"] = 99.0
+            JOBS[job_id]["stage"] = "Đang trích xuất video đối sánh song song..."
 
             # Trích xuất video đoạn gốc tương ứng (Raw Trimmed Slice) để so sánh song song 1:1
             raw_trimmed_filename = f"raw_trimmed_{job_id}_{os.path.basename(req.video_path)}"
@@ -1531,9 +1757,10 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
 
             res["annotated_stream_url"] = f"/api/video/stream_file/{output_filename}"
             res["download_url"] = f"/api/video/download/{output_filename}"
-            JOBS[job_id]["status"] = "completed"
             JOBS[job_id]["progress_percent"] = 100.0
+            JOBS[job_id]["stage"] = "Hoàn tất phân tích 100%"
             JOBS[job_id]["result"] = res
+            JOBS[job_id]["status"] = "completed"
 
         except Exception as e:
             JOBS[job_id]["status"] = "error"

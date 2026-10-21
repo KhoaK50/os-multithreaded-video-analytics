@@ -1,0 +1,100 @@
+=== HEADINGS ===
+- 1. ĐẶT VẤN ĐỀ VÀ MỤC TIÊU KỸ THUẬT
+- 2. TẦNG HỆ ĐIỀU HÀNH & LẬP TRÌNH ĐA LUỒNG
+- 2.1. Mô Hình Tiến Trình Sản Xuất - Tiêu Thụ và Ngưỡng Trần Bộ Nhớ Đệm (Producer-Consumer Bounded-Buffer & Dijkstra Safe State)
+- 2.2. Kiểm Soát Điều Tiết Lưu Lượng Áp Lực Ngược và Hủy Khung Hình Thích Nghi (Backpressure Flow Control & Adaptive Frame Dropping)
+- 2.3. Làm Mịn Chỉ Số Vận Hành Bằng Trung Bình Động Lũy Thừa (Exponential Moving Average Telemetry - EMA)
+- 2.4. Bảng Đối Soát Vận Hành & Điều Hướng Mô Phỏng Thực Nghiệm
+- 3. TẦNG THỊ GIÁC MÁY TÍNH BIÊN & ĐỘNG HỌC VẬT LÝ
+- 3.0. Bảng Đối Chiếu Ký Hiệu Toán - Vật Lý (Từ Nền Tảng Phổ Thông Lên Hệ Thống)
+- 3.1. Mô Hình Khung Xương 17 Điểm Mốc (COCO Pose Keypoints) & Định Vị Tọa Độ Không Gian
+- 3.2. Định Lượng Động Lực Va Đập & Đạo Hàm Công Suất Cơ Học Tức Thời (Instantaneous Mechanical Power Derivative & Kinetic Strike Metric)
+- 3.3. Tiêu Chuẩn Nhận Diện Va Chạm Bằng Toán Tử Phân Kỳ Quang Lưu (Optical Flow Divergence Operator)
+- 3.4. Giải Thuật Gán Cực Tiểu Hungary và Chỉ Số Giao Trên Hợp (Hungarian Algorithm & IoU Bipartite Matching)
+- 3.5. Cơ Sở Toán Học Xử Lý 5 Điều Kiện Môi Trường Khắc Nghiệt (Harsh Sensor Physics)
+- 4. TẦNG ĐIỀU PHỐI TRÍ TUỆ NHÂN TẠO PHÂN TẦNG & BẢO VỆ HẠN MỨC
+- 4.1. Kiến trúc Chuyển đổi Dự phòng (Hierarchical Model Failover) & Tự Phục Hồi 60s
+- 4.2. Khống chế Ngân sách Token với Google Vision Tile $768 \times 768$ & Khung Hình Đỉnh Điểm
+- 4.3. Bảng Cân Bằng Hạn Mức Token Theo Thời Lượng Video
+- 5. TẦNG NHẬP LIỆU ĐA PHƯƠNG TIỆN & TRỰC QUAN HÓA CHUẨN MỰC
+- 6.1. Phòng Thí Nghiệm 1: Dòng Chảy Đa Luồng HĐH & Điều Tiết Trần RAM Dijkstra (OS Flow Lab)
+- 6.2. Phòng Thí Nghiệm 2: Giả Lập Cơ Học Khung Xương 17 Điểm Mốc & Động Học Va Chạm (Kinematics Digital Twin)
+- 6.3. Phòng Thí Nghiệm 3: Thị Giác Cảm Biến Camera Trong 5 Môi Trường Khắc Nghiệt (Harsh Sensor Camera Suite)
+- 6.4. Phòng Thí Nghiệm 4: Điều Phối Phân Tầng Cloud AI & Bộ Đo Ngân Sách Token (Cloud AI Lab)
+- 7. BẢNG TỔNG HỢP ĐỐI SOÁT CÔNG NGHỆ (TECHNOLOGY COMPARISON MATRIX)
+- 8. KỊCH BẢN THUYẾT TRÌNH BẢO VỆ ĐỀ ÁN (THỜI LƯỢNG 3 PHÚT)
+- 9. TÀI LIỆU THAM KHẢO HỌC THUẬT (VERIFIABLE ACADEMIC REFERENCES)
+
+=== TOTAL MATH BLOCKS: 36 ===
+[Formula 1]: $$M_{\text{buffer}} = N_{\max} \times (W \times H \times C) \times 1\text{ byte}$$
+
+[Formula 2]: $$M_{\text{total}} = N_{\text{slots}} \times S_{\text{slot}}$$
+
+[Formula 3]: $$M_{\text{buffer}} = 32 \times 2.7648\text{ MB} = \mathbf{88.47\text{ MB}} \quad (\approx 88.5\text{ MB}).$$
+
+[Formula 4]: $$R_{\text{drop}} = \frac{F_{\text{producer}} - F_{\text{consumer}}}{F_{\text{producer}}} \times 100\%, \quad T_{\text{latency}} \le \frac{1}{\text{FPS}_{\text{consumer}}} + \tau_{\text{LIFO\_transfer}} \le \mathbf{75\text{ ms}}$$
+
+[Formula 5]: $$Q_{\text{in}} = Q_{\text{out}} + Q_{\text{drop}}$$
+
+[Formula 6]: $$\text{EMA}_t = \alpha \cdot X_t + (1 - \alpha) \cdot \text{EMA}_{t-1}, \quad (\alpha = 0.20, \; \Delta t = 500\text{ ms})$$
+
+[Formula 7]: $$k_{\text{half-life}} = \frac{\ln(0.5)}{\ln(1 - \alpha)} = \frac{-0.69315}{\ln(0.80)} \approx \mathbf{3.1\text{ cycles}} \quad (\approx 1.55\text{ s})$$
+
+[Formula 8]: $$\sum_{i}$$
+
+[Formula 9]: $$\Delta$$
+
+[Formula 10]: $$\vec{A} \cdot \vec{B}$$
+
+[Formula 11]: $$\|\vec{v}\|$$
+
+[Formula 12]: $$\frac{d}{dt}$$
+
+[Formula 13]: $$\nabla \cdot \vec{V}$$
+
+[Formula 14]: $$\exp(-u)$$
+
+[Formula 15]: $$\gamma$$
+
+[Formula 16]: $$P(t) = \frac{dE_k}{dt} = \frac{d}{dt}\left(\frac{1}{2} m v^2\right) = m \cdot v \cdot \frac{dv}{dt} = m \cdot a \cdot v = F \cdot v$$
+
+[Formula 17]: $$\Delta E_k(t) = \sum_{i \in \text{Joints}} m_i \cdot \left| \vec{v}_i(t) - \vec{v}_i(t - \Delta t) \right| \cdot \left\| \vec{v}_i(t) \right\|$$
+
+[Formula 18]: $$P = m \cdot \left(\frac{\Delta v}{\Delta t}\right) \cdot v$$
+
+[Formula 19]: $$\tau_{\text{threshold}} = \mu + 3\sigma = 14 + (3 \times 9) = 41 \longrightarrow \mathbf{45.0\text{ px/frame}}.$$
+
+[Formula 20]: $$v_{\text{true}} = 45.0\text{ px/frame} \times 30\text{ frames/s} = 1{,}350\text{ px/s} = 6.75\text{ m/s} \approx \mathbf{24.3\text{ km/h}}.$$
+
+[Formula 21]: $$\operatorname{div}(\vec{V}) = \nabla \cdot \vec{V} = \frac{\partial v_x}{\partial x} + \frac{\partial v_y}{\partial y}$$
+
+[Formula 22]: $$C_{ij} = \lambda \cdot (1 - \operatorname{IoU}(B_i, B_j)) + (1 - \lambda) \cdot \frac{\left\| P_i - P_j \right\|_2}{D_{\text{diagonal}}}, \quad (\lambda = 0.60, \; C_{ij} \le 0.45)$$
+
+[Formula 23]: $$\operatorname{IoU}(B_i, B_j) = \frac{\operatorname{Area}(B_i \cap B_j)}{\operatorname{Area}(B_i \cup B_j)} = \frac{|B_i \cap B_j|}{|B_i \cup B_j|}$$
+
+[Formula 24]: $$d = \sqrt{\Delta x^2 + \Delta y^2}$$
+
+[Formula 25]: $$I_{\text{out}} = 255 \times \left( \frac{I_{\text{in}}}{255} \right)^{\gamma(L)}, \quad \gamma(L) = 0.45 + 0.35 \times \left( \frac{L}{65} \right)$$
+
+[Formula 26]: $$Y_{\text{out}} = \begin{cases} Y_{\text{in}} & \text{if } Y_{\text{in}} \le 180 \\ 180 + 0.60 \times (Y_{\text{in}} - 180) & \text{if } Y_{\text{in}} > 180 \end{cases}$$
+
+[Formula 27]: $$I_p = \frac{1}{W_p} \sum_{q \in S} I_q \cdot \exp\left( -\frac{\|p - q\|^2}{2\sigma_s^2} \right) \cdot \exp\left( -\frac{|I_p - I_q|^2}{2\sigma_r^2} \right)$$
+
+[Formula 28]: $$\vec{v}_{\text{true}} = \vec{v}_{\text{raw}} - \operatorname{median}(\{ \vec{v}_{\text{bg}} \})$$
+
+[Formula 29]: $$H_\tau(x, y, t) = \begin{cases} \tau & \text{khi } D(x, y, t) = 1 \\ \max(0, H_\tau(x, y, t - 1) - 1) & \text{khi } D(x, y, t) = 0 \end{cases}$$
+
+[Formula 30]: $$T_{\text{total}} = T_{\text{system}} + T_{\text{context}} + (K \times T_{\text{tile}}) + T_{\text{output\_json}} \le \mathbf{1{,}500\text{ tokens}}$$
+
+[Formula 31]: $$P = \vec{F} \cdot \vec{v} = \left(m \cdot \frac{\Delta v}{\Delta t}\right) \cdot v \cdot \cos(0^\circ) \implies \Delta E_k = \sum_{i} m_i \cdot |\Delta v_i| \cdot v_i > \mathbf{45.0\text{ px/f}}$$
+
+[Formula 32]: $$', right: '$$
+
+[Formula 33]: $$P = \\vec{F} \\cdot \\vec{v} = \\left(m \\cdot \\frac{\\Delta v}{\\Delta t}\\right) \\cdot v \\cdot \\cos(0^{\\circ}) \\implies \\Delta E_k = \\sum_{i} m_i \\cdot |\\Delta v_i| \\cdot v_i > \\mathbf{45.0\\text{ px/f}}$$
+
+[Formula 34]: $$\\operatorname{div}(\\vec{V}) = \\nabla \\cdot \\vec{V} = \\frac{\\partial v_x}{\\partial x} + \\frac{\\partial v_y}{\\partial y} < \\mathbf{-18.5}$$
+
+[Formula 35]: $$C_{ij} = \\lambda (1 - \\operatorname{IoU}(B_i, B_j)) + (1 - \\lambda) \\frac{\\|P_i - P_j\\|_2}{D_{\\text{diagonal}}} \\le \\mathbf{0.45}$$
+
+[Formula 36]: $$\\theta = \\arctan\\left(\\frac{|y_{\\text{shoulder}} - y_{\\text{hip}}|}{|x_{\\text{shoulder}} - x_{\\text{hip}}|}\\right) \\times \\frac{180^{\\circ}}{\\pi} < \\mathbf{38.0^{\\circ}}$$
+

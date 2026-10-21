@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=2.2.0">
+    <link rel="stylesheet" href="/static/style.css?v=2.5.0">
 </head>
 <body>
     <!-- HEADER BAR -->
@@ -16,20 +16,18 @@
             <div class="brand-logo">
                 <span class="logo-icon"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
                 <div class="brand-text">
-                    <span class="brand-title">HỆ THỐNG GIÁM SÁT VIDEO ĐA LUỒNG</span>
-                    <span class="brand-sub">HỆ ĐIỀU HÀNH — KIẾN TRÚC PHÂN TÍCH VIDEO ĐA LUỒNG THỜI GIAN THỰC</span>
+                    <span class="brand-title">HỆ THỐNG PHÂN TÍCH VÀ NHẬN DIỆN HÀNH VI</span>
+                    <span class="brand-sub">Học phần: Hệ điều hành (2611COMP133202)</span>
                 </div>
             </div>
         </div>
 
         <nav class="app-nav">
             <button class="nav-tab active" id="tab-live-btn" onclick="switchTab('live')">
-                <span class="tab-dot live-dot"></span>
-                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg> <span>Giám Sát Camera Trực Tiếp</span>
+                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg> <span>Camera trực tiếp</span>
             </button>
             <button class="nav-tab" id="tab-video-btn" onclick="switchTab('video')">
-                <span class="tab-dot"></span>
-                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> <span>Biên Tập Timeline Video</span>
+                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> <span>Phân tích video</span>
             </button>
         </nav>
 
@@ -39,7 +37,7 @@
             </button>
             <div class="hardware-pill">
                 <span class="pill-badge">GPU</span>
-                <span class="pill-text" id="header-gpu-text">NVIDIA RTX 5060 CUDA</span>
+                <span class="pill-text" id="header-gpu-text">NVIDIA RTX 5060</span>
             </div>
         </div>
     </header>
@@ -61,24 +59,24 @@
                         </div>
                         <div class="header-status-badge">
                             <span class="badge badge-neutral mono" style="display: inline-flex; align-items: center; gap: 6px;">
-                                <span id="live-stream-status-dot" class="stream-status-dot dot-live"></span>
-                                <span id="live-stream-status-text">TRỰC TIẾP — 30 FPS</span>
+                                <span id="live-stream-status-dot" class="stream-status-dot" style="background: var(--accent-crimson); box-shadow: none;"></span>
+                                <span id="live-stream-status-text">ĐÃ TẮT CAMERA</span>
                             </span>
                             <span id="live-alert-text" class="badge badge-safe mono">Trạng thái: An toàn</span>
                         </div>
                     </div>
 
                     <div class="stream-viewport-container">
-                        <img id="live-stream-img" src="/api/stream/live" alt="OS Video Analytics Stream" />
+                        <img id="live-stream-img" src="" alt="OS Video Analytics Stream" />
                         <video id="client-webcam-video" playsinline autoplay muted style="display:none;"></video>
                         <canvas id="client-webcam-canvas" width="640" height="480" style="display:none;"></canvas>
-                        <div id="cam-offline-overlay" class="cam-offline hidden">
+                        <div id="cam-offline-overlay" class="cam-offline">
                             <div class="offline-box">
                                 <span class="offline-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
-                                <p id="cam-offline-title">Chưa kết nối luồng camera vật lý</p>
-                                <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
-                                    <button class="btn btn-primary" onclick="toggleBrowserWebcam()"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> <span>Bật Webcam Trình Duyệt</span></button>
-                                    <button class="btn btn-outline" onclick="toggleCamera('start')"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> <span>Thử lại Camera Máy Chủ</span></button>
+                                <p id="cam-offline-title">Camera đang tạm dừng</p>
+                                <div style="display:flex; gap:8px; justify-content:center; margin-top:8px; flex-wrap: wrap;">
+                                    <button class="btn btn-primary" onclick="toggleCamera('start')"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span>Bật Camera</span></button>
+                                    <button class="btn btn-outline" id="btn-browser-cam-fallback" onclick="toggleBrowserWebcam()" title="Sử dụng khi chạy trên Cloud / Google Colab"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> <span>Dùng Webcam Trình Duyệt</span></button>
                                 </div>
                             </div>
                         </div>
@@ -87,9 +85,6 @@
                     <!-- Live Camera Action Bar directly below video -->
                     <div class="stream-control-bar">
                         <div class="control-group-left">
-                            <button class="btn btn-sm btn-primary" id="btn-browser-cam" onclick="toggleBrowserWebcam()" title="Sử dụng webcam của laptop/điện thoại này để gửi khung hình lên GPU phân tích">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> <span>Bật Webcam Trình Duyệt</span>
-                            </button>
                             <button class="btn btn-sm btn-outline" id="btn-manual-snap" onclick="captureManualSnapshot()" title="Chụp lại khung hình ngay lập tức và lưu vào nhật ký">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> <span>Chụp Snapshot</span>
                             </button>
@@ -102,29 +97,31 @@
                             <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-denoise" onclick="toggleCameraEnhancer('denoise')" title="Khử nhiễu hạt khi thiếu sáng">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> <span>Khử nhiễu: BẬT</span>
                             </button>
-                            <button class="btn btn-sm btn-outline" id="btn-toggle-telemetry" onclick="toggleTelemetryDrawer()" title="Bật/Tắt Bảng Điều Khiển Thông Số Hệ Thống — Phím tắt Esc để đóng">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> <span>Thông Số Vận Hành</span> <span class="badge badge-neutral mono" id="btn-telemetry-status" style="font-size: 10px; padding: 1px 5px; margin-left: 3px;">ẨN</span>
+                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-telemetry" onclick="toggleInlineTelemetryPanel()" title="Ẩn hoặc hiện Bảng Điều Khiển Thông Số Vận Hành Hệ Điều Hành">
+                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> <span>Thông Số Vận Hành</span> <span class="badge badge-safe mono" id="btn-telemetry-status" style="font-size: 10px; padding: 1px 5px; margin-left: 3px;">HIỂN THỊ</span>
                             </button>
                         </div>
                         <div class="control-group-right">
-                            <button class="btn btn-sm btn-danger-outline" id="btn-toggle-cam" onclick="toggleCamera()">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> <span>Tạm dừng Camera</span>
+                            <button class="btn btn-sm btn-primary" id="btn-toggle-cam" onclick="toggleCamera()" title="Bật hoặc Tắt luồng camera trực tiếp">
+                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span>Bật Camera</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- BẢNG ĐIỀU KHIỂN THÔNG SỐ HỆ ĐIỀU HÀNH TRÔI NỔI -->
+                <!-- BẢNG ĐIỀU KHIỂN THÔNG SỐ VẬN HÀNH HỆ ĐIỀU HÀNH & PHÒNG THÍ NGHIỆM ĐỒNG BỘ HÓA -->
                 <div id="telemetry-backdrop" class="telemetry-backdrop hidden" onclick="closeTelemetryPanel()"></div>
-                <div id="telemetry-floating-panel" class="app-card os-telemetry-card telemetry-floating-panel hidden" role="dialog" aria-modal="true" aria-labelledby="telemetry-modal-title">
-                    <div class="card-header">
-                        <div class="card-title">
-                            <span class="indicator-pulse"></span>
-                            <span id="telemetry-modal-title" data-os-term="dashboard">BẢNG THÔNG SỐ VẬN HÀNH HỆ ĐIỀU HÀNH</span>
+                <div id="telemetry-floating-panel" class="app-card os-telemetry-card telemetry-inline-panel" role="region" aria-labelledby="telemetry-modal-title">
+                    <div class="card-header os-panel-header">
+                        <div class="card-title-group">
+                            <div class="card-title">
+                                <span class="indicator-pulse"></span>
+                                <span id="telemetry-modal-title" data-os-term="dashboard">BẢNG THÔNG SỐ VẬN HÀNH HỆ ĐIỀU HÀNH &amp; ĐỒNG BỘ HÓA ĐA LUỒNG</span>
+                            </div>
                         </div>
                         <div class="header-status-badge" style="display:flex; align-items:center; gap:8px;">
-                            <span id="model-tier-badge" class="badge badge-safe mono">● Tier-1 Gemini 2.0</span>
-                            <button class="modal-close-btn" onclick="closeTelemetryPanel()" title="Đóng bảng thông số — Phím tắt Esc" aria-label="Đóng bảng thông số"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                            <span id="model-tier-badge" class="badge badge-safe mono">Tier-1 Gemini 3.8</span>
+                            <button class="modal-close-btn" onclick="toggleInlineTelemetryPanel()" title="Thu gọn bảng thông số Hệ điều hành" aria-label="Thu gọn bảng thông số"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>
                         </div>
                     </div>
 
@@ -133,40 +130,39 @@
                         <div class="telemetry-item">
                             <div class="telemetry-label">
                                 <span class="telemetry-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
-                                <span data-os-term="producer-thread">Luồng Thu Nhận</span>
+                                <span data-os-term="producer-thread">Luồng Producer</span>
                             </div>
                             <div class="telemetry-value-row">
                                 <span class="telemetry-main-val mono" id="live-fps">30.0 FPS</span>
-                                <span class="badge badge-safe mono" id="producer-thread-badge">HOẠT ĐỘNG</span>
+                                <span class="badge badge-safe mono" id="producer-thread-badge">SẴN SÀNG</span>
                             </div>
-                            <span class="telemetry-sub mono">Tốc độ nạp khung hình camera</span>
                         </div>
 
                         <!-- Card 2: Consumer Thread Status -->
                         <div class="telemetry-item">
                             <div class="telemetry-label">
                                 <span class="telemetry-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></span>
-                                <span data-os-term="consumer-thread">Luồng Xử Lý Thị Giác</span>
+                                <span data-os-term="consumer-thread">Luồng Consumer</span>
                             </div>
                             <div class="telemetry-value-row">
-                                <span class="badge badge-safe mono" id="consumer-thread-badge">YOLOv8 + Gemini Vision</span>
+                                <span class="telemetry-main-val mono" id="live-consumer-fps">30.0 FPS</span>
+                                <span class="badge badge-safe mono" id="consumer-thread-badge">YOLOv8 + Gemini</span>
                             </div>
-                            <span class="telemetry-sub mono">Trạng thái suy luận chu kỳ 4s</span>
                         </div>
 
                         <!-- Card 3: Bounded Buffer Queue -->
                         <div class="telemetry-item">
                             <div class="telemetry-label">
                                 <span class="telemetry-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
-                                <span data-os-term="bounded-buffer">Hàng Đợi Đệm Bounded Buffer</span>
+                                <span data-os-term="bounded-buffer">Hàng Đợi Buffer</span>
                             </div>
                             <div class="telemetry-value-row">
-                                <span class="telemetry-main-val mono" id="live-queue">1 / 5 frames</span>
+                                <span class="telemetry-main-val mono" id="live-queue">0 / 16 frames</span>
+                                <span class="badge badge-neutral mono" id="live-hwm-badge">HWM: 0</span>
                             </div>
                             <div class="meter-bar">
-                                <div class="meter-fill" id="queue-progress-bar" style="width: 20%;"></div>
+                                <div class="meter-fill" id="queue-progress-bar" style="width: 0%;"></div>
                             </div>
-                            <span class="telemetry-sub mono">Trạng thái dung lượng đệm hàng đợi</span>
                         </div>
 
                         <!-- Card 4: Flow Control Drop Frames & Drop Rate % -->
@@ -179,7 +175,6 @@
                                 <span class="telemetry-main-val mono" id="live-drop-frames">0 frames</span>
                                 <span class="badge badge-neutral mono" id="live-drop-rate">Drop: 0.0%</span>
                             </div>
-                            <span class="telemetry-sub mono">Khung hình loại bỏ khi quá tải</span>
                         </div>
 
                         <!-- Card 5: Hardware Resources -->
@@ -208,6 +203,120 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- KHỐI 2: MA TRẬN TRẠNG THÁI 4 LUỒNG & NGUYÊN NGỮ ĐỒNG BỘ HÓA -->
+                    <div class="os-kernel-subgrid">
+                        <div class="os-kernel-box">
+                            <div class="os-kernel-box-header">
+                                <span class="os-kernel-box-title">
+                                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                    TRẠNG THÁI 4 LUỒNG THỰC THI
+                                </span>
+                            </div>
+                            <div class="thread-state-matrix">
+                                <div class="thread-state-row">
+                                    <div class="ts-info">
+                                        <span class="ts-name mono">CamProducer</span>
+                                    </div>
+                                    <span class="badge badge-neutral mono" id="ts-badge-producer">READY</span>
+                                </div>
+                                <div class="thread-state-row">
+                                    <div class="ts-info">
+                                        <span class="ts-name mono">CamEdgeAI</span>
+                                    </div>
+                                    <span class="badge badge-neutral mono" id="ts-badge-edge">READY</span>
+                                </div>
+                                <div class="thread-state-row">
+                                    <div class="ts-info">
+                                        <span class="ts-name mono">CamCompositor</span>
+                                    </div>
+                                    <span class="badge badge-neutral mono" id="ts-badge-compositor">READY</span>
+                                </div>
+                                <div class="thread-state-row">
+                                    <div class="ts-info">
+                                        <span class="ts-name mono">CamGeminiAI</span>
+                                    </div>
+                                    <span class="badge badge-neutral mono" id="ts-badge-gemini">READY</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="os-kernel-box">
+                            <div class="os-kernel-box-header">
+                                <span class="os-kernel-box-title">
+                                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    NGUYÊN NGỮ ĐỒNG BỘ HÓA
+                                </span>
+                            </div>
+                            <div class="sync-primitives-grid">
+                                <div class="sync-stat-card">
+                                    <span class="sync-stat-label">Khóa Mutex</span>
+                                    <strong class="sync-stat-val mono" id="os-sync-mutex">0 lượt</strong>
+                                </div>
+                                <div class="sync-stat-card">
+                                    <span class="sync-stat-label">Đánh thức Monitor</span>
+                                    <strong class="sync-stat-val mono" id="os-sync-signals">0 tín hiệu</strong>
+                                </div>
+                                <div class="sync-stat-card">
+                                    <span class="sync-stat-label">Chờ điều kiện</span>
+                                    <strong class="sync-stat-val mono" id="os-sync-waits">0 lượt chờ</strong>
+                                </div>
+                                <div class="sync-stat-card">
+                                    <span class="sync-stat-label">Trần RAM Hàng Đợi</span>
+                                    <strong class="sync-stat-val mono" id="os-sync-ram-ceiling">42.19 MB</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- KHỐI 3: PHÒNG THÍ NGHIỆM TƯƠNG TÁC ĐIỀU TIẾT LUỒNG & CHỐNG DEADLOCK -->
+                    <div class="os-lab-interactive-box">
+                        <div class="os-lab-header">
+                            <div class="os-lab-title-group">
+                                <div class="os-lab-title">
+                                    <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                                    <span>ĐIỀU TIẾT LƯU LƯỢNG HỆ ĐIỀU HÀNH</span>
+                                </div>
+                            </div>
+                            <div class="os-lab-preset-bar">
+                                <button class="btn btn-xs btn-outline" onclick="applyOSLabPreset(16, 0, true)">Cân Bằng · N=16, 0ms</button>
+                                <button class="btn btn-xs btn-outline" onclick="applyOSLabPreset(6, 85, true)">Nghẽn Consumer · N=6, 85ms</button>
+                                <button class="btn btn-xs btn-outline" onclick="applyOSLabPreset(4, 45, true)">Bộ Đệm Tối Thiểu · N=4, 45ms</button>
+                                <button class="btn btn-xs btn-primary" onclick="triggerOSLabStressBurst()">Phát Xung 75 Frames</button>
+                                <button class="btn btn-xs btn-outline" onclick="resetOSLabCounters()">Đặt Lại Bộ Đếm</button>
+                            </div>
+                        </div>
+
+                        <div class="os-lab-sliders-grid">
+                            <div class="os-lab-control-card">
+                                <div class="os-lab-control-top">
+                                    <span class="os-lab-control-label">Dung lượng Buffer N</span>
+                                    <strong class="os-lab-control-val mono" id="os-lab-cap-display">N = 16 (RAM: 42.19 MB)</strong>
+                                </div>
+                                <input type="range" id="os-lab-cap-slider" class="os-lab-slider" min="2" max="64" step="2" value="16" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(false)" />
+                                <div class="os-lab-scale mono">
+                                    <span>N = 2</span>
+                                    <span>N = 16</span>
+                                    <span>N = 32</span>
+                                    <span>N = 64</span>
+                                </div>
+                            </div>
+
+                            <div class="os-lab-control-card">
+                                <div class="os-lab-control-top">
+                                    <span class="os-lab-control-label">Độ trễ Consumer</span>
+                                    <strong class="os-lab-control-val mono" id="os-lab-delay-display">0 ms</strong>
+                                </div>
+                                <input type="range" id="os-lab-delay-slider" class="os-lab-slider" min="0" max="200" step="5" value="0" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(true)" />
+                                <div class="os-lab-scale mono">
+                                    <span>0 ms</span>
+                                    <span>50 ms</span>
+                                    <span>100 ms</span>
+                                    <span>200 ms</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- BẢNG NHẬT KÝ NHẬN DIỆN TƯ THẾ CÔNG THÁI HỌC VÀ HÀNH VI -->
@@ -217,7 +326,7 @@
                             <div class="card-title">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> <span>NHẬT KÝ NHẬN DIỆN TƯ THẾ CÔNG THÁI HỌC VÀ HÀNH VI</span> <span class="badge badge-neutral mono">Chu kỳ 4.0s</span>
                                 <span class="badge badge-neutral mono" id="log-count-badge">0 sự kiện</span>
-                                <span class="badge badge-safe mono" id="gemini-quota-badge">● Tier-1 Gemini 2.5</span>
+                                <span class="badge badge-safe mono" id="gemini-quota-badge">Tier-1 Gemini 3.8</span>
                             </div>
                             <span class="card-subtitle">Thẩm định tư thế công thái học theo chu kỳ 4 giây và dự đoán xu hướng chuyển tiếp động tác tiếp theo bằng mô hình Vision Multimodal.</span>
                         </div>
@@ -306,14 +415,12 @@
                 <!-- Local File Upload Zone -->
                 <div id="source-local-zone" class="source-zone">
                     <div class="dropzone" id="video-dropzone" onclick="document.getElementById('video-file-input').click()">
-                        <input type="file" id="video-file-input" accept="video/mp4,video/avi,video/quicktime,video/mkv" style="display:none" onchange="handleFileSelected(event)">
+                        <input type="file" id="video-file-input" accept="video/mp4,video/avi,video/quicktime,video/x-matroska,video/webm,video/x-flv,video/x-ms-wmv,video/x-m4v" style="display:none" onchange="handleFileSelected(event)">
                         <div class="dropzone-content">
                             <span class="drop-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
                             <h4>Kéo thả video vào đây, hoặc <span class="highlight">nhấn để chọn file</span></h4>
-                            <p>Hỗ trợ định dạng .mp4, .avi, .mov, .mkv. Dung lượng tối đa 150MB.</p>
-                            <button type="button" class="btn btn-sm btn-outline" style="margin-top: 10px;" onclick="event.stopPropagation(); loadSampleVideo();">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg> <span>Sử dụng video mẫu: demo_synthetic.mp4</span>
-                            </button>
+                            <p class="drop-hint">Định dạng video được hỗ trợ: <strong>.mp4, .avi, .mov, .mkv, .webm, .flv, .wmv, .m4v</strong> (Tối đa 150MB)</p>
+                            <p class="drop-subhint text-muted">Lưu ý: Không hỗ trợ tệp ảnh động .gif (phân tích động học AI yêu cầu video có luồng thời gian thực chuẩn).</p>
                         </div>
                     </div>
                 </div>
@@ -327,13 +434,19 @@
                             <span id="url-btn-text"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> <span>Kiểm Tra & Nạp Video</span></span>
                         </button>
                     </div>
-                    <div class="demo-preset-row" style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 0.78rem; color: var(--text-tertiary);">Gợi ý kiểm thử nhanh:</span>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="loadSampleDemoURL()" style="font-size: 0.78rem; padding: 3px 10px; border-radius: 6px; cursor: pointer;">
-                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg> <span>Nạp Video Mẫu YouTube: 4 người 11:38 - 12:08</span>
-                        </button>
+                    <div class="url-platform-hints">
+                        <span class="platform-hint-title">NỀN TẢNG HỖ TRỢ TẢI TRỰC TIẾP QUA LIÊN KẾT (1000+ SITES):</span>
+                        <div class="platform-badges-grid">
+                            <span class="platform-badge"><svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg> <strong>YouTube</strong> (Video thường, Shorts)</span>
+                            <span class="platform-badge"><svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.28 1.76-.23.78-.1 1.66.33 2.33.43.71 1.19 1.18 2.01 1.28 1.05.15 2.17-.18 2.89-.95.53-.55.79-1.33.8-2.1.04-4.8.02-9.61.02-14.41z"/></svg> <strong>TikTok / Douyin</strong> (Video dọc 9:16, vt.tiktok)</span>
+                            <span class="platform-badge"><svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg> <strong>Instagram</strong> (Reels, Video Post, IGTV)</span>
+                            <span class="platform-badge"><svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> <strong>Facebook</strong> (Video &amp; Reels công khai)</span>
+                            <span class="platform-badge"><svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> <strong>X / Twitter</strong> (Video bài đăng)</span>
+                            <span class="platform-badge"><svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.5" fill="#fff"/><circle cx="15" cy="10" r="1.5" fill="#fff"/><path d="M9 14.5c1 1 5 1 6 0" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg> <strong>Reddit</strong> (v.redd.it)</span>
+                            <span class="platform-badge"><svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> <strong>File trực tiếp URL</strong> (.mp4, .webm, .mkv, .m3u8)</span>
+                        </div>
+                        <p class="url-restriction-note">Lưu ý: Hỗ trợ 1000+ nền tảng (YouTube, TikTok, Instagram, Facebook, X/Twitter, Reddit, Twitch...). Chỉ hỗ trợ video công khai (Public), không hỗ trợ link riêng tư hoặc video bảo vệ bản quyền DRM.</p>
                     </div>
-                    <p class="url-hint">Hỗ trợ đa nền tảng: TikTok bao gồm link rút gọn vt.tiktok.com và video dọc 9:16, YouTube, Shorts, Reels, video trực tiếp MP4/WebM... Trích xuất thông tin tức thì trong 0.5s.</p>
 
                     <!-- Smart Range Extractor for Long Videos — Trên 180s -->
                     <div id="url-range-extractor-box" class="url-range-box hidden">
@@ -419,10 +532,16 @@
                         </div>
                     </div>
 
-                    <!-- Dual Sliders for Range Selection -->
-                    <div class="range-slider-container">
-                        <input type="range" id="range-start" min="0" max="100" step="0.1" value="0" oninput="onRangeStartChange(this.value)">
-                        <input type="range" id="range-end" min="0" max="100" step="0.1" value="30" oninput="onRangeEndChange(this.value)">
+                    <!-- CapCut & DaVinci Resolve Style Multi-Track Timeline Trimmer -->
+                    <div class="capcut-track-container" id="capcut-track-wrapper">
+                        <div class="timeline-track-rail">
+                            <div class="timeline-filmstrip-ticks" id="timeline-ticks"></div>
+                            <div class="timeline-trim-region" id="timeline-trim-highlight"></div>
+                        </div>
+                        <div class="range-slider-container">
+                            <input type="range" id="range-start" min="0" max="100" step="0.1" value="0" oninput="onRangeStartChange(this.value)">
+                            <input type="range" id="range-end" min="0" max="100" step="0.1" value="30" oninput="onRangeEndChange(this.value)">
+                        </div>
                     </div>
 
                     <div class="timeline-ruler">
@@ -460,21 +579,57 @@
                 </div>
             </div>
 
-            <!-- Step 3: Processing Progress Bar -->
+            <!-- Step 3: Processing Progress Bar & Live 3-Stage OS Pipeline -->
             <div id="processing-section" class="app-card processing-card hidden">
                 <div class="card-header">
-                    <div class="card-title">
-                        <span class="indicator-pulse"></span>
-                        <span id="proc-title">ĐANG CHẠY SUY LUẬN AI TRÊN GPU...</span>
+                    <div class="card-title-group">
+                        <div class="card-title">
+                            <span class="indicator-pulse"></span>
+                            <span id="proc-title">ĐANG THỰC THI ĐƯỜNG ỐNG ĐA LUỒNG TRÊN GPU</span>
+                        </div>
                     </div>
-                    <div class="fps-badge mono" id="proc-fps-badge">-- FPS</div>
+                    <div class="proc-header-badges">
+                        <button type="button" class="btn btn-xs btn-live-inspector" id="btn-open-live-pipeline" onclick="openLivePipelineModal()" title="Mở cửa sổ quan sát trực tiếp quy trình nạp khung xương và băng chuyền khung hình xếp chồng chéo">
+                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                            <span>Trực Quan Hóa Đường Ống Khung Hình</span>
+                        </button>
+                        <span id="proc-eta-badge" class="badge badge-neutral mono">Dự kiến còn: Đang tính...</span>
+                        <span id="proc-fps-badge" class="badge badge-safe mono">-- FPS</span>
+                    </div>
                 </div>
                 <div class="progress-bar-container">
                     <div class="progress-bar-fill" id="proc-progress-fill" style="width: 0%;"></div>
                 </div>
                 <div class="progress-status-row">
                     <span id="proc-frames-text" class="mono">Khung hình: 0 / 0</span>
+                    <span id="proc-eta-detail" class="mono">Đã chạy: 0 giây • Dự kiến hoàn tất: Đang ước tính...</span>
                     <span id="proc-pct-text" class="mono">0.0%</span>
+                </div>
+                <div class="os-pipe-live-strip mono">
+                    <div class="os-pipe-stage-pill active-stage" id="pipe-pill-reader">
+                        <strong>Stage 1 · Reader</strong>
+                        <span id="pipe-live-reader">0 / 0</span>
+                    </div>
+                    <span class="os-pipe-arrow">➔</span>
+                    <div class="os-pipe-buf-pill" id="pipe-pill-rawbuf">
+                        <strong>raw_buffer</strong>
+                        <span id="pipe-live-rawbuf">0 / 16</span>
+                    </div>
+                    <span class="os-pipe-arrow">➔</span>
+                    <div class="os-pipe-stage-pill active-stage" id="pipe-pill-infer">
+                        <strong>Stage 2 · Inference</strong>
+                        <span id="pipe-live-infer">GPU Ready</span>
+                    </div>
+                    <span class="os-pipe-arrow">➔</span>
+                    <div class="os-pipe-buf-pill" id="pipe-pill-writerbuf">
+                        <strong>writer_buffer</strong>
+                        <span id="pipe-live-writerbuf">0 / 16</span>
+                    </div>
+                    <span class="os-pipe-arrow">➔</span>
+                    <div class="os-pipe-stage-pill active-stage" id="pipe-pill-writer">
+                        <strong>Stage 3 · Writer</strong>
+                        <span id="pipe-live-writer">0 frames</span>
+                    </div>
                 </div>
             </div>
 
@@ -483,7 +638,7 @@
                 <div class="card-header">
                     <div class="card-title">
                         <span class="step-num">3</span>
-                        <span>KẾT QUẢ KẾT XUẤT: VIDEO GẮN NHÃN SKELETON & CHẨN ĐOÁN HÀNH VI</span>
+                        <span>KẾT QUẢ KẾT XUẤT: VIDEO GẮN NHÃN SKELETON &amp; BÁO CÁO ĐA LUỒNG HỆ ĐIỀU HÀNH</span>
                     </div>
                     <div class="export-actions">
                         <a id="btn-download-mp4" class="btn btn-primary" href="#" download>
@@ -529,7 +684,7 @@
                         <video id="result-orig-video" controls></video>
                     </div>
                     <div class="player-box">
-                        <div class="player-label app-text">VIDEO DÁN NHÃN ĐỘNG HỌC & HÀNH VI</div>
+                        <div class="player-label app-text">VIDEO DÁN NHÃN ĐỘNG HỌC &amp; HÀNH VI</div>
                         <video id="result-annotated-video" controls></video>
                     </div>
                 </div>
@@ -542,13 +697,109 @@
                     </button>
                 </div>
 
+                <!-- BÁO CÁO THỰC THI ĐƯỜNG ỐNG ĐA LUỒNG HỆ ĐIỀU HÀNH (3-STAGE OS PIPELINE REPORT) -->
+                <div id="os-pipeline-execution-card" class="app-subcard os-pipeline-report-card">
+                    <div class="narrative-header">
+                        <div class="narrative-title-group">
+                            <div class="narrative-title">
+                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                                <span>BÁO CÁO THỰC THI ĐƯỜNG ỐNG ĐA LUỒNG HỆ ĐIỀU HÀNH</span>
+                                <span class="badge badge-safe mono" id="os-rep-speedup-badge">Tăng tốc đa luồng: 1.35x</span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-xs btn-live-inspector" id="btn-reopen-live-pipeline" onclick="openLivePipelineModal()" title="Xem băng chuyền khung hình xếp chồng chéo và nhật ký điều phối luồng Hệ điều hành">
+                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                            <span>Mô Phỏng Băng Chuyền Khung Hình</span>
+                        </button>
+                    </div>
+
+                    <div class="os-pipeline-stages-grid">
+                        <div class="os-stage-node">
+                            <div class="os-stage-top">
+                                <span class="os-stage-tag mono">STAGE 1 · PRODUCER</span>
+                                <span class="badge badge-safe mono">VideoPipeReader</span>
+                            </div>
+                            <strong class="os-stage-role">Luồng Đọc &amp; Giải Mã I/O</strong>
+                            <div class="os-stage-metrics mono">
+                                <span>Thời gian I/O: <strong id="os-st1-time">0.00s</strong></span>
+                                <span>Thông lượng: <strong id="os-st1-fps">0.0 FPS</strong></span>
+                            </div>
+                        </div>
+
+                        <div class="os-buffer-node">
+                            <span class="os-buf-title mono">raw_buffer · N = 16</span>
+                            <div class="os-buf-stats mono">
+                                <span>Đỉnh HWM: <strong id="os-buf1-hwm">0 / 16</strong></span>
+                                <span>Mutex Lock: <strong id="os-buf1-mutex">0</strong></span>
+                                <span>Cond Wait: <strong id="os-buf1-wait">0</strong></span>
+                            </div>
+                        </div>
+
+                        <div class="os-stage-node">
+                            <div class="os-stage-top">
+                                <span class="os-stage-tag mono">STAGE 2 · WORKER</span>
+                                <span class="badge badge-safe mono">VideoPipeInference</span>
+                            </div>
+                            <strong class="os-stage-role">Luồng Suy Luận GPU &amp; Động Học</strong>
+                            <div class="os-stage-metrics mono">
+                                <span>Thời gian GPU: <strong id="os-st2-time">0.00s</strong></span>
+                                <span>Thông lượng: <strong id="os-st2-fps">0.0 FPS</strong></span>
+                            </div>
+                        </div>
+
+                        <div class="os-buffer-node">
+                            <span class="os-buf-title mono">writer_buffer · N = 16</span>
+                            <div class="os-buf-stats mono">
+                                <span>Đỉnh HWM: <strong id="os-buf2-hwm">0 / 16</strong></span>
+                                <span>Mutex Lock: <strong id="os-buf2-mutex">0</strong></span>
+                                <span>Cond Wait: <strong id="os-buf2-wait">0</strong></span>
+                            </div>
+                        </div>
+
+                        <div class="os-stage-node">
+                            <div class="os-stage-top">
+                                <span class="os-stage-tag mono">STAGE 3 · CONSUMER</span>
+                                <span class="badge badge-safe mono">VideoPipeWriter</span>
+                            </div>
+                            <strong class="os-stage-role">Luồng Kết Xuất &amp; Ghi Luồng Đĩa</strong>
+                            <div class="os-stage-metrics mono">
+                                <span>Thời gian Ghi: <strong id="os-st3-time">0.00s</strong></span>
+                                <span>Thông lượng: <strong id="os-st3-fps">0.0 FPS</strong></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="os-pipeline-summary-strip">
+                        <div class="os-sum-cell">
+                            <span class="os-sum-label">Thời gian tuần tự</span>
+                            <strong class="os-sum-val mono" id="os-rep-seq-time">0.00s</strong>
+                        </div>
+                        <div class="os-sum-cell">
+                            <span class="os-sum-label">Thời gian đa luồng</span>
+                            <strong class="os-sum-val mono" id="os-rep-par-time">0.00s</strong>
+                        </div>
+                        <div class="os-sum-cell">
+                            <span class="os-sum-label">Hệ số tăng tốc</span>
+                            <strong class="os-sum-val mono" id="os-rep-overlap">1.25x · 20.0%</strong>
+                        </div>
+                        <div class="os-sum-cell">
+                            <span class="os-sum-label">Mutex &amp; Monitor</span>
+                            <strong class="os-sum-val mono" id="os-rep-sync-total">0 locks · 0 signals</strong>
+                        </div>
+                        <div class="os-sum-cell">
+                            <span class="os-sum-label">Trần RAM Hàng Đợi</span>
+                            <strong class="os-sum-val mono" id="os-rep-ram-bound">84.38 MB · _SENTINEL</strong>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- BẢN TỔNG KẾT BỐI CẢNH VÀ DIỄN BIẾN TOÀN CẢNH VIDEO -->
                 <div id="executive-scene-narrative-card" class="app-subcard narrative-card">
                     <div class="narrative-header">
                         <div class="narrative-title-group">
                             <div class="narrative-title">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> <span>BẢN TỔNG KẾT BỐI CẢNH & DIỄN BIẾN TOÀN CẢNH VIDEO</span>
-                                <span class="badge badge-safe mono" id="narrative-threat-badge">● AN TOÀN TUYỆT ĐỐI</span>
+                                <span class="badge badge-safe mono" id="narrative-threat-badge">AN TOÀN TUYỆT ĐỐI</span>
                             </div>
                             <span class="narrative-subtitle">Hệ thống hóa toàn bộ không gian bối cảnh, phân vai các chủ thể và chuỗi diễn biến câu chuyện theo trục thời gian thực.</span>
                         </div>
@@ -601,7 +852,7 @@
                                 <tr>
                                     <th style="width: 130px;">PHÂN ĐOẠN</th>
                                     <th>BỐI CẢNH & HÀNH VI TỪNG ĐỐI TƯỢNG</th>
-                                    <th style="width: 120px;">MỨC ĐỘ</th>
+                                    <th style="width: 190px; min-width: 185px;">MỨC ĐỘ & CHỈ SỐ</th>
                                     <th style="width: 110px; text-align: center;">BẰNG CHỨNG</th>
                                     <th style="width: 130px; text-align: right;">THAO TÁC</th>
                                 </tr>
@@ -630,19 +881,19 @@
                     </div>
                     <div class="report-grid">
                         <div class="report-item">
-                            <span class="item-label">MỨC ĐỘ RỦI RO LAO ĐỘNG:</span>
-                            <span id="rep-threat-level" class="badge badge-safe">● AN TOÀN</span>
+                            <span class="item-label">ĐÁNH GIÁ AN TOÀN CHUNG:</span>
+                            <span id="rep-threat-level" class="badge badge-safe">AN TOÀN</span>
                         </div>
                         <div class="report-item">
-                            <span class="item-label">SỰ CỐ CHÍNH:</span>
+                            <span class="item-label">DIỄN BIẾN CHỦ ĐẠO:</span>
                             <span id="rep-primary-incident" class="rep-val">Bình thường</span>
                         </div>
                         <div class="report-item full-width">
-                            <span class="item-label">CHẨN ĐOÁN CHI TIẾT:</span>
+                            <span class="item-label">NHẬN ĐỊNH CHI TIẾT:</span>
                             <p id="rep-diagnosis" class="rep-text">Đang nạp chẩn đoán...</p>
                         </div>
                         <div class="report-item full-width">
-                            <span class="item-label">HÀNH ĐỘNG KHUYẾN NGHỊ:</span>
+                            <span class="item-label">KHUYẾN NGHỊ GIÁM SÁT:</span>
                             <p id="rep-recommendation" class="rep-action">Tiếp tục giám sát.</p>
                         </div>
                     </div>
@@ -687,37 +938,208 @@
                             </div>
                         </div>
 
-                        <!-- Multi-Track Actor Timeline — Băng Chuyền Hành Vi Đa Thực Thể -->
+                        <!-- Event-Centric Flow Streams — Băng Chuyền Diễn Biến Sự Kiện Toàn Cảnh -->
                         <div class="chart-box full-chart-box" id="actor-tracks-box">
                             <div class="chart-header-row">
-                                <div class="chart-title"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> BĂNG CHUYỀN HÀNH VI TỪNG ĐỐI TƯỢNG</div>
-                                <span class="chart-hint">Nhấp chuột vào các khối màu để tua video đến đúng phân đoạn hành vi của đối tượng</span>
+                                <div class="chart-title"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> BĂNG CHUYỀN DIỄN BIẾN SỰ KIỆN TOÀN CẢNH</div>
+                                <span class="chart-hint">Nhấp chuột vào các khối sự kiện hoặc mức độ rủi ro để tua video đến đúng phân đoạn</span>
                             </div>
-                            <div id="multi-track-actor-timeline" class="multi-track-wrapper">
+                            <div id="multi-track-actor-timeline" class="multi-track-wrapper event-flow-wrapper">
                                 <div class="empty-state-box empty-state-compact">
-                                    <span class="empty-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-                                    <p class="empty-title">Chưa có dữ liệu hành vi từng đối tượng</p>
-                                    <span class="empty-sub">Băng chuyền hành vi sẽ hiển thị trực quan dải thời gian của từng ID đối tượng sau khi phân tích video.</span>
+                                    <span class="empty-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+                                    <p class="empty-title">Chưa có dữ liệu dòng diễn biến sự kiện</p>
+                                    <span class="empty-sub">Dòng diễn biến tương tác và phổ màu cảnh báo an ninh toàn cảnh sẽ hiển thị trực quan sau khi hoàn tất phân tích video.</span>
                                 </div>
                             </div>
+                            <div id="event-flow-tooltip" class="chart-hover-tooltip hidden"></div>
                         </div>
                     </div>
 
-                    <!-- Danh sách Phân bổ Tỷ lệ Chi tiết cho E2E Tests -->
-                    <div class="action-bars-wrapper" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-                        <div class="subcard-title" style="font-size: 0.9rem; margin-bottom: 10px;"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> TỶ LỆ CÁC HÀNH VI CHI TIẾT TRONG VIDEO</div>
-                        <div id="action-bars-container" class="action-bars">
-                            <div class="empty-state-box empty-state-compact">
-                                <span class="empty-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span>
-                                <p class="empty-title">Chưa có dữ liệu thống kê hành vi</p>
-                                <span class="empty-sub">Dữ liệu phân bổ tỷ lệ các tư thế sẽ xuất hiện sau khi phân tích video.</span>
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
             </div>
         </section>
     </main>
+
+    <!-- SEGMENT DETAIL MODAL -->
+    <div id="segment-detail-modal" class="modal-overlay hidden" onclick="closeSegmentDetailModal(event)">
+        <div class="modal-container segment-modal-container" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="modal-badge mono" id="seg-modal-id">#SEG-01</span>
+                    <span id="seg-modal-timerange" class="mono text-muted" style="margin-left: 8px; font-size: 13px;">00:00 - 00:04</span>
+                    <span id="seg-modal-severity-badge" class="badge badge-safe" style="margin-left: 10px;">AN TOÀN</span>
+                </div>
+                <button class="modal-close-btn" onclick="closeSegmentDetailModal()" title="Đóng cửa sổ"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+            <div class="modal-body">
+                <div id="seg-modal-snapshot-container" class="seg-modal-snapshot-wrapper">
+                    <img id="seg-modal-snapshot-img" class="seg-modal-snapshot-img" src="" alt="Khung hình thời điểm tiêu điểm kèm Bounding Box" />
+                    <div class="seg-modal-snapshot-caption mono">Khung hình thời điểm tiêu điểm · Bounding Box &amp; Khung xương 17 điểm</div>
+                </div>
+                <div class="seg-modal-section">
+                    <h4 class="seg-modal-section-title">Diễn biến chủ đạo phân đoạn</h4>
+                    <p class="seg-modal-summary-text" id="seg-modal-summary">--</p>
+                </div>
+                <div class="seg-modal-section">
+                    <h4 class="seg-modal-section-title">Hành vi cụ thể từng đối tượng trong phân đoạn</h4>
+                    <div id="seg-modal-entity-matrix" class="seg-modal-entity-cards">
+                        <!-- Dynamic entity detail cards -->
+                    </div>
+                </div>
+                <div class="seg-modal-section">
+                    <h4 class="seg-modal-section-title">Phân tích diễn biến ngữ cảnh</h4>
+                    <p class="seg-modal-narrative-text" id="seg-modal-narrative">--</p>
+                    <div id="seg-modal-focal-box" class="sdn-focal-actors hidden">
+                        <span class="sdn-focal-label">Tiêu điểm vi sai:</span> <span id="seg-modal-focal-text">--</span>
+                    </div>
+                    <div id="seg-modal-pred-box" class="sdn-prediction mono hidden">
+                        <span class="sdn-pred-tag">Dự đoán 4s tiếp theo:</span> <span id="seg-modal-pred-text">--</span>
+                    </div>
+                </div>
+                <div class="seg-modal-section">
+                    <h4 class="seg-modal-section-title">Cơ sở động học & đo đạc</h4>
+                    <div id="seg-modal-telemetry" class="seg-modal-telemetry-grid">
+                        <!-- Dynamic telemetry items -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="seg-modal-seek-btn" class="btn btn-outline"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span>Xem đoạn này trên video</span></button>
+                <button class="btn btn-primary" onclick="closeSegmentDetailModal()">Đóng cửa sổ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIVE OS PIPELINE & OVERLAPPING FRAME-STREAM INSPECTOR MODAL -->
+    <div id="os-live-pipeline-modal" class="modal-overlay hidden" onclick="closeLivePipelineModal(event)">
+        <div class="modal-container os-live-modal-container" onclick="event.stopPropagation()">
+            <div class="modal-header os-live-modal-header">
+                <div class="modal-title os-live-modal-title-group">
+                    <span class="modal-badge mono" id="os-modal-stage-tag">OS FRAME PIPELINE</span>
+                    <span class="os-live-modal-heading">QUY TRÌNH XỬ LÝ TỪNG KHUNG HÌNH &amp; GHÉP LIÊN TIẾP THÀNH CHUYỂN ĐỘNG</span>
+                    <span id="os-modal-status-badge" class="badge badge-safe mono">ĐANG XỬ LÝ TRỰC TIẾP</span>
+                </div>
+                <button class="modal-close-btn" onclick="closeLivePipelineModal()" title="Đóng cửa sổ"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+
+            <div class="modal-body os-live-modal-body">
+                <!-- COMPACT 1-LINE OS KERNEL RIBBON -->
+                <div class="os-live-compact-ribbon mono">
+                    <div class="os-ribbon-pill">
+                        <span class="os-ribbon-lbl">Thông lượng GPU:</span>
+                        <strong id="os-modal-fps">-- FPS</strong>
+                        <span class="os-ribbon-sep">·</span>
+                        <strong id="os-modal-ms">-- ms/khung</strong>
+                    </div>
+                    <div class="os-ribbon-pill">
+                        <span class="os-ribbon-lbl">Stage 1 raw_buffer:</span>
+                        <strong id="os-modal-rawbuf-text">0 / 16</strong>
+                        <div class="os-ribbon-mini-bar"><div id="os-modal-rawbuf-bar" class="os-live-buf-fill raw-fill" style="width: 0%;"></div></div>
+                    </div>
+                    <div class="os-ribbon-pill">
+                        <span class="os-ribbon-lbl">Stage 3 writer_buffer:</span>
+                        <strong id="os-modal-writerbuf-text">0 / 16</strong>
+                        <div class="os-ribbon-mini-bar"><div id="os-modal-writerbuf-bar" class="os-live-buf-fill writer-fill" style="width: 0%;"></div></div>
+                    </div>
+                    <div class="os-ribbon-pill">
+                        <span class="os-ribbon-lbl">Đồng bộ Mutex / Signal:</span>
+                        <strong id="os-modal-mutex">0 lượt</strong>
+                        <span class="os-ribbon-sep">·</span>
+                        <strong id="os-modal-cond">0 / 0</strong>
+                    </div>
+                </div>
+
+                <!-- TOP DUAL VISUAL STUDIO: LEFT = SINGLE FRAME CEL PAINTER (RAW -> 17-POINT SKELETON), RIGHT = LIVE FLIPBOOK ANIMATION STITCHER -->
+                <div class="os-live-top-grid">
+                    <!-- Left: Step 1 & 2 - Single Frame Processing (Raw Frame -> 17-Point Skeleton Frame) -->
+                    <div class="os-live-monitor-card">
+                        <div class="os-live-monitor-header">
+                            <div class="os-live-monitor-title">
+                                <span class="indicator-pulse" id="os-modal-pulse-dot"></span>
+                                <span class="mono" id="os-modal-monitor-label">BƯỚC 1 &amp; 2 · XỬ LÝ KHUNG HÌNH RỜI: ẢNH GỐC ➔ VẼ 17 KHỚP XƯƠNG</span>
+                            </div>
+                            <div class="os-live-monitor-meta mono">
+                                <span id="os-modal-frame-counter">Khung #0 / 0</span>
+                                <span>·</span>
+                                <span id="os-modal-time-readout">00:00</span>
+                            </div>
+                        </div>
+                        <div class="os-live-viewport">
+                            <img id="os-modal-live-img" class="os-live-viewport-img hidden" src="" alt="Khung hình đã vẽ khung xương 17 điểm" />
+                            <!-- Picture-in-Picture Raw Unprocessed Frame Comparison -->
+                            <div id="os-modal-raw-pip" class="os-raw-pip-card hidden">
+                                <div class="os-raw-pip-head mono">STAGE 1 · KHUNG GỐC THÔ</div>
+                                <img id="os-modal-raw-compare-img" src="" alt="Khung gốc chưa vẽ khung xương" />
+                                <div class="os-raw-pip-arrow mono">Nạp thô ➔ Quét GPU 17 khớp</div>
+                            </div>
+                            <div id="os-modal-viewport-empty" class="os-live-viewport-empty">
+                                <svg class="ui-icon empty-svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                                <span class="mono">Đang nạp các khung hình thực tế đầu tiên từ đường ống...</span>
+                            </div>
+                            <div class="os-live-hud-overlay mono">
+                                <span id="os-modal-hud-ids">Chủ thể: --</span>
+                                <span id="os-modal-hud-latency">Chu kỳ suy luận: -- ms/khung</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Step 3 - Live Flipbook / Cel-Animation Continuous Stitcher -->
+                    <div class="os-live-monitor-card os-flipbook-card">
+                        <div class="os-live-monitor-header">
+                            <div class="os-live-monitor-title">
+                                <span class="indicator-pulse flipbook-pulse"></span>
+                                <span class="mono">BƯỚC 3 · GHÉP LIÊN TIẾP CÁC KHUNG HÌNH THÀNH CHUYỂN ĐỘNG</span>
+                            </div>
+                            <div class="os-flipbook-controls mono">
+                                <button type="button" class="flip-ctrl-btn" id="btn-flip-slow" onclick="setFlipbookSpeed('slow')">Lật từng tờ 5 FPS</button>
+                                <button type="button" class="flip-ctrl-btn active" id="btn-flip-normal" onclick="setFlipbookSpeed('normal')">Ghép mượt 14 FPS</button>
+                                <button type="button" class="flip-ctrl-btn active" id="btn-flip-onion" onclick="toggleFlipbookOnionSkin()" title="Chồng bóng mờ của khung hình liền trước như bàn vẽ phim hoạt hình">Bóng mờ khung trước</button>
+                            </div>
+                        </div>
+                        <div class="os-live-viewport os-flipbook-viewport">
+                            <!-- Onion-skin ghost layer (frame t-1) -->
+                            <img id="os-modal-flipbook-ghost-img" class="os-flipbook-ghost-img hidden" src="" alt="Bóng mờ khung trước" />
+                            <!-- Active stitched animation frame (frame t) -->
+                            <img id="os-modal-flipbook-img" class="os-live-viewport-img hidden" src="" alt="Chuyển động ghép liên tiếp từ chuỗi khung hình" />
+                            <div id="os-modal-flipbook-empty" class="os-live-viewport-empty">
+                                <svg class="ui-icon empty-svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                <span class="mono">Đang ghép chuỗi khung hình liên tiếp thành chuyển động...</span>
+                            </div>
+                            <div class="os-live-hud-overlay os-flipbook-hud mono">
+                                <span id="os-flipbook-step-label">Đang lật ghép: --</span>
+                                <div id="os-flipbook-dots" class="os-flipbook-dots"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BOTTOM SECTION: FULL-WIDTH CINEMA FILMSTRIP OF OVERLAPPING CONSECUTIVE REAL VIDEO FRAMES -->
+                <div class="os-conveyor-section">
+                    <div class="os-conveyor-header">
+                        <div class="os-conveyor-title">
+                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+                            <span>DẢI BĂNG PHIM CÁC KHUNG HÌNH THỰC TẾ ĐƯỢC VẼ KHUNG XƯƠNG &amp; XẾP CHỒNG LIÊN TIẾP</span>
+                        </div>
+                        <span class="os-conveyor-hint mono">Con trỏ sáng tự động quét và ghép từng khung hình liên tiếp · Di chuột vào bất kỳ khung nào để soi chi tiết</span>
+                    </div>
+
+                    <div class="os-filmstrip-reel-wrapper" id="os-conveyor-track">
+                        <div class="filmstrip-sprocket-rail"></div>
+                        <div class="os-frame-cascade-fan" id="os-conveyor-cascade-fan">
+                            <div class="os-frame-empty mono">Đang nạp chuỗi khung hình thực tế vào băng phim...</div>
+                        </div>
+                        <div class="filmstrip-sprocket-rail"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer os-live-modal-footer">
+                <span class="mono text-muted" id="os-modal-footer-note">Đường ống 3 giai đoạn: Tách khung thô Stage 1 ➔ Quét 17 khớp xương GPU Stage 2 ➔ Ghép chuỗi khung hình liên tiếp Stage 3</span>
+                <button class="btn btn-primary" onclick="closeLivePipelineModal()">Đóng cửa sổ</button>
+            </div>
+        </div>
+    </div>
 
     <!-- SNAPSHOT PREVIEW MODAL -->
     <div id="snapshot-modal" class="modal-overlay hidden" onclick="closeSnapshotModal(event)">
@@ -748,7 +1170,7 @@
                     </div>
                     <div class="meta-row">
                         <span class="meta-label">Mô hình phân tích:</span>
-                        <span class="meta-val mono text-primary">Mô hình phân tầng: Tier-1 Gemini 2.5 / Tier-2 Gemini 1.5 Failover / AI Tự Hành</span>
+                        <span class="meta-val mono text-primary">Mô hình phân tầng: Tier-1 Gemini 3.8 / Tier-2 Gemini 3.5 Failover / AI Tự Hành</span>
                     </div>
                 </div>
             </div>
@@ -762,7 +1184,6 @@
     <!-- FLOATING ACTION BUBBLE & REALTIME QUOTA DRAWER -->
     <div id="floating-bubble-container" class="floating-bubble-container">
         <button id="floating-telemetry-bubble" class="floating-telemetry-bubble" onclick="toggleTelemetryDrawer()" title="Xem Thông Số Hệ Thống & Quota API Realtime">
-            <span class="bubble-pulse-dot"></span>
             <span class="bubble-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
             <span class="bubble-label">Thông Số & Quota</span>
             <span class="bubble-badge mono" id="bubble-tier-badge">Tier-1</span>
@@ -863,6 +1284,6 @@
     <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="custom-toast-container" class="custom-toast-container" aria-live="polite"></div>
 
-    <script src="/static/app.js?v=2.2.0"></script>
+    <script src="/static/app.js?v=2.5.0"></script>
 </body>
 </html>

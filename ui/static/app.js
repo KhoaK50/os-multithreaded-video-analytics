@@ -106,6 +106,7 @@ let cameraSettings = { mirror: true, anti_glare: true, denoise: true };
 let isServerOnline = true;
 
 // Video Analytics & Timeline Segmenter State
+let currentAnalysisResult = null;
 let currentSegments = [];
 let currentHeatmapData = [];
 let allEntitiesDetected = [];
@@ -193,12 +194,16 @@ async function fetchTelemetry() {
         if (data.quota_matrix) {
             updateQuotaDrawerUI(data.quota_matrix, data);
         }
+        if (data.tier_badge) {
+            safeSetText("model-tier-badge", data.tier_badge);
+        }
 
         // Nếu không ở Tab Trực Tiếp, bỏ qua cập nhật các thành phần dành riêng cho Camera
         if (currentTab !== "live") return;
 
         // Cập nhật OS Metrics an toàn tuyệt đối
         safeSetText("live-fps", `${data.fps || 0} FPS`);
+        safeSetText("live-consumer-fps", `${data.consumer_fps || data.fps || 30.0} FPS`);
         safeSetText("live-cpu", `${data.cpu_percent || 0}%`);
         safeSetText("live-vram", `${data.gpu_vram_mb || 0} / ${data.gpu_vram_total_mb || 8192} MB`);
         safeSetText("live-ram", `${data.ram_percent || 0}%`);
@@ -208,10 +213,40 @@ async function fetchTelemetry() {
         const qMax = data.queue_max !== undefined ? data.queue_max : (data.bounded_queue_capacity || 16);
         const droppedFrames = data.dropped_frames !== undefined ? data.dropped_frames : 0;
         const dropRate = data.drop_rate_pct !== undefined ? data.drop_rate_pct : 0.0;
+        const hwmVal = data.high_water_mark !== undefined ? data.high_water_mark : 0;
 
         safeSetText("live-queue", `${qSize} / ${qMax} frames`);
+        safeSetText("live-hwm-badge", `HWM: ${hwmVal}`);
         safeSetText("live-drop-frames", `${droppedFrames} frames`);
         safeSetText("live-drop-rate", `Drop: ${Number(dropRate).toFixed(1)}%`);
+
+        // Cập nhật Nguyên ngữ Đồng bộ hóa & Trần bộ nhớ
+        safeSetText("os-sync-mutex", `${(data.mutex_lock_count || 0).toLocaleString()} lượt`);
+        safeSetText("os-sync-signals", `${(data.condition_signal_count || 0).toLocaleString()} tín hiệu`);
+        safeSetText("os-sync-waits", `${((data.not_empty_wait_count || 0) + (data.not_full_wait_count || 0)).toLocaleString()} lượt chờ`);
+        const ramCeil = data.ram_ceiling_mb !== undefined ? Number(data.ram_ceiling_mb).toFixed(2) : "42.19";
+        safeSetText("os-sync-ram-ceiling", `${ramCeil} MB`);
+
+        // Cập nhật Ma trận Trạng thái 4 Luồng Thực thi
+        const tStates = data.thread_states || {};
+        updateThreadStateBadge("ts-badge-producer", tStates.CamProducer || (data.producer_running ? "RUNNING" : "READY"));
+        updateThreadStateBadge("ts-badge-edge", tStates.CamEdgeAI || (data.producer_running ? "RUNNING" : "READY"));
+        updateThreadStateBadge("ts-badge-compositor", tStates.CamCompositor || (data.producer_running ? "RUNNING" : "READY"));
+        updateThreadStateBadge("ts-badge-gemini", tStates.CamGeminiAI || (data.producer_running ? "WAITING" : "READY"));
+
+        const prodBadge = document.getElementById("producer-thread-badge");
+        if (prodBadge) {
+            if (data.stress_test_active) {
+                prodBadge.textContent = "XUNG KIỂM THỬ";
+                prodBadge.className = "badge badge-warning mono";
+            } else if (data.camera_running || data.producer_running) {
+                prodBadge.textContent = "ĐANG THU NHẬN";
+                prodBadge.className = "badge badge-safe mono";
+            } else {
+                prodBadge.textContent = "SẴN SÀNG";
+                prodBadge.className = "badge badge-neutral mono";
+            }
+        }
 
         const queueBar = document.getElementById("queue-progress-bar");
         if (queueBar) {
@@ -241,7 +276,7 @@ async function fetchTelemetry() {
         const threatBadge = document.getElementById("live-threat-badge");
         if (threatBadge) {
             threatBadge.className = isDanger ? "badge badge-danger" : "badge badge-safe";
-            threatBadge.textContent = isDanger ? "● NGUY HIỂM" : "● AN TOÀN";
+            threatBadge.textContent = isDanger ? "NGUY HIỂM" : "AN TOÀN";
         }
 
         const angleDeg = Math.round(bio.angle || 90);
@@ -279,10 +314,14 @@ async function fetchTelemetry() {
         const toggleBtn = document.getElementById("btn-toggle-cam");
         const statusDot = document.getElementById("live-stream-status-dot");
 
-        if (data.camera_running) {
+        if (data.camera_running || isStreamingBrowserCam) {
             if (offlineOverlay) offlineOverlay.classList.add("hidden");
+            const streamImg = document.getElementById("live-stream-img");
+            if (streamImg && (!streamImg.src || streamImg.getAttribute("src") === "" || streamImg.src.endsWith("/"))) {
+                streamImg.src = "/api/stream/live?t=" + Date.now();
+            }
             if (toggleBtn) {
-                toggleBtn.innerHTML = `${ICONS.pause}<span>Tạm dừng Camera</span>`;
+                toggleBtn.innerHTML = `${ICONS.pause}<span>Tắt Camera</span>`;
                 toggleBtn.className = "btn btn-sm btn-danger-outline";
             }
             if (statusDot) {
@@ -293,14 +332,14 @@ async function fetchTelemetry() {
         } else {
             if (offlineOverlay) offlineOverlay.classList.remove("hidden");
             if (toggleBtn) {
-                toggleBtn.innerHTML = `${ICONS.play}<span>Khởi động Camera</span>`;
+                toggleBtn.innerHTML = `${ICONS.play}<span>Bật Camera</span>`;
                 toggleBtn.className = "btn btn-sm btn-primary";
             }
             if (statusDot) {
                 statusDot.style.background = "var(--accent-crimson)";
                 statusDot.style.boxShadow = "none";
             }
-            safeSetText("live-stream-status-text", "ĐANG TẠM DỪNG");
+            safeSetText("live-stream-status-text", "ĐÃ TẮT CAMERA");
         }
     } catch (e) {
         if (isServerOnline) {
@@ -320,28 +359,76 @@ async function toggleCamera(forceAction = null) {
     const toggleBtn = document.getElementById("btn-toggle-cam");
     let action = forceAction;
     if (!action) {
-        action = (toggleBtn && toggleBtn.textContent.includes("Tạm dừng")) ? "stop" : "start";
+        const isCurrentlyActive = (toggleBtn && (toggleBtn.textContent.includes("Tắt") || toggleBtn.textContent.includes("Tạm dừng"))) || isStreamingBrowserCam;
+        action = isCurrentlyActive ? "stop" : "start";
     }
 
-    try {
-        const res = await fetch(`/api/camera/toggle?action=${action}`, { method: "POST" });
-        await fetchTelemetry();
-        if (action === "start") {
-            const img = document.getElementById("live-stream-img");
-            if (img) img.src = "/api/stream/live?t=" + Date.now();
+    if (action === "stop") {
+        // 1. Dừng triệt để luồng webcam trình duyệt (chấm dứt gửi client frames)
+        stopBrowserWebcam();
+
+        // 2. Gửi lệnh dừng LiveCameraPipeline trên máy chủ
+        try {
+            await fetch(`/api/camera/toggle?action=stop`, { method: "POST" });
+        } catch (e) {
+            console.error("Lỗi dừng camera máy chủ:", e);
         }
-    } catch (e) {
-        console.error("Lỗi điều khiển camera:", e);
+
+        // 3. Cập nhật UI ngay tức thì để người dùng cảm nhận phản hồi ngay
+        if (toggleBtn) {
+            toggleBtn.innerHTML = `${ICONS.play}<span>Bật Camera</span>`;
+            toggleBtn.className = "btn btn-sm btn-primary";
+        }
+        const offlineOverlay = document.getElementById("cam-offline-overlay");
+        if (offlineOverlay) offlineOverlay.classList.remove("hidden");
+        const statusDot = document.getElementById("live-stream-status-dot");
+        if (statusDot) {
+            statusDot.style.background = "var(--accent-crimson)";
+        }
+        safeSetText("live-stream-status-text", "ĐÃ TẮT CAMERA");
+
+        // 4. Reset khung stream sang ảnh chờ
+        const img = document.getElementById("live-stream-img");
+        if (img) img.src = "/api/stream/live?t=" + Date.now();
+        await fetchTelemetry();
+        return;
+    }
+
+    if (action === "start") {
+        try {
+            const res = await fetch(`/api/camera/toggle?action=start`, { method: "POST" });
+            const data = await res.json();
+
+            // Nếu máy chủ báo không có camera vật lý trực tiếp (VD: chạy trên Google Colab / máy ảo VPS),
+            // tự động kích hoạt Webcam Trình Duyệt để người dùng không cần bấm 2 nút riêng biệt!
+            if (data && data.device_available === false) {
+                console.info("[i] Máy chủ không có camera vật lý. Tự động chuyển hướng sang Webcam Trình Duyệt...");
+                await toggleBrowserWebcam();
+            } else {
+                const img = document.getElementById("live-stream-img");
+                if (img) img.src = "/api/stream/live?t=" + Date.now();
+                const offlineOverlay = document.getElementById("cam-offline-overlay");
+                if (offlineOverlay) offlineOverlay.classList.add("hidden");
+            }
+
+            if (toggleBtn) {
+                toggleBtn.innerHTML = `${ICONS.pause}<span>Tắt Camera</span>`;
+                toggleBtn.className = "btn btn-sm btn-danger-outline";
+            }
+            await fetchTelemetry();
+        } catch (e) {
+            console.error("Lỗi khởi động camera:", e);
+            showToast("Lỗi kết nối máy chủ khi bật camera", "error");
+        }
     }
 }
 
-// Quản lý Webcam Trình Duyệt (HTML5 getUserMedia)
+// Quản lý Webcam Trình Duyệt (HTML5 getUserMedia - dành cho Colab / Máy ảo)
 let browserCamStream = null;
 let browserCamInterval = null;
 let isStreamingBrowserCam = false;
 
 async function toggleBrowserWebcam() {
-    const btn = document.getElementById("btn-browser-cam");
     if (isStreamingBrowserCam) {
         stopBrowserWebcam();
         return;
@@ -352,6 +439,9 @@ async function toggleBrowserWebcam() {
             showToast("Trình duyệt không hỗ trợ hoặc đang chặn quyền truy cập Camera. Hãy đảm bảo bạn truy cập qua link HTTPS hoặc localhost và đã bấm Cho Phép.", "error");
             return;
         }
+
+        // Đảm bảo backend đã khởi động pipeline để nhận khung hình
+        await fetch(`/api/camera/toggle?action=start`, { method: "POST" });
 
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
@@ -370,11 +460,16 @@ async function toggleBrowserWebcam() {
         }
 
         isStreamingBrowserCam = true;
-        if (btn) {
-            btn.innerHTML = `${ICONS.pause}<span>Tắt Webcam Trình Duyệt</span>`;
-            btn.classList.add("active-toggle");
-            btn.classList.remove("btn-primary");
-            btn.classList.add("btn-danger-outline");
+
+        const toggleBtn = document.getElementById("btn-toggle-cam");
+        if (toggleBtn) {
+            toggleBtn.innerHTML = `${ICONS.pause}<span>Tắt Camera</span>`;
+            toggleBtn.className = "btn btn-sm btn-danger-outline";
+        }
+        const fallbackBtn = document.getElementById("btn-browser-cam-fallback");
+        if (fallbackBtn) {
+            fallbackBtn.innerHTML = `${ICONS.pause}<span>Tắt Webcam Trình Duyệt</span>`;
+            fallbackBtn.classList.add("active-toggle");
         }
 
         // Tự động kết nối lại luồng stream hiển thị
@@ -385,7 +480,7 @@ async function toggleBrowserWebcam() {
         const offlineOverlay = document.getElementById("cam-offline-overlay");
         if (offlineOverlay) offlineOverlay.classList.add("hidden");
 
-        // Bắt đầu vòng lặp gửi khung hình thông minh (Adaptive Ping-Pong - Chống Nghẽn Mạng Tuyệt Đối)
+        // Bắt đầu vòng lặp gửi khung hình (Adaptive Ping-Pong)
         const canvas = document.getElementById("client-webcam-canvas");
         canvas.width = 480;
         canvas.height = 360;
@@ -435,12 +530,14 @@ function stopBrowserWebcam() {
         browserCamStream.getTracks().forEach(track => track.stop());
         browserCamStream = null;
     }
-    const btn = document.getElementById("btn-browser-cam");
-    if (btn) {
-        btn.innerHTML = `${ICONS.globe}<span>Bật Webcam Trình Duyệt</span>`;
-        btn.classList.remove("active-toggle");
-        btn.classList.remove("btn-danger-outline");
-        btn.classList.add("btn-primary");
+    const video = document.getElementById("client-webcam-video");
+    if (video) {
+        video.srcObject = null;
+    }
+    const fallbackBtn = document.getElementById("btn-browser-cam-fallback");
+    if (fallbackBtn) {
+        fallbackBtn.innerHTML = `${ICONS.globe}<span>Dùng Webcam Trình Duyệt</span>`;
+        fallbackBtn.classList.remove("active-toggle");
     }
 }
 
@@ -498,13 +595,13 @@ async function fetchCameraLogs() {
         const quotaBadge = document.getElementById("gemini-quota-badge");
         if (quotaBadge && data.gemini_status) {
             if (data.gemini_status === "quota_exceeded") {
-                quotaBadge.textContent = "● 429 Quota Exceeded — AI Tự Hành Cục Bộ";
+                quotaBadge.textContent = "429 Quota Exceeded — AI Tự Hành Cục Bộ";
                 quotaBadge.className = "badge badge-warn mono";
             } else if (data.gemini_status === "heuristic_offline") {
-                quotaBadge.textContent = "● AI Tự Hành Ngoại Tuyến — 0 Token";
+                quotaBadge.textContent = "AI Tự Hành Ngoại Tuyến — 0 Token";
                 quotaBadge.className = "badge badge-safe mono";
             } else {
-                quotaBadge.textContent = "● 13 RPM Free Quota";
+                quotaBadge.textContent = "13 RPM Free Quota";
                 quotaBadge.className = "badge badge-safe mono";
             }
         }
@@ -529,14 +626,14 @@ async function fetchCameraLogs() {
 
 function getModelTierBadge(tierKey) {
     const key = (tierKey || "").toLowerCase();
-    if (key.includes("tier_1") || key.includes("2.5") || key.includes("2.0")) {
-        return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● Tier-1 Gemini 2.5</span>`;
-    } else if (key.includes("tier_2") || key.includes("1.5")) {
-        return `<span class="badge badge-warning mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● Tier-2 Gemini 1.5</span>`;
+    if (key.includes("tier_1") || key.includes("3.8") || key.includes("2.5") || key.includes("2.0")) {
+        return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Tier-1 Gemini 3.8</span>`;
+    } else if (key.includes("tier_2") || key.includes("3.5") || key.includes("1.5")) {
+        return `<span class="badge badge-warning mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Tier-2 Gemini 3.5</span>`;
     } else if (key.includes("local") || key.includes("heuristic") || key.includes("tier_3")) {
-        return `<span class="badge badge-outline mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● AI Tự Hành</span>`;
+        return `<span class="badge badge-outline mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">AI Tự Hành</span>`;
     }
-    return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">● Tier-1 Gemini 2.5</span>`;
+    return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Tier-1 Gemini 3.8</span>`;
 }
 
 function renderBehaviorTable(logs) {
@@ -706,6 +803,235 @@ function closeSnapshotModal(e) {
     if (modal) modal.classList.add("hidden");
 }
 
+// ==============================================================================
+// SEGMENT DETAIL MODAL VIEWER
+// ==============================================================================
+function openSegmentDetailModal(segId) {
+    if (!currentSegments || currentSegments.length === 0) return;
+    const seg = currentSegments.find(s => s.segment_id === segId);
+    if (!seg) return;
+
+    const modal = document.getElementById("segment-detail-modal");
+    if (!modal) return;
+
+    safeSetText("seg-modal-id", seg.segment_id || "#SEG--");
+    safeSetText("seg-modal-timerange", seg.time_range || "--:-- - --:--");
+    
+    const badgeEl = document.getElementById("seg-modal-severity-badge");
+    if (badgeEl) {
+        const numScore = parseFloat(seg.danger_score || 0);
+        const isDanger = numScore >= 8.0 || seg.severity === "danger";
+        const isWarn = (!isDanger && (numScore >= 4.0 || seg.severity === "warning"));
+        if (isDanger) {
+            badgeEl.className = "badge badge-danger mono";
+            badgeEl.textContent = "NGUY HIỂM";
+        } else if (isWarn) {
+            badgeEl.className = "badge badge-warning mono";
+            badgeEl.textContent = "CẢNH BÁO";
+        } else {
+            badgeEl.className = "badge badge-safe mono";
+            badgeEl.textContent = "AN TOÀN";
+        }
+    }
+
+    // 0. Snapshot Image Preview
+    const snapImg = document.getElementById("seg-modal-snapshot-img");
+    const snapContainer = document.getElementById("seg-modal-snapshot-container");
+    if (snapImg && snapContainer) {
+        if (seg.snapshot_url) {
+            snapImg.src = seg.snapshot_url;
+            snapContainer.classList.remove("hidden");
+        } else {
+            snapContainer.classList.add("hidden");
+        }
+    }
+
+    // 1. Summary
+    const summaryVal = (seg.scene_summary || seg.context_description || "Phân đoạn ghi nhận vận động ổn định của các đối tượng.").trim();
+    safeSetText("seg-modal-summary", summaryVal);
+
+    // 2. Entity Detail Cards (Rộng rãi, tập trung vào vị trí trên ảnh chụp và hành vi cốt lõi)
+    const cardsContainer = document.getElementById("seg-modal-entity-matrix");
+    if (cardsContainer) {
+        cardsContainer.innerHTML = "";
+        const entities = (seg.entities || []).filter(e => e && String(e.id || "") !== "KHÔNG GIAN" && e.raw_id !== "ALL");
+        if (entities.length === 0) {
+            cardsContainer.innerHTML = `<div class="empty-entity-sub">Không có thông tin đối tượng trong phân đoạn.</div>`;
+        } else {
+            entities.forEach(ent => {
+                const rawId = String(ent.id || "");
+                const idMatch = rawId.match(/ID\s*#?(\d+)/i);
+                const idTag = idMatch ? `ID #${idMatch[1].padStart(2, '0')}` : (ent.raw_id || "ID #--");
+                let actorName = ent.actor_label || rawId.replace(/\(?ID\s*#?\d+\)?/i, '').replace(/[\(\)—-]/g, '').trim();
+                if (/^(đối tượng|chủ thể)\s*#?\d+/i.test(actorName)) actorName = "";
+
+                const rawAnchor = (ent.distinctive_anchor || "").replace(/[\(\)\[\]]/g, '').trim();
+                const anchorText = (/^(khu vực|đối tượng|chủ thể)\s*#?\d+/i.test(rawAnchor) || rawAnchor === actorName) ? "" : rawAnchor;
+
+                const actionText = (ent.action || "Sinh hoạt tự nhiên").replace(/[\(\)]/g, '').trim();
+                const postureText = (ent.posture || "").replace(/[\(\)]/g, '').trim();
+                const postureCore = postureText.replace(/^(đang|tư\s*thế)\s+/i, '').trim();
+                const isPostureRedundant = !postureCore ||
+                    actionText.toLowerCase().includes(postureText.toLowerCase()) ||
+                    actionText.toLowerCase().includes(postureCore.toLowerCase());
+                const combinedBehavior = (!isPostureRedundant)
+                    ? `${actionText} · ${postureText}`
+                    : actionText;
+
+                const effEntSev = seg.severity === "safe"
+                    ? "safe"
+                    : (seg.severity === "warning" && ent.severity === "danger" ? "warning" : (ent.severity || "safe"));
+
+                const cleanRoleStr = (ent.role || "").replace(/[\(\)]/g, '·').replace(/\s*·\s*$/, '').trim();
+                let roleBadgeText = "";
+                let roleClass = "role-safe";
+                if (effEntSev === "danger") {
+                    if (cleanRoleStr && cleanRoleStr !== "An toàn" && cleanRoleStr !== "Bình thường") {
+                        roleBadgeText = cleanRoleStr;
+                    } else {
+                        roleBadgeText = "Trực tiếp xung đột";
+                    }
+                    roleClass = "role-danger";
+                } else if (effEntSev === "warning") {
+                    if (cleanRoleStr && cleanRoleStr !== "An toàn" && cleanRoleStr !== "Bình thường") {
+                        roleBadgeText = cleanRoleStr;
+                    } else {
+                        roleBadgeText = "Đối đầu / Phòng thủ";
+                    }
+                    roleClass = "role-warn";
+                } else {
+                    if (seg.severity === "danger" || seg.severity === "warning") {
+                        if (cleanRoleStr && (cleanRoleStr.toLowerCase().includes("ngoài cuộc") || cleanRoleStr.toLowerCase().includes("quan sát") || cleanRoleStr.toLowerCase().includes("can ngăn"))) {
+                            roleBadgeText = cleanRoleStr.toLowerCase().startsWith("an toàn") ? cleanRoleStr : `An toàn · ${cleanRoleStr}`;
+                        } else {
+                            roleBadgeText = "An toàn · Người ngoài cuộc / Quan sát";
+                        }
+                    } else {
+                        const safeRoleClean = cleanRoleStr
+                            .replace(/^(người\s+ngoài\s+cuộc|ngoài\s+cuộc)\s*[·/\-:]?\s*/i, '')
+                            .replace(/\b(người\s+ngoài\s+cuộc|ngoài\s+cuộc)\b/gi, '')
+                            .replace(/^[·/\-:\s]+|[·/\-:\s]+$/g, '')
+                            .trim();
+                        if (safeRoleClean && !["An toàn", "Bình thường", "Người quan sát", "Không gian"].includes(safeRoleClean)) {
+                            roleBadgeText = safeRoleClean;
+                        } else {
+                            roleBadgeText = "An toàn";
+                        }
+                    }
+                    roleClass = "role-safe";
+                }
+
+                const entBadgeClass = effEntSev === "danger" ? "tag-danger" : (effEntSev === "warning" ? "tag-warning" : "tag-safe");
+                const cardBorderClass = effEntSev === "danger" ? "edc-card-danger" : (effEntSev === "warning" ? "edc-card-warn" : "edc-card-safe");
+                const headerTitle = actorName || anchorText || idTag;
+
+                const card = document.createElement("div");
+                card.className = `entity-detail-card ${cardBorderClass}`;
+                card.innerHTML = `
+                    <div class="edc-header">
+                        <div class="edc-identity">
+                            <span class="entity-tag ${entBadgeClass} mono">${idTag}</span>
+                            <strong class="edc-actor-title">${escapeHtml(headerTitle)}</strong>
+                        </div>
+                        <span class="entity-role-badge ${roleClass}">${escapeHtml(roleBadgeText)}</span>
+                    </div>
+                    <div class="edc-body">
+                        ${anchorText && anchorText !== headerTitle ? `
+                        <div class="edc-field-row">
+                            <span class="edc-label">Vị trí trên ảnh chụp:</span>
+                            <span class="edc-val">${escapeHtml(anchorText)}</span>
+                        </div>` : ''}
+                        <div class="edc-field-row">
+                            <span class="edc-label">Hành vi &amp; tư thế:</span>
+                            <span class="edc-val edc-action-text">${escapeHtml(combinedBehavior)}</span>
+                        </div>
+                    </div>
+                `;
+                cardsContainer.appendChild(card);
+            });
+        }
+    }
+
+    // 3. Detailed Narrative (Loại bỏ việc lặp lại câu tóm tắt hoặc câu sáo rỗng)
+    let narrativeText = (seg.detailed_narrative || seg.context_description || summaryVal).trim();
+    if (narrativeText.length > summaryVal.length && narrativeText.startsWith(summaryVal)) {
+        narrativeText = narrativeText.slice(summaryVal.length).replace(/^[\s.—-]+/, '').trim();
+    }
+    safeSetText("seg-modal-narrative", narrativeText || summaryVal);
+
+    const focalBox = document.getElementById("seg-modal-focal-box");
+    const focalText = document.getElementById("seg-modal-focal-text");
+    if (focalBox && focalText) {
+        if (seg.focal_actors_desc && !narrativeText.includes(seg.focal_actors_desc)) {
+            focalText.textContent = seg.focal_actors_desc;
+            focalBox.classList.remove("hidden");
+        } else {
+            focalBox.classList.add("hidden");
+        }
+    }
+
+    const predBox = document.getElementById("seg-modal-pred-box");
+    const predText = document.getElementById("seg-modal-pred-text");
+    if (predBox && predText) {
+        if (seg.prediction_next_4s) {
+            predText.textContent = seg.prediction_next_4s;
+            predBox.classList.remove("hidden");
+        } else {
+            predBox.classList.add("hidden");
+        }
+    }
+
+    // 4. Telemetry Breakdown Grid
+    const telemContainer = document.getElementById("seg-modal-telemetry");
+    if (telemContainer) {
+        telemContainer.innerHTML = "";
+        const tb = seg.telemetry_breakdown || {};
+        const maxVelVal = tb.max_velocity !== undefined ? tb.max_velocity : (tb.strike_velocity || 0);
+        const maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
+        const minDistVal = tb.min_distance !== undefined ? tb.min_distance : (tb.proximity_dist || null);
+        const minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : '> 1.5 m');
+        const dominantPosture = (tb.dominant_posture || tb.posture_state || 'Bình thường').replace(/[\(\)]/g, '').trim();
+        const scoreVal = typeof seg.danger_score === 'number' ? seg.danger_score : parseFloat(seg.danger_score || 0);
+
+        const items = [
+            { label: "Vận tốc cử động tối đa", val: maxVelStr, tip: "Tốc độ di chuyển hoặc vung tay chân lớn nhất ghi nhận được" },
+            { label: "Khoảng cách tiếp cận", val: minDistStr, tip: "Khoảng cách đo đạc gần nhất giữa các đối tượng" },
+            { label: "Tư thế nhận diện", val: dominantPosture, tip: "Tư thế chủ đạo được thẩm định trong phân đoạn" },
+            { label: "Điểm nguy cơ tổng hợp", val: `${scoreVal.toFixed(1)} / 10`, tip: "Điểm nguy cơ đa biến kết hợp động học và thị giác" }
+        ];
+
+        items.forEach(it => {
+            const card = document.createElement("div");
+            card.className = "telem-modal-card";
+            card.title = it.tip;
+            card.innerHTML = `
+                <span class="tmc-label">${escapeHtml(it.label)}</span>
+                <strong class="tmc-val mono">${escapeHtml(it.val)}</strong>
+            `;
+            telemContainer.appendChild(card);
+        });
+    }
+
+    // 5. Seek button
+    const seekBtn = document.getElementById("seg-modal-seek-btn");
+    if (seekBtn) {
+        seekBtn.onclick = () => {
+            closeSegmentDetailModal();
+            focusTimelineSegment(seg.start_sec, seg.end_sec, seg.segment_id, seg.scene_summary);
+        };
+    }
+
+    modal.classList.remove("hidden");
+}
+
+function closeSegmentDetailModal(e) {
+    if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains("modal-close-btn") && !e.target.classList.contains("btn-primary")) {
+        return;
+    }
+    const modal = document.getElementById("segment-detail-modal");
+    if (modal) modal.classList.add("hidden");
+}
+
 function toggleTelemetryPanel() {
     const panel = document.getElementById("telemetry-floating-panel");
     const backdrop = document.getElementById("telemetry-backdrop");
@@ -775,6 +1101,7 @@ function openTelemetryPanel() {
 document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         closeSnapshotModal();
+        closeSegmentDetailModal();
         closeTelemetryPanel();
     }
 });
@@ -852,8 +1179,10 @@ async function uploadFile(file) {
     const formData = new FormData();
     formData.append("file", file);
 
+    const sizeMB = Math.max(0.1, file.size / (1024 * 1024));
+    const estUploadSec = Math.max(1, Math.round(sizeMB / 18 + 1));
     const dropzone = document.getElementById("video-dropzone");
-    dropzone.innerHTML = `<div class="dropzone-content"><span class="spinner"></span><h4>Đang tải video lên hệ thống...</h4></div>`;
+    dropzone.innerHTML = `<div class="dropzone-content"><span class="spinner"></span><h4>Đang nạp tệp video (${sizeMB.toFixed(1)} MB) — Dự kiến hoàn tất: ~${estUploadSec} giây...</h4></div>`;
 
     try {
         const res = await fetch("/api/video/upload", {
@@ -875,15 +1204,14 @@ async function uploadFile(file) {
 
 function resetDropzoneUI() {
     const dropzone = document.getElementById("video-dropzone");
+    if (!dropzone) return;
     dropzone.innerHTML = `
-        <input type="file" id="video-file-input" accept="video/mp4,video/avi,video/quicktime,video/mkv" style="display:none" onchange="handleFileSelected(event)">
+        <input type="file" id="video-file-input" accept="video/mp4,video/avi,video/quicktime,video/x-matroska,video/webm,video/x-flv,video/x-ms-wmv,video/x-m4v" style="display:none" onchange="handleFileSelected(event)">
         <div class="dropzone-content">
             <span class="drop-icon">${ICONS.upload}</span>
             <h4>Kéo thả video vào đây, hoặc <span class="highlight">nhấn để chọn file</span></h4>
-            <p>Hỗ trợ định dạng .mp4, .avi, .mov, .mkv. Dung lượng tối đa 150MB.</p>
-            <button type="button" class="btn btn-sm btn-outline" style="margin-top: 10px;" onclick="event.stopPropagation(); loadSampleVideo();">
-                ${ICONS.film}<span>Sử dụng video mẫu: demo_synthetic.mp4</span>
-            </button>
+            <p class="drop-hint">Định dạng video được hỗ trợ: <strong>.mp4, .avi, .mov, .mkv, .webm, .flv, .wmv, .m4v</strong> (Tối đa 150MB)</p>
+            <p class="drop-subhint text-muted">Lưu ý: Không hỗ trợ tệp ảnh động .gif (phân tích động học AI yêu cầu video có luồng thời gian thực chuẩn).</p>
         </div>
     `;
 }
@@ -967,7 +1295,8 @@ async function handleURLImport() {
         // Nếu video ngắn (<= 180s = 3 phút): Tải trực tiếp toàn bộ
         if (!probe.is_long) {
             if (rangeBox) rangeBox.classList.add("hidden");
-            btnText.textContent = "Đang tải video...";
+            const estDlSec = Math.max(2, Math.round((probe.duration || 30) / 15 + 2));
+            btnText.textContent = `Đang tải video (Dự kiến: ~${estDlSec}s)...`;
             const res = await fetch("/api/video/import_url", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1067,8 +1396,10 @@ async function confirmURLRangeExtract() {
     const btnText = document.getElementById("url-slice-text");
     const confirmBtn = document.getElementById("btn-confirm-slice");
 
+    const sliceDur = Math.max(1, endSec - startSec);
+    const estSliceSec = Math.max(2, Math.round(sliceDur / 18 + 2));
     spinner.classList.remove("hidden");
-    btnText.textContent = `Đang trích xuất ${formatTime(startSec)} — ${formatTime(endSec)}...`;
+    btnText.textContent = `Đang trích xuất ${formatTime(startSec)} — ${formatTime(endSec)} (Dự kiến: ~${estSliceSec}s)...`;
     confirmBtn.disabled = true;
 
     try {
@@ -1152,6 +1483,18 @@ function initSliders(duration) {
     rulerMid.textContent = formatTime(duration / 2);
     rulerEnd.textContent = formatTime(duration);
 
+    // Populate filmstrip ticks (DaVinci / CapCut style)
+    const ticksContainer = document.getElementById("timeline-ticks");
+    if (ticksContainer) {
+        ticksContainer.innerHTML = "";
+        const totalTicks = 24;
+        for (let i = 0; i <= totalTicks; i++) {
+            const tick = document.createElement("div");
+            tick.className = (i % 4 === 0) ? "timeline-tick tick-major" : "timeline-tick";
+            ticksContainer.appendChild(tick);
+        }
+    }
+
     updateTimelineReadout();
 }
 
@@ -1210,27 +1553,48 @@ function applyPreset(preset) {
 function updateTimelineReadout() {
     const rangeStart = document.getElementById("range-start");
     const rangeEnd = document.getElementById("range-end");
-    const startVal = parseFloat(rangeStart.value);
-    const endVal = parseFloat(rangeEnd.value);
+    if (!rangeStart || !rangeEnd) return;
+
+    const startVal = parseFloat(rangeStart.value) || 0;
+    const endVal = parseFloat(rangeEnd.value) || 0;
     const selDuration = Math.max(0.1, endVal - startVal);
+    const maxVal = parseFloat(rangeStart.max) || 1.0;
 
-    document.getElementById("trim-start-display").textContent = formatTime(startVal);
-    document.getElementById("trim-end-display").textContent = formatTime(endVal);
-    document.getElementById("trim-duration-display").textContent = `${selDuration.toFixed(1)} giây`;
+    const startDisp = document.getElementById("trim-start-display");
+    const endDisp = document.getElementById("trim-end-display");
+    const durDisp = document.getElementById("trim-duration-display");
+    if (startDisp) startDisp.textContent = formatTime(startVal);
+    if (endDisp) endDisp.textContent = formatTime(endVal);
+    if (durDisp) durDisp.textContent = `${selDuration.toFixed(1)} giây`;
 
-    // Token Guard Meter logic
+    // Update highlight region on timeline rail (CapCut / DaVinci Resolve)
+    const trimHighlight = document.getElementById("timeline-trim-highlight");
+    if (trimHighlight && maxVal > 0) {
+        const startPct = Math.max(0, Math.min(100, (startVal / maxVal) * 100));
+        const endPct = Math.max(0, Math.min(100, (endVal / maxVal) * 100));
+        trimHighlight.style.left = `${startPct}%`;
+        trimHighlight.style.width = `${Math.max(0, endPct - startPct)}%`;
+    }
+
+    // Token Guard Meter logic & Dynamic Processing Time Estimate
+    const estFrames = Math.max(25, Math.round(selDuration * 25));
+    const estSec = Math.max(5, Math.round(estFrames / 42 + 4));
+    const estTimeLabel = estSec >= 60
+        ? `~${Math.floor(estSec / 60)}p ${estSec % 60}s`
+        : `~${estSec} giây`;
+
     const meterBadge = document.getElementById("token-meter");
-    const meterText = document.getElementById("token-meter-text");
-
-    if (selDuration <= 60.0) {
-        meterBadge.className = "token-meter-badge";
-        meterBadge.innerHTML = `<span class="meter-dot dot-safe"></span><span>TỐI ƯU HOÀN HẢO — Xử lý ~15s, &lt;1,200 tokens</span>`;
-    } else if (selDuration <= 90.0) {
-        meterBadge.className = "token-meter-badge warning";
-        meterBadge.innerHTML = `<span class="meter-dot dot-warn"></span><span>ĐẠT TIÊU CHUẨN — Xử lý ~25s, ~1,500 tokens</span>`;
-    } else {
-        meterBadge.className = "token-meter-badge danger";
-        meterBadge.innerHTML = `<span class="meter-dot dot-danger"></span><span>VƯỢT QUÁ KHUYẾN NGHỊ — &gt;90s làm chậm GPU & tốn token</span>`;
+    if (meterBadge) {
+        if (selDuration <= 60.0) {
+            meterBadge.className = "token-meter-badge";
+            meterBadge.innerHTML = `<span class="meter-dot dot-safe"></span><span>TỐI ƯU HOÀN HẢO — Dự kiến xử lý ${estTimeLabel}, &lt;1,200 tokens</span>`;
+        } else if (selDuration <= 90.0) {
+            meterBadge.className = "token-meter-badge warning";
+            meterBadge.innerHTML = `<span class="meter-dot dot-warn"></span><span>ĐẠT TIÊU CHUẨN — Dự kiến xử lý ${estTimeLabel}, ~1,500 tokens</span>`;
+        } else {
+            meterBadge.className = "token-meter-badge danger";
+            meterBadge.innerHTML = `<span class="meter-dot dot-danger"></span><span>THỜI LƯỢNG DÀI — Dự kiến xử lý ${estTimeLabel}</span>`;
+        }
     }
 }
 
@@ -1239,6 +1603,19 @@ function formatTime(seconds) {
     const secs = Math.floor(seconds % 60);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
+
+function formatEtaSeconds(secVal) {
+    const s = Math.max(1, Math.round(secVal));
+    if (s >= 60) {
+        const m = Math.floor(s / 60);
+        const rem = s % 60;
+        return `${m} phút ${rem.toString().padStart(2, '0')} giây`;
+    }
+    return `~${s} giây`;
+}
+
+let jobStartTime = 0;
+let smoothedJobFps = 0;
 
 // ==============================================================================
 // STEP 3: LAUNCH PROCESSING & MONITOR JOB
@@ -1262,10 +1639,17 @@ async function launchProcessing() {
         anomaly_focus: anomalyFocus
     };
 
+    jobStartTime = Date.now();
+    smoothedJobFps = 0;
+    const clipDur = Math.max(1, endVal - startVal);
+    const initEstSec = Math.max(5, Math.round((clipDur * 25) / 42 + 4));
+
     // Show processing section
     const procSec = document.getElementById("processing-section");
     procSec.classList.remove("hidden");
     document.getElementById("results-section").classList.add("hidden");
+    safeSetText("proc-eta-badge", `Dự kiến còn: ${formatEtaSeconds(initEstSec)}`);
+    safeSetText("proc-eta-detail", `Đã chạy: 0 giây • Dự kiến hoàn tất sau: ${formatEtaSeconds(initEstSec)}`);
     procSec.scrollIntoView({ behavior: 'smooth' });
 
     try {
@@ -1295,19 +1679,143 @@ async function pollJobProgress() {
         const job = await res.json();
 
         if (job.status === "processing") {
-            const pct = job.progress_percent || 0;
-            document.getElementById("proc-progress-fill").style.width = `${pct}%`;
-            document.getElementById("proc-pct-text").textContent = `${pct}%`;
-            document.getElementById("proc-frames-text").textContent = `Khung hình: ${job.current_frame} / ${job.total_frames}`;
-            document.getElementById("proc-fps-badge").textContent = `${job.current_fps} FPS`;
+            const rawPct = job.progress_percent || 0;
+            // STRICT GUARANTEE: Never show 100% while still processing.
+            // When still running background tasks, cap strictly at 99%.
+            const pct = Math.min(99, Math.floor(rawPct));
+            const progressFill = document.getElementById("proc-progress-fill");
+            if (progressFill) progressFill.style.width = `${pct}%`;
+            const pctText = document.getElementById("proc-pct-text");
+            if (pctText) pctText.textContent = `${pct}%`;
+            const framesText = document.getElementById("proc-frames-text");
+            if (framesText) {
+                const stageStr = job.stage ? ` • ${job.stage}` : '';
+                framesText.textContent = `Khung hình: ${job.current_frame} / ${job.total_frames}${stageStr}`;
+            }
+            const fpsBadge = document.getElementById("proc-fps-badge");
+            if (fpsBadge && job.current_fps != null) {
+                fpsBadge.textContent = `${job.current_fps} FPS`;
+            }
+
+            // Calculate live elapsed time & smoothed ETA
+            const elapsedSec = jobStartTime > 0 ? Math.max(0, Math.round((Date.now() - jobStartTime) / 1000)) : 0;
+            const curFps = parseFloat(job.current_fps || 0);
+            if (curFps > 1.0) {
+                smoothedJobFps = smoothedJobFps > 0 ? (0.7 * smoothedJobFps + 0.3 * curFps) : curFps;
+            }
+            const effFps = smoothedJobFps > 1.0 ? smoothedJobFps : 38.0;
+            const totalFrames = parseInt(job.total_frames || 0, 10);
+            const curFrame = parseInt(job.current_frame || 0, 10);
+            const stgLower = (job.stage || "").toLowerCase();
+
+            let etaSec = 4;
+            if (stgLower.includes("mã hóa") || stgLower.includes("đối sánh")) {
+                etaSec = 2;
+            } else if (stgLower.includes("hội chẩn")) {
+                etaSec = 3;
+            } else if (totalFrames > 0 && curFrame < totalFrames) {
+                const remFrames = Math.max(0, totalFrames - curFrame);
+                etaSec = (remFrames / effFps) + 4.0;
+            } else if (pct > 3 && elapsedSec > 1) {
+                etaSec = Math.max(2, ((100 - pct) / pct) * elapsedSec);
+            }
+
+            const etaFormatted = formatEtaSeconds(etaSec);
+            safeSetText("proc-eta-badge", `Dự kiến còn: ${etaFormatted}`);
+            safeSetText("proc-eta-detail", `Đã chạy: ${elapsedSec} giây • Dự kiến hoàn tất sau: ${etaFormatted}`);
+
+            // Live 3-Stage OS Pipeline Strip Telemetry
+            const pl = job.pipeline_live || {};
+            const totalF = job.total_frames || 0;
+            const curF = job.current_frame || 0;
+            const readerF = pl.reader_frames != null ? pl.reader_frames : curF;
+            const inferF = pl.infer_frames != null ? pl.infer_frames : curF;
+            const writerF = pl.writer_frames != null ? pl.writer_frames : curF;
+            const rawQ = pl.raw_q != null ? pl.raw_q : 0;
+            const writerQ = pl.writer_q != null ? pl.writer_q : 0;
+            const qMax = pl.q_max || 16;
+            const stride = pl.infer_stride || 1;
+
+            safeSetText("pipe-live-reader", totalF > 0 ? `Đọc: ${readerF} / ${totalF}` : "Đang khởi tạo...");
+            safeSetText("pipe-live-rawbuf", `Hàng đợi: ${rawQ} / ${qMax}`);
+            if (stgLower.includes("hội chẩn")) {
+                safeSetText("pipe-live-infer", "Gemini Multimodal AI");
+            } else if (stgLower.includes("mã hóa") || stgLower.includes("đối sánh")) {
+                safeSetText("pipe-live-infer", `Hoàn tất ${inferF} frames`);
+            } else {
+                const strideTag = stride > 1 ? ` · Stride ${stride}x` : "";
+                safeSetText("pipe-live-infer", `GPU: ${job.current_fps || 0} FPS${strideTag}`);
+            }
+            safeSetText("pipe-live-writerbuf", `Hàng đợi: ${writerQ} / ${qMax}`);
+            if (stgLower.includes("mã hóa")) {
+                safeSetText("pipe-live-writer", "FFmpeg H.264 Encoding...");
+            } else {
+                safeSetText("pipe-live-writer", `Ghi: ${writerF} / ${totalF}`);
+            }
+
+            const rawPill = document.getElementById("pipe-pill-rawbuf");
+            const wrPill = document.getElementById("pipe-pill-writerbuf");
+            if (rawPill) rawPill.classList.toggle("buf-active", rawQ > 0);
+            if (wrPill) wrPill.classList.toggle("buf-active", writerQ > 0);
+
+            updateLivePipelineModal({
+                is_completed: false,
+                progress_pct: pct,
+                current_frame: curF,
+                total_frames: totalF,
+                current_fps: job.current_fps || Number(effFps.toFixed(1)),
+                ms_per_frame: pl.ms_per_frame || (effFps > 0 ? Number((1000 / effFps).toFixed(1)) : 32.0),
+                raw_q: rawQ,
+                writer_q: writerQ,
+                q_max: qMax,
+                mutex_locks: pl.mutex_locks || 0,
+                cond_waits: pl.cond_waits || 0,
+                cond_signals: pl.cond_signals || 0,
+                frame_deck: pl.frame_deck || [],
+                trace_logs: pl.trace_logs || [],
+                stage: job.stage || ""
+            });
         } else if (job.status === "completed") {
             clearInterval(jobPollInterval);
-            document.getElementById("proc-progress-fill").style.width = `100%`;
-            document.getElementById("proc-pct-text").textContent = `100%`;
+            const totalElapsed = jobStartTime > 0 ? Math.max(1, Math.round((Date.now() - jobStartTime) / 1000)) : 0;
+            const progressFill = document.getElementById("proc-progress-fill");
+            if (progressFill) progressFill.style.width = `100%`;
+            const pctText = document.getElementById("proc-pct-text");
+            if (pctText) pctText.textContent = `100%`;
+            safeSetText("proc-eta-badge", `Hoàn tất · ${totalElapsed}s`);
+            safeSetText("proc-eta-detail", `Tổng thời gian thực thi: ${totalElapsed} giây • Đã hoàn tất 100%`);
+            const framesText = document.getElementById("proc-frames-text");
+            if (framesText) framesText.textContent = "Hoàn tất phân tích 100% — Đang hiển thị kết quả...";
+
+            if (job.result && job.result.os_pipeline_report) {
+                const osRep = job.result.os_pipeline_report;
+                const b1 = osRep.raw_buffer || {};
+                const b2 = osRep.writer_buffer || {};
+                const st2 = osRep.stage2_inference || {};
+                const fFps = Number(st2.throughput_fps || job.result.overall_fps || 30.0);
+                updateLivePipelineModal({
+                    is_completed: true,
+                    progress_pct: 100,
+                    current_frame: job.result.total_frames || 0,
+                    total_frames: job.result.total_frames || 0,
+                    current_fps: fFps,
+                    ms_per_frame: fFps > 0 ? Number((1000 / fFps).toFixed(1)) : 28.0,
+                    raw_q: b1.high_water_mark || 0,
+                    writer_q: b2.high_water_mark || 0,
+                    q_max: b1.capacity || 16,
+                    mutex_locks: osRep.total_mutex_locks || 0,
+                    cond_waits: osRep.total_condition_waits || 0,
+                    cond_signals: osRep.total_condition_signals || 0,
+                    frame_deck: osRep.final_frame_deck || [],
+                    trace_logs: osRep.final_trace_logs || []
+                });
+            }
+
+            // Immediate transition: no waiting! (Note: #os-live-pipeline-modal stays open if user has it open)
             setTimeout(() => {
                 document.getElementById("processing-section").classList.add("hidden");
                 renderResults(job.result);
-            }, 600);
+            }, 80);
         } else if (job.status === "error") {
             clearInterval(jobPollInterval);
             alert("Lỗi trong quá trình xử lý AI: " + job.error);
@@ -1327,6 +1835,7 @@ function renderResults(result) {
     resSec.scrollIntoView({ behavior: 'smooth' });
 
     // Store state
+    currentAnalysisResult = result;
     currentSegments = result.timeline_segments || [];
     currentHeatmapData = result.heatmap_data || [];
     allEntitiesDetected = result.entities_detected || [];
@@ -1349,19 +1858,28 @@ function renderResults(result) {
     const gemini = result.gemini_report || {};
     const threatBadge = document.getElementById("rep-threat-level");
     const threatLevel = gemini.threat_level || result.overall_danger_level || "AN TOÀN";
+    const maxScore = parseFloat(result.max_danger_score || 0);
 
-    if (threatLevel.includes("NGUY") || threatLevel.includes("DANGER")) {
+    const isGeminiSafe = (
+        gemini.threat_level === "AN TOÀN" ||
+        gemini.threat_level === "SAFE" ||
+        gemini.is_safe_environment === true ||
+        result.overall_danger_level === "AN TOAN" ||
+        result.overall_danger_level === "AN TOÀN"
+    );
+
+    if (!isGeminiSafe && (threatLevel.includes("NGUY") || threatLevel.includes("DANGER") || maxScore >= 8.0)) {
         threatBadge.className = "badge badge-danger";
         threatBadge.style.color = "";
-        threatBadge.textContent = "● NGUY HIỂM";
-    } else if (threatLevel.includes("CANH") || threatLevel.includes("WARNING")) {
+        threatBadge.textContent = "NGUY HIỂM";
+    } else if (!isGeminiSafe && (threatLevel.includes("CANH") || threatLevel.includes("WARNING") || maxScore >= 4.0)) {
         threatBadge.className = "badge badge-warning";
         threatBadge.style.color = "";
-        threatBadge.textContent = "● CẢNH BÁO";
+        threatBadge.textContent = "CẢNH BÁO";
     } else {
         threatBadge.className = "badge badge-safe";
         threatBadge.style.color = "";
-        threatBadge.textContent = "● AN TOÀN";
+        threatBadge.textContent = "AN TOÀN";
     }
 
     safeSetText("rep-primary-incident", gemini.primary_incident || result.peak_danger_reason || "Bình thường");
@@ -1418,10 +1936,13 @@ function renderResults(result) {
     renderHeatmap(currentHeatmapData, currentResultDuration);
 
     // Render Entity Filters
-    renderEntityFilters(allEntitiesDetected);
+    renderEntityFilters(allEntitiesDetected, result);
 
     // Render Timeline Segments Master Table
     renderTimelineSegments();
+
+    // Render 3-Stage OS Pipeline Execution Report
+    renderOSPipelineReport(result.os_pipeline_report, result);
 
     // Render Executive Scene Narrative & Chronological Evolution
     renderExecutiveSceneNarrative(result);
@@ -1486,6 +2007,7 @@ function setupDualPlayerSync() {
 
         updateHeatmapPlayhead(curT);
         updateChartPlayhead(curT, currentResultDuration);
+        updateEventFlowPlayhead(curT);
     };
 }
 
@@ -1640,10 +2162,27 @@ function updateHeatmapPlayhead(currentTime) {
 // ==============================================================================
 // ENTITY FILTERING & TIMELINE CHAPTERS TABLE
 // ==============================================================================
-function renderEntityFilters(entities) {
+function renderEntityFilters(entities, result) {
     const container = document.getElementById("entity-filter-container");
     if (!container) return;
 
+    const res = result || currentAnalysisResult || {};
+    const gemini = res.gemini_report || {};
+    const isCrowd = Boolean(
+        res.is_crowd_scene ||
+        gemini.is_crowd_scene ||
+        (res.actual_person_count > 4) ||
+        (res.peak_concurrent_persons > 4)
+    );
+
+    if (isCrowd) {
+        container.innerHTML = "";
+        container.style.display = "none";
+        activeEntityFilter = 'all';
+        return;
+    }
+
+    container.style.display = "flex";
     container.innerHTML = `<span class="filter-label">Lọc đối tượng:</span>`;
 
     const allBtn = document.createElement("button");
@@ -1722,59 +2261,24 @@ function renderTimelineSegments() {
     filtered.forEach((seg) => {
         const isFocused = activeFocusSegment && activeFocusSegment.segment_id === seg.segment_id;
         const rowClass = isFocused ? "active-segment-row" : "";
-        const badgeClass = seg.severity === "danger" ? "badge badge-danger" : (seg.severity === "warning" ? "badge badge-warning" : "badge badge-safe");
-        const badgeText = seg.severity === "danger" ? "● NGUY HIỂM" : (seg.severity === "warning" ? "● CẢNH BÁO" : "● AN TOÀN");
+        const numScore = parseFloat(seg.danger_score || 0);
+        const isDanger = numScore >= 8.0 || seg.severity === "danger";
+        const isWarn = (!isDanger && (numScore >= 4.0 || seg.severity === "warning"));
+        const badgeClass = isDanger ? "badge badge-danger" : (isWarn ? "badge badge-warning" : "badge badge-safe");
+        const badgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
 
-        let entitiesHtml = "";
-        if (seg.scene_summary) {
-            entitiesHtml += `<div class="seg-scene-summary" style="margin-bottom: 8px; font-size: 0.90rem; font-weight: 500; color: var(--text-primary); line-height: 1.45;">${escapeHtml(seg.scene_summary)}</div>`;
-        }
-        entitiesHtml += `<div class="seg-entities-list">`;
-        (seg.entities || []).forEach(ent => {
-            const rawId = String(ent.id || "");
-            const cleanId = rawId.replace(/\(Chủ thể chính\)/g, "").trim();
-            const entBadgeClass = ent.severity === "danger" ? "tag-danger" : (ent.severity === "warning" ? "tag-warning" : "tag-safe");
-            let roleBadge = "";
-            if (ent.role) {
-                const rLow = ent.role.toLowerCase();
-                const rClass = (rLow.includes("tấn công") || rLow.includes("gây hấn")) ? "role-danger" : ((rLow.includes("nạn nhân") || rLow.includes("phòng thủ")) ? "role-warn" : "role-safe");
-                roleBadge = `<span class="entity-role-badge ${rClass}">${escapeHtml(ent.role)}</span>`;
-            }
-            entitiesHtml += `
-                <div class="entity-item-row">
-                    <span class="entity-tag ${entBadgeClass}">${ICONS.user} <span>${escapeHtml(cleanId)}</span></span>
-                    ${roleBadge}
-                    <strong class="entity-action-text">${escapeHtml(ent.action)}</strong>
-                    <span class="entity-posture-text">(${escapeHtml(ent.posture)})</span>
-                </div>
-            `;
-        });
-        entitiesHtml += `</div>`;
-
-        // Khung Đoạn Văn Phân Tích Diễn Biến Hành Vi Chi Tiết Cụ Thể (2-4 câu)
-        const narrativeText = seg.detailed_narrative || seg.context_description || seg.scene_summary || "Phân đoạn ghi nhận các đối tượng tương tác ổn định trong không gian.";
-        const predHtml = seg.prediction_next_4s ? `<div class="sdn-prediction mono"><span class="sdn-pred-tag">${ICONS.sparkles} Dự đoán 4s tới:</span> ${escapeHtml(seg.prediction_next_4s)}</div>` : "";
-
-        entitiesHtml += `
-            <div class="seg-detailed-narrative-card">
-                <div class="sdn-header">
-                    <span class="sdn-icon">${ICONS.fileText}</span>
-                    <strong class="sdn-title">Phân tích Diễn biến Hành vi Phân đoạn:</strong>
-                </div>
-                <p class="sdn-body">${escapeHtml(narrativeText)}</p>
-                ${predHtml}
-            </div>
-        `;
-
-        // Cơ sở đánh giá động học (Telemetry Breakdown)
+        // Cột 3: Cơ sở đánh giá động học & đo đạc (tính trước để làm giàu ngữ cảnh nếu cần)
         const tb = seg.telemetry_breakdown;
         let breakdownHtml = "";
+        let maxVelStr = "0 px/s";
+        let minDistStr = "> 1.5 m";
+        let dominantPosture = "Bình thường";
         if (tb) {
             const maxVelVal = tb.max_velocity !== undefined ? tb.max_velocity : (tb.strike_velocity || 0);
-            const maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
+            maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
             const minDistVal = tb.min_distance !== undefined ? tb.min_distance : (tb.proximity_dist || null);
-            const minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : '> 1.5 m');
-            const dominantPosture = tb.dominant_posture || tb.posture_state || 'Bình thường';
+            minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : '> 1.5 m');
+            dominantPosture = (tb.dominant_posture || tb.posture_state || 'Bình thường').replace(/[\(\)]/g, '').trim();
 
             breakdownHtml = `
                 <div class="telemetry-breakdown-box">
@@ -1785,9 +2289,70 @@ function renderTimelineSegments() {
             `;
         }
 
-        const summaryEscaped = escapeHtml(seg.scene_summary || "");
-        const descEscaped = escapeHtml(seg.context_description || seg.scene_summary || "Phân đoạn ghi nhận đối tượng hoạt động");
-        const predEscaped = escapeHtml(seg.prediction_next_4s || "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo");
+        // Cột 2: Bên ngoài bảng chỉ hiển thị tóm tắt ngắn gọn + chip ID; chi tiết đầy đủ xem trong Modal Chi Tiết
+        const summaryText = (seg.scene_summary || seg.context_description || "Khu vực sinh hoạt ổn định, không có xung đột.").trim();
+        let rawDetailText = (seg.detailed_narrative || seg.context_description || "").trim();
+
+        let actorChipsHtml = "";
+        const entitySentenceParts = [];
+        (seg.entities || []).forEach((ent, eIdx) => {
+            if (!ent) return;
+            const rawId = (ent.id !== null && ent.id !== undefined) ? String(ent.id) : "";
+            if (rawId === "KHÔNG GIAN" || ent.raw_id === "ALL") return;
+            const idMatch = rawId.match(/ID\s*#?(\d+)/i);
+            const idTag = idMatch 
+                ? `ID #${idMatch[1].padStart(2, '0')}` 
+                : (ent.raw_id && String(ent.raw_id) !== "null" 
+                    ? `ID #${String(ent.raw_id).padStart(2, '0')}` 
+                    : (ent.canonical_id ? `ID #${String(ent.canonical_id).padStart(2, '0')}` : `ID #${String(eIdx + 1).padStart(2, '0')}`));
+            
+            const rawAnchor = (ent.distinctive_anchor || "").replace(/[\(\)\[\]]/g, '').trim();
+            const rawLabel = ent.actor_label || ent.role || "";
+            let actorName = rawAnchor || rawLabel || rawId.replace(/\(?ID\s*#?\d+\)?/i, '').replace(/[\(\)—-]/g, '').trim();
+            if (actorName === "null" || actorName === "undefined" || /^(đối tượng|chủ thể|khu vực)\s*#?\d+/i.test(actorName)) {
+                actorName = "";
+            }
+
+            const entAction = (ent.action || "").trim();
+            const entPosture = (ent.posture || "").trim();
+            const actionDisplay = entAction && entPosture && !entAction.toLowerCase().includes(entPosture.toLowerCase())
+                ? `${entAction} (${entPosture.toLowerCase()})`
+                : (entAction || entPosture);
+
+            if (actionDisplay) {
+                entitySentenceParts.push(`${idTag}${actorName ? ` (${actorName})` : ''}: ${actionDisplay.toLowerCase()}`);
+            }
+
+            const entBadgeClass = (isDanger && ent.severity === "danger")
+                ? "tag-danger"
+                : (((isDanger || isWarn) && (ent.severity === "warning" || ent.severity === "danger")) ? "tag-warning" : "tag-safe");
+
+            actorChipsHtml += `
+                <span class="seg-actor-chip ${entBadgeClass}" title="${escapeHtml(actionDisplay || actorName || idTag)}">
+                    <span class="mono seg-chip-id">${idTag}</span>
+                    ${actorName ? `<span class="seg-chip-name">${escapeHtml(actorName)}</span>` : ''}
+                </span>
+            `;
+        });
+
+        // Loại bỏ việc lặp lại câu tóm tắt trong đoạn chi tiết của Modal
+        if (rawDetailText.length > summaryText.length && rawDetailText.startsWith(summaryText)) {
+            rawDetailText = rawDetailText.slice(summaryText.length).replace(/^[\s.—-]+/, '').trim();
+        }
+        if (!rawDetailText || rawDetailText === summaryText) {
+            if (entitySentenceParts.length > 0) {
+                rawDetailText = `Trạng thái các đối tượng trên khung hình: ${entitySentenceParts.join("; ")}.`;
+            } else {
+                rawDetailText = summaryText;
+            }
+        }
+
+        const predText = (seg.prediction_next_4s || "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo").trim();
+        const fullDescForModal = rawDetailText || summaryText;
+
+        const summaryEscaped = escapeHtml(summaryText);
+        const descEscaped = escapeHtml(fullDescForModal);
+        const predEscaped = escapeHtml(predText);
         const snapThumb = seg.snapshot_url 
             ? `<img src="${escapeHtml(seg.snapshot_url)}" class="seg-snapshot-thumb" 
                 onclick="openSnapshotModal('${escapeHtml(seg.snapshot_url)}', '${escapeHtml(seg.segment_id)}', '${summaryEscaped}', '${escapeHtml(seg.time_range)}', '${descEscaped}', '${predEscaped}')"
@@ -1799,6 +2364,10 @@ function renderTimelineSegments() {
             weaponBadge = `<span class="badge badge-danger mono" style="margin-left: 6px; font-size: 0.78rem; background: var(--accent-crimson-bg); border: 1px solid var(--accent-crimson); color: var(--accent-crimson-text);">${ICONS.alertTriangle} ${escapeHtml(seg.weapon_detected)}</span>`;
         }
 
+        const scoreVal = typeof seg.danger_score === 'number' ? seg.danger_score : parseFloat(seg.danger_score || 0);
+        const scoreFormatted = (scoreVal || 0).toFixed(1);
+        const threatPillClass = isDanger ? "threat-pill-danger" : (isWarn ? "threat-pill-warn" : "threat-pill-safe");
+
         html += `
             <tr class="${rowClass}" id="seg-row-${escapeHtml(seg.segment_id)}">
                 <td>
@@ -1806,13 +2375,14 @@ function renderTimelineSegments() {
                     <div class="seg-id-sub mono">${escapeHtml(seg.segment_id)}</div>
                 </td>
                 <td>
-                    ${entitiesHtml}
+                    <div class="seg-summary-line">${escapeHtml(summaryText)}</div>
+                    ${actorChipsHtml ? `<div class="seg-actors-compact-row">${actorChipsHtml}</div>` : ''}
                 </td>
                 <td>
                     <div class="threat-header-row">
                         <span class="${badgeClass}">${badgeText}</span>
                         ${weaponBadge}
-                        <div class="threat-score-pill mono">${seg.danger_score || 0} <span class="threat-scale">/ 10</span></div>
+                        <div class="threat-score-pill mono ${threatPillClass}">${scoreFormatted} <span class="threat-scale">/ 10</span></div>
                     </div>
                     ${breakdownHtml}
                 </td>
@@ -1820,10 +2390,16 @@ function renderTimelineSegments() {
                     ${snapThumb}
                 </td>
                 <td style="text-align: right;">
-                    <button class="btn btn-sm btn-outline btn-focus-seg" 
-                        onclick="focusTimelineSegment(${seg.start_sec}, ${seg.end_sec}, '${escapeHtml(seg.segment_id)}', '${summaryEscaped}', this)">
-                        ${ICONS.play} <span>Xem Đoạn Này</span>
-                    </button>
+                    <div class="seg-actions-group">
+                        <button class="btn btn-sm btn-outline btn-detail-seg" 
+                            onclick="openSegmentDetailModal('${escapeHtml(seg.segment_id)}')">
+                            <svg class="ui-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> <span>Chi Tiết</span>
+                        </button>
+                        <button class="btn btn-sm btn-primary btn-focus-seg" 
+                            onclick="focusTimelineSegment(${seg.start_sec}, ${seg.end_sec}, '${escapeHtml(seg.segment_id)}', '${summaryEscaped}', this)">
+                            ${ICONS.play} <span>Xem Đoạn</span>
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -1910,21 +2486,29 @@ function renderExecutiveSceneNarrative(result) {
     if (!card) return;
 
     const gemini = (result && result.gemini_report) ? result.gemini_report : {};
+    const maxScore = parseFloat((result && result.max_danger_score) || 0);
     const threatLevel = gemini.threat_level || (result ? result.overall_danger_level : "AN TOÀN") || "AN TOÀN";
     const threatBadge = document.getElementById("narrative-threat-badge");
     if (threatBadge) {
-        if (threatLevel.includes("NGUY") || threatLevel.includes("DANGER")) {
+        const isGeminiSafe = (
+            gemini.threat_level === "AN TOÀN" ||
+            gemini.threat_level === "SAFE" ||
+            gemini.is_safe_environment === true ||
+            (result && (result.overall_danger_level === "AN TOAN" || result.overall_danger_level === "AN TOÀN"))
+        );
+
+        if (!isGeminiSafe && (threatLevel.includes("NGUY") || threatLevel.includes("DANGER") || maxScore >= 8.0)) {
             threatBadge.className = "badge badge-danger mono";
             threatBadge.style.color = "";
-            threatBadge.textContent = "● NGUY HIỂM / KHẨN CẤP";
-        } else if (threatLevel.includes("CANH") || threatLevel.includes("WARNING")) {
+            threatBadge.textContent = "NGUY HIỂM / KHẨN CẤP";
+        } else if (!isGeminiSafe && (threatLevel.includes("CANH") || threatLevel.includes("WARNING") || threatLevel.includes("CẢNH") || maxScore >= 4.0)) {
             threatBadge.className = "badge badge-warning mono";
             threatBadge.style.color = "";
-            threatBadge.textContent = "● CẢNH BÁO";
+            threatBadge.textContent = "CẢNH BÁO";
         } else {
             threatBadge.className = "badge badge-safe mono";
             threatBadge.style.color = "";
-            threatBadge.textContent = "● AN TOÀN TUYỆT ĐỐI";
+            threatBadge.textContent = "AN TOÀN";
         }
     }
 
@@ -1933,35 +2517,80 @@ function renderExecutiveSceneNarrative(result) {
         `Khu vực sinh hoạt và vận động ổn định với ${result && result.entities_detected ? result.entities_detected.length : 1} đối tượng có mặt trong không gian.`;
     safeSetText("narrative-scene-context", sceneContext);
 
-    // Actors Pills
+    // Actors Pills - 2-tier Card (Anti-slop, no bracket breaking)
     const actorsContainer = document.getElementById("narrative-actors-pills");
     if (actorsContainer) {
         actorsContainer.innerHTML = "";
-        const actors = gemini.detected_actors || [];
-        if (actors.length > 0) {
-            actors.forEach(act => {
-                const row = document.createElement("div");
-                row.className = "actor-chip-row";
-                row.innerHTML = `
-                    <div>
-                        <span class="actor-chip-id mono">ID #${String(act.actor_index).padStart(2, '0')}</span>
-                        <strong class="actor-chip-role" style="margin-left: 6px;">${escapeHtml(act.role)}</strong>
+        const isCrowd = Boolean(
+            (result && result.is_crowd_scene) ||
+            gemini.is_crowd_scene ||
+            ((result && result.actual_person_count) > 4) ||
+            ((result && result.peak_concurrent_persons) > 4)
+        );
+
+        if (isCrowd) {
+            // Khi video có trên 4 người (cảnh đông người, lớp học):
+            // Không hiển thị 4 thẻ ID cố định vì ID không cố định 1 người suốt video.
+            // Thay vào đó hiển thị thẻ bối cảnh toàn cảnh đông người.
+            const cardEl = document.createElement("div");
+            cardEl.className = "actor-chip-card";
+            cardEl.style.width = "100%";
+            cardEl.innerHTML = `
+                <div class="actor-chip-header">
+                    <div class="actor-chip-identity">
+                        <span class="actor-chip-id mono">BỐI CẢNH TOÀN CẢNH</span>
+                        <span class="actor-chip-role">Không gian đông người (Nhiều cá nhân có mặt)</span>
                     </div>
-                    <span class="actor-chip-act">${escapeHtml(act.true_action || act.posture_desc || '')}</span>
-                `;
-                actorsContainer.appendChild(row);
-            });
+                    <span class="actor-chip-anchor-badge">Cảnh đông người</span>
+                </div>
+                <div class="actor-chip-body">
+                    Khu vực tập trung đông người với sự tham gia và luân chuyển của nhiều đối tượng. Các cá nhân và tương tác tiêu điểm được phân tích chi tiết theo từng phân đoạn độc lập trong bảng phân tích bên dưới.
+                </div>
+            `;
+            actorsContainer.appendChild(cardEl);
         } else {
-            const entities = (result && result.entities_detected) ? result.entities_detected : ["ID #01 — Chủ thể"];
-            entities.forEach(ent => {
-                const row = document.createElement("div");
-                row.className = "actor-chip-row";
-                row.innerHTML = `
-                    <span class="actor-chip-id mono">${escapeHtml(ent)}</span>
-                    <span class="actor-chip-act">Tương tác an toàn</span>
-                `;
-                actorsContainer.appendChild(row);
-            });
+            const actors = gemini.detected_actors || [];
+            if (actors.length > 0) {
+                actors.forEach(act => {
+                    const cardEl = document.createElement("div");
+                    cardEl.className = "actor-chip-card";
+                    const actorDisplay = act.actor_label || act.role || `Đối tượng #${act.actor_index}`;
+                    const cleanAnchor = act.distinctive_anchor ? act.distinctive_anchor.replace(/^\[+|\]+$/g, '').trim() : '';
+                    const anchorBadge = cleanAnchor ? `<span class="actor-chip-anchor-badge">${escapeHtml(cleanAnchor)}</span>` : '';
+                    const actionText = act.true_action || act.posture_desc || 'Duy trì hoạt động ổn định trong phân cảnh.';
+                    cardEl.innerHTML = `
+                        <div class="actor-chip-header">
+                            <div class="actor-chip-identity">
+                                <span class="actor-chip-id mono">ID #${String(act.actor_index).padStart(2, '0')}</span>
+                                <span class="actor-chip-role">${escapeHtml(actorDisplay)}</span>
+                            </div>
+                            ${anchorBadge}
+                        </div>
+                        <div class="actor-chip-body">
+                            ${escapeHtml(actionText)}
+                        </div>
+                    `;
+                    actorsContainer.appendChild(cardEl);
+                });
+            } else {
+                const entities = (result && result.entities_detected) ? result.entities_detected : ["ID #01 — Chủ thể"];
+                entities.forEach(ent => {
+                    const cardEl = document.createElement("div");
+                    cardEl.className = "actor-chip-card";
+                    cardEl.innerHTML = `
+                        <div class="actor-chip-header">
+                            <div class="actor-chip-identity">
+                                <span class="actor-chip-id mono">${escapeHtml(ent)}</span>
+                            </div>
+                            <span class="actor-chip-anchor-badge">Chủ thể</span>
+                        </div>
+                        <div class="actor-chip-body">
+                            Duy trì tương tác an toàn, không có xung đột.
+                        </div>
+                    `;
+                    actorsContainer.appendChild(cardEl);
+                });
+            }
         }
     }
 
@@ -1981,9 +2610,20 @@ function renderExecutiveSceneNarrative(result) {
                 { tag: "02. Diễn biến chính", text: p2 ? p2[1].trim() + "." : "Diễn biến chính: duy trì tương tác sinh hoạt nhịp nhàng, không có xung đột." },
                 { tag: "03. Kết thúc", text: p3 ? p3[1].trim() + "." : "Kết thúc phân cảnh: toàn bộ đối tượng giữ vững thăng bằng và an toàn." }
             ];
+        } else if (/(?:^|\n)\s*1[\s.:\-)—].+(?:\n|\s)2[\s.:\-)—]/s.test(chronoText)) {
+            // Có từ 2 bước đánh số trở lên: phân tách theo các mốc
+            const parts = chronoText.split(/(?:^|\n)\s*(?=[0-9]+[\s.:\-)—])/).filter(p => p && p.trim());
+            parts.forEach((p, idx) => {
+                const cleanP = p.replace(/^[0-9]+[\s.:\-)—]+/, '').trim();
+                const tags = ["01. Khởi đầu", "02. Diễn biến chính", "03. Kết thúc"];
+                const tag = idx < tags.length ? tags[idx] : `0${idx + 1}. Tiếp diễn`;
+                steps.push({ tag: tag, text: cleanP });
+            });
         } else if (chronoText) {
+            // Chỉ có 1 phân đoạn: gọt sạch số 1 đơn độc nếu có ở đầu
+            let cleanChrono = chronoText.replace(/^[0-9]+[\s.:\-)—]+/, '').trim();
             steps = [
-                { tag: "01. Diễn biến toàn cảnh", text: chronoText }
+                { tag: "Diễn biến toàn cảnh", text: cleanChrono }
             ];
         } else {
             steps = [
@@ -2101,15 +2741,15 @@ function renderBehaviorAnalytics(analytics, duration) {
             if (score >= 82) {
                 healthBadge.className = "badge badge-safe";
                 healthBadge.style.color = "";
-                healthBadge.textContent = "● Tối ưu";
+                healthBadge.textContent = "Tối ưu";
             } else if (score >= 65) {
                 healthBadge.className = "badge badge-warning";
                 healthBadge.style.color = "";
-                healthBadge.textContent = "● Cần điều chỉnh";
+                healthBadge.textContent = "Cần điều chỉnh";
             } else {
                 healthBadge.className = "badge badge-danger";
                 healthBadge.style.color = "";
-                healthBadge.textContent = "● Cảnh báo";
+                healthBadge.textContent = "Cảnh báo";
             }
         }
         safeSetText("ergo-advice-text", analytics.ergonomic_advice || "Cột sống duy trì góc độ giải phẫu học an toàn.");
@@ -2307,105 +2947,274 @@ function updateChartPlayhead(currentSec, totalDuration) {
     playhead.classList.remove("hidden");
 }
 
-function drawMultiTrackActorTimeline(tracksData, duration) {
-    const container = document.getElementById("multi-track-actor-timeline");
-    if (!container) return;
-    duration = Math.max(1.0, duration || 30.0);
-
-    let tracks = tracksData;
-    if (!tracks || Object.keys(tracks).length === 0) {
-        tracks = {};
-        if (currentSegments && currentSegments.length > 0) {
-            currentSegments.forEach(seg => {
-                (seg.entities || []).forEach(ent => {
-                    const rawId = String(ent.id || "ID #01").replace(/\(Chủ thể chính\)/g, "").trim();
-                    if (!tracks[rawId]) tracks[rawId] = [];
-                    tracks[rawId].push({
-                        start_sec: seg.start_sec,
-                        end_sec: seg.end_sec,
-                        state: ent.severity || seg.severity || "safe",
-                        action: ent.action || "Bình thường",
-                        posture: ent.posture || "Đứng thẳng",
-                        role: ent.role || "",
-                        score: seg.danger_score || 0
-                    });
-                });
-            });
+function getSegmentMilestoneTitle(seg) {
+    if (!seg) return "Vận động tự nhiên";
+    // 1. Direct explicit milestone field if provided by Gemini
+    if (seg.event_milestone && typeof seg.event_milestone === "string" && seg.event_milestone.trim()) {
+        return seg.event_milestone.trim();
+    }
+    // 2. Short detailed action
+    if (seg.detailed_action && typeof seg.detailed_action === "string" && seg.detailed_action.trim()) {
+        const act = seg.detailed_action.trim();
+        if (act.length <= 40) return act;
+    }
+    // 3. Short macro narrative if suitable
+    if (seg.macro_narrative && typeof seg.macro_narrative === "string") {
+        const macro = seg.macro_narrative.trim();
+        if (macro.length > 0 && macro.length <= 35 && !macro.includes(".")) {
+            return macro;
         }
     }
+    // 4. Infer logically from combined context keywords and severity
+    const entList = Array.isArray(seg.entities) ? seg.entities.filter(Boolean) : [];
+    const combinedText = [
+        seg.scene_summary || "",
+        seg.context_description || "",
+        seg.detailed_narrative || "",
+        entList.map(e => `${(e && e.action) || ''} ${(e && e.role) || ''}`).join(" ")
+    ].join(" ").toLowerCase();
 
-    const actorKeys = Object.keys(tracks || {});
-    if (actorKeys.length === 0) {
+    if (combinedText.includes("can ngăn") || combinedText.includes("hạ nhiệt") || combinedText.includes("vãn hồi") || combinedText.includes("can thiệp")) {
+        return "Can ngăn / Vãn hồi";
+    }
+    if (seg.severity === "danger" || combinedText.includes("xô xát") || combinedText.includes("tấn công") || combinedText.includes("đấm") || combinedText.includes("đá") || combinedText.includes("xung đột thể xác") || combinedText.includes("xung đột")) {
+        return "Xô xát thể xác";
+    }
+    if (seg.severity === "warning" || combinedText.includes("tiếp cận") || combinedText.includes("đối đầu") || combinedText.includes("gây hấn") || combinedText.includes("tranh cãi") || combinedText.includes("thủ thế")) {
+        return "Tiếp cận đối đầu";
+    }
+    if (combinedText.includes("ăn") || combinedText.includes("bàn ăn") || combinedText.includes("gia đình") || combinedText.includes("trò chuyện") || combinedText.includes("cơm")) {
+        return "Sinh hoạt gia đình";
+    }
+    
+    // 5. Extract first clause from detailed action, macro narrative, or scene summary
+    const candidateStr = seg.detailed_action || seg.macro_narrative || seg.scene_summary || "";
+    if (candidateStr && typeof candidateStr === "string" && candidateStr.trim()) {
+        let firstClause = candidateStr.trim().split(/[.\n;]/)[0].trim();
+        if (firstClause.length > 40) firstClause = firstClause.substring(0, 37) + "...";
+        if (firstClause) return firstClause;
+    }
+    return "Vận động tự nhiên";
+}
+
+function updateEventFlowPlayhead(curT) {
+    if (!currentSegments || currentSegments.length === 0) return;
+    currentSegments.forEach(seg => {
+        const isActive = curT >= seg.start_sec && curT < seg.end_sec;
+        const eventEl = document.getElementById(`event-pill-${seg.segment_id}`);
+        const riskEl = document.getElementById(`risk-pill-${seg.segment_id}`);
+        if (eventEl) {
+            if (isActive) eventEl.classList.add("active-pill");
+            else eventEl.classList.remove("active-pill");
+        }
+        if (riskEl) {
+            if (isActive) riskEl.classList.add("active-pill");
+            else riskEl.classList.remove("active-pill");
+        }
+    });
+}
+
+function showEventFlowTooltip(e, segIndex) {
+    const tooltip = document.getElementById("event-flow-tooltip");
+    if (!tooltip || !currentSegments || !currentSegments[segIndex]) return;
+    const seg = currentSegments[segIndex];
+    const milestone = getSegmentMilestoneTitle(seg);
+    const timeStr = `[${formatTime(seg.start_sec)} ➔ ${formatTime(seg.end_sec)}]`;
+    const score = (typeof seg.danger_score === 'number' ? seg.danger_score : 0).toFixed(1);
+    const numScore = parseFloat(seg.danger_score || 0);
+    const isDanger = numScore >= 8.0 || seg.severity === 'danger';
+    const isWarn = (!isDanger && (numScore >= 4.0 || seg.severity === 'warning'));
+    const sevLabel = isDanger ? 'Nguy hiểm' : (isWarn ? 'Cần chú ý' : 'An toàn');
+    
+    let actorsList = (seg.entities || []).map(ent => {
+        let rawId = String(ent.id || "");
+        let cleanId = rawId.replace(/\(Chủ thể chính\)/g, "").trim();
+        cleanId = cleanId.replace(/Đối tượng\s*#?(\d+)\s*\((ID\s*#?\1)\)/i, "$2");
+        return `<strong>${escapeHtml(cleanId)}</strong>: ${escapeHtml(ent.action || 'Bình thường')}`;
+    }).join('<br>');
+    if (!actorsList) actorsList = 'Không có đối tượng vi sai';
+
+    tooltip.innerHTML = `
+        <div style="font-weight: 700; font-size: 11.5px; margin-bottom: 4px; color: var(--text-primary);">
+            ${escapeHtml(seg.segment_id || '')} &bull; ${escapeHtml(timeStr)}
+        </div>
+        <div style="font-size: 12px; color: var(--accent-blue-text); font-weight: 700; margin-bottom: 6px;">
+            Mốc sự kiện: ${escapeHtml(milestone)}
+        </div>
+        <div style="font-size: 11px; margin-bottom: 6px; color: var(--text-secondary); line-height: 1.4;">
+            ${escapeHtml(seg.scene_summary || seg.context_description || 'Phân đoạn ghi nhận tương tác.')}
+        </div>
+        <div style="font-size: 11px; margin-bottom: 6px; color: var(--text-muted);">
+            Cấp độ rủi ro: <strong style="color: ${isDanger ? 'var(--accent-crimson-text)' : (isWarn ? 'var(--accent-amber-text)' : 'var(--accent-emerald-text)')};">${sevLabel} (${score}/10)</strong>
+        </div>
+        <div style="font-size: 10.5px; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); padding-top: 5px;">
+            ${actorsList}
+        </div>
+    `;
+
+    tooltip.classList.remove("hidden");
+    const rect = e.currentTarget.getBoundingClientRect();
+    const container = document.getElementById("actor-tracks-box");
+    const containerRect = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
+    
+    const left = rect.left - containerRect.left + (rect.width / 2) - 130;
+    const top = rect.top - containerRect.top - 120;
+    tooltip.style.left = `${Math.max(10, left)}px`;
+    tooltip.style.top = `${Math.max(10, top)}px`;
+}
+
+function hideEventFlowTooltip() {
+    const tooltip = document.getElementById("event-flow-tooltip");
+    if (tooltip) tooltip.classList.add("hidden");
+}
+
+function drawEventCentricFlowStreams(segments, duration) {
+    const container = document.getElementById("multi-track-actor-timeline");
+    if (!container) return;
+    duration = Math.max(1.0, duration || (currentResultDuration || 30.0));
+
+    let segs = segments;
+    if (!segs || segs.length === 0) {
+        segs = currentSegments || [];
+    }
+
+    if (segs.length === 0) {
         container.innerHTML = `
             <div class="empty-state-box empty-state-compact">
-                <span class="empty-icon">${ICONS.users_lg}</span>
-                <p class="empty-title">Chưa có dữ liệu hành vi từng đối tượng</p>
-                <span class="empty-sub">Băng chuyền hành vi sẽ hiển thị trực quan dải thời gian của từng ID sau khi phân tích video.</span>
+                <span class="empty-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+                <p class="empty-title">Chưa có dữ liệu dòng diễn biến sự kiện</p>
+                <span class="empty-sub">Dòng diễn biến tương tác và phổ màu cảnh báo an ninh toàn cảnh sẽ hiển thị trực quan sau khi hoàn tất phân tích video.</span>
             </div>
         `;
         return;
     }
 
-    let html = `<div class="tracks-stream-wrapper">`;
-    actorKeys.forEach(actorId => {
-        const segs = tracks[actorId] || [];
-        html += `
-            <div class="actor-track-row">
-                <div class="actor-track-header">
-                    <span class="actor-track-badge mono">${ICONS.user} <span>${escapeHtml(actorId)}</span></span>
+    // Arrow icon SVG helper
+    const arrowSvg = `<div class="stream-flow-arrow"><svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>`;
+
+    // 1. Mạch Diễn Biến Tương Tác (Interaction & Event Narrative Stream)
+    let narrativePillsHtml = "";
+    segs.forEach((seg, idx) => {
+        if (idx > 0) narrativePillsHtml += arrowSvg;
+        const milestone = getSegmentMilestoneTitle(seg);
+        const startSec = Math.max(0, seg.start_sec);
+        const endSec = Math.min(duration, seg.end_sec);
+        const segCode = seg.segment_id || `SEG-${String(idx + 1).padStart(2, '0')}`;
+        const timeRangeStr = `[${formatTime(startSec)} ➔ ${formatTime(endSec)}]`;
+        const titleTooltip = `Mốc ${timeRangeStr}: ${milestone}. Nhấp chuột để tua video đến phân đoạn này.`;
+
+        narrativePillsHtml += `
+            <div class="event-stream-pill event-narrative-pill"
+                 id="event-pill-${escapeHtml(seg.segment_id)}"
+                 title="${escapeHtml(titleTooltip)}"
+                 onmouseenter="showEventFlowTooltip(event, ${idx})"
+                 onmouseleave="hideEventFlowTooltip()"
+                 onclick="seekBothPlayers(${startSec}, false, this, 'Mốc [${formatTime(startSec)} - ${formatTime(endSec)}]')">
+                <div class="pill-top-row">
+                    <span class="pill-time mono">${timeRangeStr}</span>
+                    <span class="pill-seg-code mono">${escapeHtml(segCode)}</span>
                 </div>
-                <div class="actor-track-ribbon">
+                <div class="pill-title-text">${escapeHtml(milestone)}</div>
+            </div>
         `;
+    });
 
-        segs.forEach(s => {
-            const startSec = Math.max(0, s.start_sec);
-            const endSec = Math.min(duration, s.end_sec);
-            const leftPct = Math.max(0, Math.min(100, (startSec / duration) * 100));
-            const widthPct = Math.max(1.5, Math.min(100 - leftPct, ((endSec - startSec) / duration) * 100));
-            const stateClass = s.state === 'danger' ? 'ribbon-danger' : (s.state === 'warning' ? 'ribbon-warn' : 'ribbon-safe');
-            const stateLabel = s.state === 'danger' ? 'Tấn công / Nguy cơ cao' : (s.state === 'warning' ? 'Phòng vệ / Cảnh báo' : 'Bình thường / An toàn');
-            const roleStr = s.role ? ` [${escapeHtml(s.role)}]` : "";
+    // 2. Mạch Cảnh Báo An Ninh (Threat & Risk Level Stream)
+    let threatPillsHtml = "";
+    segs.forEach((seg, idx) => {
+        if (idx > 0) threatPillsHtml += arrowSvg;
+        const startSec = Math.max(0, seg.start_sec);
+        const endSec = Math.min(duration, seg.end_sec);
+        const timeRangeStr = `[${formatTime(startSec)} ➔ ${formatTime(endSec)}]`;
+        const score = (typeof seg.danger_score === 'number' ? seg.danger_score : 0).toFixed(1);
+        const numScore = parseFloat(seg.danger_score || 0);
+        const isDanger = numScore >= 8.0 || seg.severity === "danger";
+        const isWarn = (!isDanger && (numScore >= 4.0 || seg.severity === "warning"));
+        
+        let riskClass = isDanger ? "risk-danger" : (isWarn ? "risk-warn" : "risk-safe");
+        let riskBadgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẦN CHÚ Ý" : "AN TOÀN");
 
-            html += `
-                <div class="ribbon-block ${stateClass}"
-                     style="left: ${leftPct.toFixed(2)}%; width: ${widthPct.toFixed(2)}%;"
-                     title="[${escapeHtml(actorId)}${roleStr}] ${formatTime(startSec)} - ${formatTime(endSec)}: ${escapeHtml(s.action)} (${stateLabel})"
-                     onclick="seekBothPlayers(${startSec}, false, this, '${escapeHtml(actorId)} [${formatTime(startSec)}]')">
-                    <span class="ribbon-text">${escapeHtml(s.action)}</span>
+        const tb = seg.telemetry_breakdown || {};
+        const maxVelVal = tb.max_velocity !== undefined ? tb.max_velocity : (tb.strike_velocity || 0);
+        const maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
+        const minDistVal = tb.min_distance !== undefined ? tb.min_distance : (tb.proximity_dist || null);
+        const minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : "> 1.5m");
+
+        const riskTooltip = `${timeRangeStr} ${riskBadgeText} (${score}/10). Vận tốc: ${maxVelStr}, Cự ly: ${minDistStr}. Nhấp để tua video.`;
+
+        threatPillsHtml += `
+            <div class="event-stream-pill threat-risk-pill ${riskClass}"
+                 id="risk-pill-${escapeHtml(seg.segment_id)}"
+                 title="${escapeHtml(riskTooltip)}"
+                 onmouseenter="showEventFlowTooltip(event, ${idx})"
+                 onmouseleave="hideEventFlowTooltip()"
+                 onclick="seekBothPlayers(${startSec}, false, this, 'Mốc [${formatTime(startSec)} - ${formatTime(endSec)}]')">
+                <div class="pill-top-row">
+                    <span class="pill-time mono">${timeRangeStr}</span>
+                    <span class="pill-risk-badge font-mono">${riskBadgeText} (${score}/10)</span>
                 </div>
-            `;
-        });
-
-        html += `
+                <div class="pill-metrics-row mono">
+                    <span>Vận tốc: ${escapeHtml(maxVelStr)}</span>
+                    <span class="pill-metric-sep">|</span>
+                    <span>Cự ly: ${escapeHtml(minDistStr)}</span>
                 </div>
             </div>
         `;
     });
 
-    // Time Axis along bottom of multi-track
-    let ticksHtml = "";
+    // Time Axis Ticks along bottom
+    let axisTicksHtml = "";
     const stepSec = duration <= 20 ? 5 : (duration <= 60 ? 10 : 20);
     for (let sec = 0; sec <= duration; sec += stepSec) {
-        const leftPct = (sec / duration) * 100;
-        ticksHtml += `
-            <div class="ribbon-axis-tick mono" style="left: ${leftPct.toFixed(2)}%;">
-                <span class="ribbon-axis-line"></span>
-                <span class="ribbon-axis-label">${formatTime(sec)}</span>
-            </div>
-        `;
+        axisTicksHtml += `<span style="margin-right: 18px;">${formatTime(sec)}</span>`;
     }
 
-    html += `
-            <div class="actor-track-axis-row">
-                <div class="actor-track-header"></div>
-                <div class="actor-track-axis">
-                    ${ticksHtml}
-                </div>
+    const html = `
+        <!-- Mạch 1: Diễn Biến Tương Tác -->
+        <div class="stream-track-group">
+            <div class="stream-track-header">
+                <span class="stream-label">
+                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    Mạch Diễn Biến Tương Tác
+                </span>
+                <span class="stream-sublabel">Trình tự mốc sự kiện chủ đạo qua thời gian thực</span>
+            </div>
+            <div class="stream-flow-track" id="narrative-flow-track">
+                ${narrativePillsHtml}
+            </div>
+        </div>
+
+        <!-- Mạch 2: Cảnh Báo An Ninh -->
+        <div class="stream-track-group">
+            <div class="stream-track-header">
+                <span class="stream-label">
+                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Mạch Cảnh Báo An Ninh
+                </span>
+                <span class="stream-sublabel">Phổ màu phân cấp rủi ro & chỉ số động học</span>
+            </div>
+            <div class="stream-flow-track" id="threat-flow-track">
+                ${threatPillsHtml}
+            </div>
+        </div>
+
+        <!-- Trục Thời Gian & Thông Số Tổng Quan -->
+        <div class="event-flow-axis-row mono">
+            <div class="event-flow-axis-info">
+                <span>Trục thời gian: ${axisTicksHtml}</span>
+            </div>
+            <div class="event-flow-summary">
+                <span>Tổng thời lượng: <strong>${formatTime(duration)}</strong> (${segs.length} phân đoạn sự kiện)</span>
             </div>
         </div>
     `;
 
     container.innerHTML = html;
+}
+
+function drawMultiTrackActorTimeline(tracksData, duration) {
+    // Forward directly to Event-Centric Flow Streams
+    drawEventCentricFlowStreams(currentSegments, duration);
 }
 
 function toggleTelemetryDrawer() {
@@ -2509,6 +3318,526 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
 }
 
 // ==============================================================================
+// OS KERNEL SYNCHRONIZATION LAB & 3-STAGE PIPELINE REPORT
+// ==============================================================================
+function updateThreadStateBadge(elemId, stateStr) {
+    const el = document.getElementById(elemId);
+    if (!el) return;
+    const st = String(stateStr || "READY").toUpperCase();
+    el.textContent = st;
+    if (st.includes("RUNNING")) {
+        el.className = "badge badge-safe mono";
+    } else if (st.includes("CRITICAL") || st.includes("THROTTLED")) {
+        el.className = "badge badge-warning mono";
+    } else if (st.includes("WAITING")) {
+        el.className = "badge badge-outline mono";
+    } else {
+        el.className = "badge badge-neutral mono";
+    }
+}
+
+function toggleInlineTelemetryPanel() {
+    const panel = document.getElementById("telemetry-floating-panel");
+    const statusBadge = document.getElementById("btn-telemetry-status");
+    const toggleBtn = document.getElementById("btn-toggle-telemetry");
+    if (!panel) return;
+    const isNowHidden = panel.classList.toggle("hidden");
+    if (statusBadge) {
+        statusBadge.textContent = isNowHidden ? "ẨN" : "HIỂN THỊ";
+        statusBadge.className = isNowHidden ? "badge badge-neutral mono" : "badge badge-safe mono";
+    }
+    if (toggleBtn) {
+        toggleBtn.classList.toggle("active-toggle", !isNowHidden);
+    }
+}
+
+function closeTelemetryPanel() {
+    const panel = document.getElementById("telemetry-floating-panel");
+    const backdrop = document.getElementById("telemetry-backdrop");
+    if (backdrop) backdrop.classList.add("hidden");
+    if (panel) panel.classList.add("hidden");
+    const statusBadge = document.getElementById("btn-telemetry-status");
+    if (statusBadge) {
+        statusBadge.textContent = "ẨN";
+        statusBadge.className = "badge badge-neutral mono";
+    }
+}
+
+function onOSLabSliderInput() {
+    const capSlider = document.getElementById("os-lab-cap-slider");
+    const delaySlider = document.getElementById("os-lab-delay-slider");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+
+    // 1280 x 720 x 3 bytes = 2.6367 MB per frame
+    const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
+    safeSetText("os-lab-cap-display", `N = ${capVal} (RAM: ${ramMb} MB)`);
+    safeSetText("os-lab-delay-display", `${delayVal} ms`);
+}
+
+async function commitOSLabConfig(triggerBurst = false) {
+    const capSlider = document.getElementById("os-lab-cap-slider");
+    const delaySlider = document.getElementById("os-lab-delay-slider");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+
+    try {
+        await fetch("/api/os_lab/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                buffer_capacity: capVal,
+                consumer_delay_ms: delayVal,
+                reset_counters: false,
+                trigger_burst: triggerBurst
+            })
+        });
+        await fetchTelemetry();
+    } catch (e) {
+        console.error("Lỗi cập nhật cấu hình OS Lab:", e);
+    }
+}
+
+async function applyOSLabPreset(capVal, delayVal, triggerBurst = true) {
+    const capSlider = document.getElementById("os-lab-cap-slider");
+    const delaySlider = document.getElementById("os-lab-delay-slider");
+    if (capSlider) capSlider.value = capVal;
+    if (delaySlider) delaySlider.value = delayVal;
+    onOSLabSliderInput();
+    await commitOSLabConfig(triggerBurst);
+    showToast(`Đã áp dụng kịch bản HĐH: Bounded Buffer N=${capVal}, Độ trễ Consumer=${delayVal}ms`, "info");
+}
+
+async function triggerOSLabStressBurst() {
+    await commitOSLabConfig(true);
+    showToast("Đang phát xung 75 khung hình qua ThreadSafeBoundedBuffer để kiểm chứng đồng bộ hóa...", "info");
+}
+
+async function resetOSLabCounters() {
+    try {
+        await fetch("/api/os_lab/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reset_counters: true })
+        });
+        await fetchTelemetry();
+        showToast("Đã đặt lại bộ đếm Mutex Lock, Condition Variable và Drop-Oldest về 0.", "info");
+    } catch (e) {
+        console.error("Lỗi reset OS Lab:", e);
+    }
+}
+
+function renderOSPipelineReport(osRep, result) {
+    if (!osRep) return;
+    const st1 = osRep.stage1_reader || {};
+    const st2 = osRep.stage2_inference || {};
+    const st3 = osRep.stage3_writer || {};
+    const b1 = osRep.raw_buffer || {};
+    const b2 = osRep.writer_buffer || {};
+
+    safeSetText("os-st1-time", `${Number(st1.active_time_sec || 0).toFixed(2)}s`);
+    safeSetText("os-st1-fps", `${Number(st1.throughput_fps || 0).toFixed(1)} FPS`);
+    safeSetText("os-st2-time", `${Number(st2.active_time_sec || 0).toFixed(2)}s`);
+    safeSetText("os-st2-fps", `${Number(st2.throughput_fps || 0).toFixed(1)} FPS`);
+    safeSetText("os-st3-time", `${Number(st3.active_time_sec || 0).toFixed(2)}s`);
+    safeSetText("os-st3-fps", `${Number(st3.throughput_fps || 0).toFixed(1)} FPS`);
+
+    safeSetText("os-buf1-hwm", `${b1.high_water_mark || 0} / ${b1.capacity || 16}`);
+    safeSetText("os-buf1-mutex", `${(b1.mutex_lock_count || 0).toLocaleString()}`);
+    safeSetText("os-buf1-wait", `${((b1.not_empty_wait_count || 0) + (b1.not_full_wait_count || 0)).toLocaleString()}`);
+
+    safeSetText("os-buf2-hwm", `${b2.high_water_mark || 0} / ${b2.capacity || 16}`);
+    safeSetText("os-buf2-mutex", `${(b2.mutex_lock_count || 0).toLocaleString()}`);
+    safeSetText("os-buf2-wait", `${((b2.not_empty_wait_count || 0) + (b2.not_full_wait_count || 0)).toLocaleString()}`);
+
+    const seqTime = Number(osRep.sequential_time_sec || result.processing_time_seconds || 1.0).toFixed(2);
+    const parTime = Number(osRep.parallel_wall_time_sec || result.processing_time_seconds || 1.0).toFixed(2);
+    const speedup = Number(osRep.speedup_factor || 1.25).toFixed(2);
+    const overlap = Number(osRep.concurrency_overlap_pct || 20.0).toFixed(1);
+
+    safeSetText("os-rep-speedup-badge", `Tăng tốc đa luồng: ${speedup}x`);
+    safeSetText("os-rep-seq-time", `${seqTime}s`);
+    safeSetText("os-rep-par-time", `${parTime}s`);
+    safeSetText("os-rep-overlap", `${speedup}x · Chồng lấp ${overlap}%`);
+    safeSetText("os-rep-sync-total", `${(osRep.total_mutex_locks || 0).toLocaleString()} locks · ${(osRep.total_condition_signals || 0).toLocaleString()} signals`);
+    safeSetText("os-rep-ram-bound", `${Number(osRep.ram_ceiling_mb || osRep.bounded_ram_ceiling_mb || 84.38).toFixed(2)} MB · _SENTINEL`);
+
+    // Cache final frame deck for reopening Live OS Pipeline Modal after job completion
+    const finalFps = Number(st2.throughput_fps || (result && result.overall_fps) || 30.0);
+    latestPipelineLiveState = {
+        is_completed: true,
+        progress_pct: 100,
+        current_frame: (result && result.total_frames) || st2.frames_handled || 0,
+        total_frames: (result && result.total_frames) || st1.frames_handled || 0,
+        current_fps: finalFps,
+        ms_per_frame: finalFps > 0 ? Number((1000 / finalFps).toFixed(1)) : 28.0,
+        raw_q: b1.high_water_mark || 0,
+        writer_q: b2.high_water_mark || 0,
+        q_max: b1.capacity || 16,
+        mutex_locks: osRep.total_mutex_locks || 0,
+        cond_waits: osRep.total_condition_waits || 0,
+        cond_signals: osRep.total_condition_signals || 0,
+        frame_deck: osRep.final_frame_deck || (latestPipelineLiveState ? latestPipelineLiveState.frame_deck : []),
+        trace_logs: osRep.final_trace_logs || (latestPipelineLiveState ? latestPipelineLiveState.trace_logs : [])
+    };
+}
+
+// ==============================================================================
+// LIVE OS PIPELINE & OVERLAPPING FRAME-STREAM INSPECTOR MODAL
+// ==============================================================================
+let latestPipelineLiveState = null;
+let pinnedConveyorFrameIdx = null;
+let flipbookTimer = null;
+let flipbookCursorIdx = 0;
+let flipbookLastFrameIdx = -1;
+let flipbookEndHoldTicks = 0;
+let flipbookSpeedMode = "normal"; // "slow" | "normal"
+let flipbookOnionSkin = true;
+let lastRenderedDeckSignature = "";
+
+function formatImgDataUrl(b64) {
+    if (!b64 || typeof b64 !== "string") return "";
+    return b64.startsWith("data:image") ? b64 : `data:image/jpeg;base64,${b64}`;
+}
+
+function formatActiveIdsText(activeIds, persons) {
+    if (Array.isArray(activeIds) && activeIds.length > 0) {
+        return activeIds.join(", ");
+    }
+    if (typeof activeIds === "string" && activeIds.trim().length > 0 && activeIds !== "Không có") {
+        return activeIds.trim();
+    }
+    return `${persons || 0} đối tượng`;
+}
+
+function startFlipbookLoop() {
+    stopFlipbookLoop();
+    const intervalMs = flipbookSpeedMode === "slow" ? 360 : 190;
+    flipbookTimer = setInterval(stepFlipbookTick, intervalMs);
+}
+
+function stopFlipbookLoop() {
+    if (flipbookTimer) {
+        clearInterval(flipbookTimer);
+        flipbookTimer = null;
+    }
+}
+
+function setFlipbookSpeed(mode) {
+    flipbookSpeedMode = mode === "slow" ? "slow" : "normal";
+    const slowBtn = document.getElementById("btn-flip-slow");
+    const normBtn = document.getElementById("btn-flip-normal");
+    if (slowBtn) slowBtn.classList.toggle("active", flipbookSpeedMode === "slow");
+    if (normBtn) normBtn.classList.toggle("active", flipbookSpeedMode === "normal");
+    startFlipbookLoop();
+    stepFlipbookTick();
+}
+
+function toggleFlipbookOnionSkin() {
+    flipbookOnionSkin = !flipbookOnionSkin;
+    const onionBtn = document.getElementById("btn-flip-onion");
+    if (onionBtn) onionBtn.classList.toggle("active", flipbookOnionSkin);
+    stepFlipbookTick();
+}
+
+function stepFlipbookTick() {
+    const modal = document.getElementById("os-live-pipeline-modal");
+    if (!modal || modal.classList.contains("hidden")) return;
+    if (!latestPipelineLiveState || !Array.isArray(latestPipelineLiveState.frame_deck)) return;
+    const deck = latestPipelineLiveState.frame_deck;
+    if (deck.length === 0) return;
+
+    let idx = 0;
+    if (pinnedConveyorFrameIdx !== null && deck[pinnedConveyorFrameIdx]) {
+        idx = pinnedConveyorFrameIdx;
+        flipbookLastFrameIdx = Number(deck[idx].frame_idx || 0);
+    } else if (!latestPipelineLiveState.is_completed) {
+        // Khi đang nạp và xử lý trực tiếp: chỉ tiến về phía trước theo frame_idx mới nhất,
+        // không quay vòng ngược về khung đầu để tránh cảm giác lặp lại khi chờ khung mới.
+        const nextForwardIdx = deck.findIndex(f => Number(f.frame_idx || 0) > flipbookLastFrameIdx);
+        if (nextForwardIdx !== -1) {
+            idx = nextForwardIdx;
+        } else {
+            idx = deck.length - 1;
+        }
+        flipbookCursorIdx = idx;
+        flipbookLastFrameIdx = Number(deck[idx].frame_idx || 0);
+    } else {
+        // Khi đã hoàn tất 100%: phát tuần tự mượt mà qua 10 khung hình cuối và giữ nhịp nghỉ ngắn ở khung cuối trước khi lặp
+        if (flipbookCursorIdx >= deck.length - 1) {
+            if (flipbookEndHoldTicks < 2) {
+                flipbookEndHoldTicks += 1;
+                idx = deck.length - 1;
+            } else {
+                flipbookEndHoldTicks = 0;
+                flipbookCursorIdx = 0;
+                idx = 0;
+            }
+        } else {
+            flipbookCursorIdx = (flipbookCursorIdx + 1) % deck.length;
+            idx = flipbookCursorIdx;
+        }
+        flipbookLastFrameIdx = Number(deck[idx].frame_idx || 0);
+    }
+
+    const cur = deck[idx];
+    if (!cur) return;
+
+    const flipImg = document.getElementById("os-modal-flipbook-img");
+    const ghostImg = document.getElementById("os-modal-flipbook-ghost-img");
+    const emptyFlip = document.getElementById("os-modal-flipbook-empty");
+    const curSrc = formatImgDataUrl(cur.pose_b64 || cur.raw_b64);
+
+    if (flipImg && curSrc) {
+        if (flipImg.getAttribute("data-frame-idx") !== String(cur.frame_idx)) {
+            flipImg.src = curSrc;
+            flipImg.setAttribute("data-frame-idx", String(cur.frame_idx));
+        }
+        flipImg.classList.remove("hidden");
+        if (emptyFlip) emptyFlip.classList.add("hidden");
+    }
+
+    if (ghostImg) {
+        if (flipbookOnionSkin && idx > 0 && deck.length > 1) {
+            const prevFrame = deck[idx - 1];
+            const prevSrc = formatImgDataUrl(prevFrame && (prevFrame.pose_b64 || prevFrame.raw_b64));
+            if (prevSrc) {
+                if (ghostImg.getAttribute("data-frame-idx") !== String(prevFrame.frame_idx)) {
+                    ghostImg.src = prevSrc;
+                    ghostImg.setAttribute("data-frame-idx", String(prevFrame.frame_idx));
+                }
+                ghostImg.classList.remove("hidden");
+            } else {
+                ghostImg.classList.add("hidden");
+            }
+        } else {
+            ghostImg.classList.add("hidden");
+        }
+    }
+
+    const modeSuffix = latestPipelineLiveState.is_completed ? " · Phát lại chuỗi 10 khung" : " · Dòng thời gian thực";
+    safeSetText(
+        "os-flipbook-step-label",
+        `Tờ ${idx + 1}/${deck.length} · Khung #${cur.frame_idx || 0} · ${cur.time_str || "00:00"}${modeSuffix}`
+    );
+
+    const dotsEl = document.getElementById("os-flipbook-dots");
+    if (dotsEl) {
+        if (dotsEl.children.length !== deck.length) {
+            dotsEl.innerHTML = deck
+                .map((_, dIdx) => `<span class="flip-step-dot${dIdx === idx ? " active" : ""}"></span>`)
+                .join("");
+        } else {
+            Array.from(dotsEl.children).forEach((dotEl, dIdx) => {
+                dotEl.classList.toggle("active", dIdx === idx);
+            });
+        }
+    }
+
+    // Synchronize active highlight on the bottom overlapping filmstrip cards without rebuilding DOM
+    const cascadeEl = document.getElementById("os-conveyor-cascade-fan");
+    if (cascadeEl) {
+        const cards = cascadeEl.querySelectorAll(".os-frame-card");
+        cards.forEach((cardEl, cIdx) => {
+            cardEl.classList.toggle("flip-active-card", cIdx === idx);
+        });
+    }
+}
+
+function openLivePipelineModal() {
+    const modal = document.getElementById("os-live-pipeline-modal");
+    if (!modal) return;
+    pinnedConveyorFrameIdx = null;
+    flipbookEndHoldTicks = 0;
+    modal.classList.remove("hidden");
+    if (latestPipelineLiveState) {
+        renderLivePipelineModalDOM(latestPipelineLiveState);
+    }
+    startFlipbookLoop();
+    stepFlipbookTick();
+}
+
+function closeLivePipelineModal(e) {
+    if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains("modal-close-btn") && !e.target.classList.contains("btn-primary")) {
+        return;
+    }
+    const modal = document.getElementById("os-live-pipeline-modal");
+    if (modal) modal.classList.add("hidden");
+    pinnedConveyorFrameIdx = null;
+    stopFlipbookLoop();
+}
+
+function updateLivePipelineModal(stateObj) {
+    if (!stateObj) return;
+    // Preserve previous frame_deck if current poll packet has empty deck during final stage transition
+    if ((!stateObj.frame_deck || stateObj.frame_deck.length === 0) && latestPipelineLiveState && latestPipelineLiveState.frame_deck && latestPipelineLiveState.frame_deck.length > 0) {
+        stateObj.frame_deck = latestPipelineLiveState.frame_deck;
+    }
+    if ((!stateObj.trace_logs || stateObj.trace_logs.length === 0) && latestPipelineLiveState && latestPipelineLiveState.trace_logs && latestPipelineLiveState.trace_logs.length > 0) {
+        stateObj.trace_logs = latestPipelineLiveState.trace_logs;
+    }
+    // Reset forward tracker if a new video job starts from a lower frame index
+    if (Array.isArray(stateObj.frame_deck) && stateObj.frame_deck.length > 0) {
+        const newestIdx = Number(stateObj.frame_deck[stateObj.frame_deck.length - 1].frame_idx || 0);
+        if (newestIdx < flipbookLastFrameIdx) {
+            flipbookLastFrameIdx = -1;
+            flipbookCursorIdx = 0;
+            lastRenderedDeckSignature = "";
+        }
+    }
+    latestPipelineLiveState = stateObj;
+
+    const modal = document.getElementById("os-live-pipeline-modal");
+    if (modal && !modal.classList.contains("hidden")) {
+        renderLivePipelineModalDOM(stateObj);
+    }
+}
+
+function renderLivePipelineModalDOM(st) {
+    const statusBadge = document.getElementById("os-modal-status-badge");
+    const pulseDot = document.getElementById("os-modal-pulse-dot");
+    if (statusBadge) {
+        if (st.is_completed) {
+            statusBadge.textContent = "ĐÃ HOÀN TẤT 100%";
+            statusBadge.className = "badge badge-safe mono";
+            if (pulseDot) pulseDot.style.opacity = "0.4";
+        } else {
+            statusBadge.textContent = `ĐANG XỬ LÝ TRỰC TIẾP · ${st.progress_pct || 0}%`;
+            statusBadge.className = "badge badge-safe mono";
+            if (pulseDot) pulseDot.style.opacity = "1";
+        }
+    }
+
+    safeSetText("os-modal-fps", `${st.current_fps || 0} FPS`);
+    safeSetText("os-modal-ms", `${st.ms_per_frame || '--'} ms/khung`);
+    safeSetText("os-modal-mutex", `${Number(st.mutex_locks || 0).toLocaleString()} lượt`);
+    safeSetText("os-modal-cond", `${Number(st.cond_signals || 0).toLocaleString()} / ${Number(st.cond_waits || 0).toLocaleString()}`);
+
+    const qMax = Math.max(1, st.q_max || 16);
+    const rawQ = st.raw_q || 0;
+    const wrQ = st.writer_q || 0;
+    safeSetText("os-modal-rawbuf-text", `${rawQ} / ${qMax}`);
+    safeSetText("os-modal-writerbuf-text", `${wrQ} / ${qMax}`);
+
+    const rawBar = document.getElementById("os-modal-rawbuf-bar");
+    const wrBar = document.getElementById("os-modal-writerbuf-bar");
+    if (rawBar) rawBar.style.width = `${Math.min(100, Math.round((rawQ / qMax) * 100))}%`;
+    if (wrBar) wrBar.style.width = `${Math.min(100, Math.round((wrQ / qMax) * 100))}%`;
+
+    const deck = st.frame_deck || [];
+    if (deck.length === 0) return;
+
+    const activeEntry = (pinnedConveyorFrameIdx !== null && deck[pinnedConveyorFrameIdx])
+        ? deck[pinnedConveyorFrameIdx]
+        : deck[deck.length - 1];
+
+    updateLeftSingleFrameInspector(activeEntry, st);
+
+    // Incremental DOM update for Bottom Full-Width Cinema Filmstrip (prevents flickering & image teardown)
+    const cascadeEl = document.getElementById("os-conveyor-cascade-fan");
+    if (cascadeEl) {
+        const deckSig = deck.map(f => f.frame_idx).join(",");
+        if (deckSig !== lastRenderedDeckSignature || cascadeEl.children.length !== deck.length) {
+            lastRenderedDeckSignature = deckSig;
+            const existingMap = new Map();
+            Array.from(cascadeEl.querySelectorAll(".os-frame-card")).forEach(el => {
+                const fKey = el.getAttribute("data-frame-idx");
+                if (fKey) existingMap.set(fKey, el);
+            });
+
+            const activeHighlightIdx = pinnedConveyorFrameIdx !== null
+                ? pinnedConveyorFrameIdx
+                : Math.min(deck.length - 1, Math.max(0, flipbookCursorIdx));
+
+            const fragment = document.createDocumentFragment();
+            deck.forEach((f, idx) => {
+                const fKey = String(f.frame_idx);
+                let cardEl = existingMap.get(fKey);
+                if (!cardEl) {
+                    cardEl = document.createElement("div");
+                    cardEl.className = "os-frame-card os-frame-card-enter";
+                    cardEl.setAttribute("data-frame-idx", fKey);
+                    const src = formatImgDataUrl(f.pose_b64 || f.raw_b64);
+                    cardEl.innerHTML = `
+                        <img src="${src}" alt="Annotated frame ${f.frame_idx}" decoding="async" />
+                        <span class="os-frame-card-tag mono">Khung #${f.frame_idx}</span>
+                        <span class="os-frame-card-step mono">Tờ ${idx + 1}/${deck.length}</span>
+                        <div class="os-frame-card-foot mono">
+                            <span>${escapeHtml(f.time_str || '00:00')}</span>
+                            <span>17 khớp · ${f.persons || 0} ID</span>
+                        </div>
+                    `;
+                } else {
+                    cardEl.classList.remove("os-frame-card-enter");
+                    const stepSpan = cardEl.querySelector(".os-frame-card-step");
+                    if (stepSpan) stepSpan.textContent = `Tờ ${idx + 1}/${deck.length}`;
+                }
+                cardEl.setAttribute("data-deck-idx", String(idx));
+                cardEl.style.zIndex = String(15 + idx);
+                cardEl.classList.toggle("flip-active-card", idx === activeHighlightIdx);
+                cardEl.onmouseenter = () => previewConveyorFrame(idx);
+                cardEl.onmouseleave = () => releaseConveyorFrame();
+                cardEl.onclick = () => previewConveyorFrame(idx);
+                fragment.appendChild(cardEl);
+            });
+            cascadeEl.replaceChildren(fragment);
+        }
+    }
+
+    if (!flipbookTimer) {
+        startFlipbookLoop();
+        stepFlipbookTick();
+    }
+}
+
+function updateLeftSingleFrameInspector(f, st) {
+    if (!f) return;
+    const liveImg = document.getElementById("os-modal-live-img");
+    const emptyBox = document.getElementById("os-modal-viewport-empty");
+    const rawPip = document.getElementById("os-modal-raw-pip");
+    const rawCompareImg = document.getElementById("os-modal-raw-compare-img");
+
+    const poseSrc = formatImgDataUrl(f.pose_b64 || f.raw_b64);
+    const rawSrc = formatImgDataUrl(f.raw_b64 || f.pose_b64);
+
+    if (liveImg && poseSrc) {
+        if (liveImg.getAttribute("data-frame-idx") !== String(f.frame_idx)) {
+            liveImg.src = poseSrc;
+            liveImg.setAttribute("data-frame-idx", String(f.frame_idx));
+        }
+        liveImg.classList.remove("hidden");
+        if (emptyBox) emptyBox.classList.add("hidden");
+    }
+    if (rawPip && rawCompareImg && rawSrc) {
+        if (rawCompareImg.getAttribute("data-frame-idx") !== String(f.frame_idx)) {
+            rawCompareImg.src = rawSrc;
+            rawCompareImg.setAttribute("data-frame-idx", String(f.frame_idx));
+        }
+        rawPip.classList.remove("hidden");
+    }
+
+    const totalF = (st && st.total_frames) || f.total_frames || 0;
+    safeSetText("os-modal-frame-counter", `Khung #${f.frame_idx || 0} / ${totalF}`);
+    safeSetText("os-modal-time-readout", f.time_str || "00:00");
+    const idsList = formatActiveIdsText(f.active_ids, f.persons);
+    safeSetText("os-modal-hud-ids", `Chủ thể: ${idsList}`);
+    safeSetText("os-modal-hud-latency", `Chu kỳ suy luận: ${f.latency_ms || (st && st.ms_per_frame) || '--'} ms/khung`);
+}
+
+function previewConveyorFrame(deckIdx) {
+    if (!latestPipelineLiveState || !latestPipelineLiveState.frame_deck) return;
+    const f = latestPipelineLiveState.frame_deck[deckIdx];
+    if (!f) return;
+    pinnedConveyorFrameIdx = deckIdx;
+    updateLeftSingleFrameInspector(f, latestPipelineLiveState);
+    stepFlipbookTick();
+}
+
+function releaseConveyorFrame() {
+    pinnedConveyorFrameIdx = null;
+}
+
+// ==============================================================================
 // GLOBAL WINDOW BINDINGS
 // ==============================================================================
 window.switchTab = switchTab;
@@ -2519,6 +3848,12 @@ window.clearLogs = clearLogs;
 window.exportLogsToCSV = exportLogsToCSV;
 window.openSnapshotModal = openSnapshotModal;
 window.closeSnapshotModal = closeSnapshotModal;
+window.openLivePipelineModal = openLivePipelineModal;
+window.closeLivePipelineModal = closeLivePipelineModal;
+window.previewConveyorFrame = previewConveyorFrame;
+window.releaseConveyorFrame = releaseConveyorFrame;
+window.setFlipbookSpeed = setFlipbookSpeed;
+window.toggleFlipbookOnionSkin = toggleFlipbookOnionSkin;
 window.switchSourceMode = switchSourceMode;
 window.handleFileSelected = handleFileSelected;
 window.handleURLImport = handleURLImport;
@@ -2539,7 +3874,20 @@ window.renderExecutiveSceneNarrative = renderExecutiveSceneNarrative;
 window.renderBehaviorAnalytics = renderBehaviorAnalytics;
 window.seekBothPlayers = seekBothPlayers;
 window.toggleTelemetryDrawer = toggleTelemetryDrawer;
+window.toggleInlineTelemetryPanel = toggleInlineTelemetryPanel;
+window.closeTelemetryPanel = closeTelemetryPanel;
+window.onOSLabSliderInput = onOSLabSliderInput;
+window.commitOSLabConfig = commitOSLabConfig;
+window.applyOSLabPreset = applyOSLabPreset;
+window.triggerOSLabStressBurst = triggerOSLabStressBurst;
+window.resetOSLabCounters = resetOSLabCounters;
+window.renderOSPipelineReport = renderOSPipelineReport;
 window.toggleTheme = toggleTheme;
 window.setTheme = setTheme;
 window.initTheme = initTheme;
 window.drawMultiTrackActorTimeline = drawMultiTrackActorTimeline;
+window.drawEventCentricFlowStreams = drawEventCentricFlowStreams;
+window.getSegmentMilestoneTitle = getSegmentMilestoneTitle;
+window.updateEventFlowPlayhead = updateEventFlowPlayhead;
+window.showEventFlowTooltip = showEventFlowTooltip;
+window.hideEventFlowTooltip = hideEventFlowTooltip;

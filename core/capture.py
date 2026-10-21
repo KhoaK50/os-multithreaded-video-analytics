@@ -47,22 +47,45 @@ class ThreadSafeBoundedBuffer:
         self.not_empty = threading.Condition(self.lock)
         self.not_full = threading.Condition(self.lock)
 
-        # Viễn trắc Hệ điều hành
+        # Viễn trắc Hệ điều hành (Synchronization & Monitor Telemetry)
         self.total_produced = 0
         self.total_consumed = 0
         self.total_dropped = 0
         self.high_water_mark = 0
+        self.mutex_lock_count = 0
+        self.not_empty_wait_count = 0
+        self.not_full_wait_count = 0
+        self.condition_signal_count = 0
         self.latency_samples = collections.deque(maxlen=60)
+
+    def resize_capacity(self, new_capacity: int) -> int:
+        """
+        Thay đổi kích thước Hàng đợi Giới hạn N ngay trong thời gian chạy (Dynamic Bounded-Buffer Resizing).
+        Nếu kích thước mới nhỏ hơn số phần tử hiện có, loại bỏ các phần tử cũ nhất theo FIFO.
+        """
+        clamped_cap = max(2, min(64, int(new_capacity)))
+        with self.lock:
+            self.mutex_lock_count += 1
+            self.capacity = clamped_cap
+            while len(self._buffer) > self.capacity:
+                self._buffer.popleft()
+                self.total_dropped += 1
+            if self.high_water_mark > self.capacity:
+                self.high_water_mark = len(self._buffer)
+            self.not_full.notify_all()
+            self.condition_signal_count += 1
+            return self.capacity
 
     def put_drop_oldest(self, item: Any) -> bool:
         """
         Nạp phần tử vào hàng đợi đệm theo cơ chế Drop-Oldest Flow Control.
         Nếu hàng đợi đầy, loại bỏ phần tử cũ nhất (FIFO eviction) để nhường chỗ cho phần tử mới nhất.
-        Đảm bảo không bao giờ chặn luồng Producer (Non-blocking Producer).
+        Đảm bảo không bao giờ chặn luồng Producer (Non-blocking Producer - Flow Control & Deadlock Prevention).
         """
         with self.lock:
+            self.mutex_lock_count += 1
             dropped = False
-            if len(self._buffer) >= self.capacity:
+            while len(self._buffer) >= self.capacity:
                 self._buffer.popleft()
                 self.total_dropped += 1
                 dropped = True
@@ -72,21 +95,24 @@ class ThreadSafeBoundedBuffer:
             if len(self._buffer) > self.high_water_mark:
                 self.high_water_mark = len(self._buffer)
 
-            # Báo hiệu cho các Consumer đang chờ dữ liệu
+            # Báo hiệu cho các Consumer đang chờ dữ liệu (Monitor x.signal())
             self.not_empty.notify()
+            self.condition_signal_count += 1
             return dropped
 
     def put(self, item: Any, block: bool = True, timeout: Optional[float] = None) -> bool:
         """
-        Nạp phần tử có cơ chế chặn (Blocking Put) khi buffer đầy theo chuẩn Dijkstra.
+        Nạp phần tử có cơ chế chặn (Blocking Put) khi buffer đầy theo chuẩn Bounded-Buffer Monitor.
         """
         with self.lock:
+            self.mutex_lock_count += 1
             if not block:
                 if len(self._buffer) >= self.capacity:
                     raise queue.Full("Bounded buffer is full")
             else:
                 end_time = time.time() + timeout if timeout is not None else None
                 while len(self._buffer) >= self.capacity:
+                    self.not_full_wait_count += 1
                     if timeout is not None:
                         remaining = end_time - time.time()
                         if remaining <= 0:
@@ -101,6 +127,7 @@ class ThreadSafeBoundedBuffer:
                 self.high_water_mark = len(self._buffer)
 
             self.not_empty.notify()
+            self.condition_signal_count += 1
             return True
 
     def put_nowait(self, item: Any) -> None:
@@ -114,12 +141,14 @@ class ThreadSafeBoundedBuffer:
         Tự động đo Queue Latency nếu phần tử là tuple dạng (timestamp, data).
         """
         with self.lock:
+            self.mutex_lock_count += 1
             if not block:
                 if len(self._buffer) == 0:
                     return None
             else:
                 end_time = time.time() + timeout if timeout is not None else None
                 while len(self._buffer) == 0:
+                    self.not_empty_wait_count += 1
                     if timeout is not None:
                         remaining = end_time - time.time()
                         if remaining <= 0:
@@ -131,15 +160,16 @@ class ThreadSafeBoundedBuffer:
             item = self._buffer.popleft()
             self.total_consumed += 1
 
-            # Đo độ trễ thời gian thực của frame trong hàng đợi
-            if isinstance(item, tuple) and len(item) >= 1 and isinstance(item[0], (int, float)):
-                t_put = item[0]
+            # Đo độ trễ thời gian thực của frame trong hàng đợi (chỉ tính khi item[0] là Unix epoch timestamp > 1e9)
+            if isinstance(item, tuple) and len(item) >= 1 and isinstance(item[0], (int, float)) and item[0] > 1e9:
+                t_put = float(item[0])
                 latency_ms = (time.time() - t_put) * 1000.0
-                if latency_ms >= 0:
+                if 0.0 <= latency_ms <= 60000.0:
                     self.latency_samples.append(latency_ms)
 
             # Đánh thức Producer nếu đang bị chặn
             self.not_full.notify()
+            self.condition_signal_count += 1
             return item
 
     def get_nowait(self) -> Any:
@@ -152,6 +182,7 @@ class ThreadSafeBoundedBuffer:
     def peek_latest(self) -> Optional[Any]:
         """Xem phần tử mới nhất trong hàng đợi mà không lấy ra."""
         with self.lock:
+            self.mutex_lock_count += 1
             if len(self._buffer) > 0:
                 return self._buffer[-1]
             return None
@@ -160,6 +191,21 @@ class ThreadSafeBoundedBuffer:
         """Trả về kích thước hiện tại của hàng đợi đệm."""
         with self.lock:
             return len(self._buffer)
+
+    @property
+    def size(self) -> int:
+        """Thuộc tính trả về số phần tử hiện tại trong hàng đợi."""
+        return self.qsize()
+
+    @property
+    def ram_ceiling_mb(self) -> float:
+        """Trần bộ nhớ RAM lý thuyết M(N) cho khung hình 1280x720x3 BGR."""
+        return round((self.capacity * 1280 * 720 * 3) / (1024.0 * 1024.0), 2)
+
+    @property
+    def ram_active_mb(self) -> float:
+        """Dung lượng RAM đang chiếm dụng thực tế bởi các khung hình trong hàng đợi."""
+        return round((self.qsize() * 1280 * 720 * 3) / (1024.0 * 1024.0), 2)
 
     def full(self) -> bool:
         """Kiểm tra hàng đợi đã đầy dung lượng chưa."""
@@ -174,10 +220,12 @@ class ThreadSafeBoundedBuffer:
     def clear(self):
         """Xóa sạch hàng đợi và giải phóng các luồng đang chờ."""
         with self.lock:
+            self.mutex_lock_count += 1
             self._buffer.clear()
             self.not_full.notify_all()
+            self.condition_signal_count += 1
 
-    def get_stats(self) -> dict:
+    def get_stats(self, frame_w: int = 1280, frame_h: int = 720) -> dict:
         """
         Trả về bức tranh viễn trắc toàn diện của Bounded Buffer phục vụ báo cáo HĐH.
         """
@@ -186,6 +234,9 @@ class ThreadSafeBoundedBuffer:
             avg_lat = round(float(np.mean(self.latency_samples)), 2) if self.latency_samples else 0.0
             drop_rate = round((self.total_dropped / max(1, self.total_produced)) * 100.0, 2)
             utilization = round((cur_size / max(1, self.capacity)) * 100.0, 1)
+            bytes_per_frame = frame_w * frame_h * 3
+            ram_ceiling_mb = round((self.capacity * bytes_per_frame) / (1024.0 * 1024.0), 2)
+            ram_active_mb = round((cur_size * bytes_per_frame) / (1024.0 * 1024.0), 2)
 
             return {
                 "size": cur_size,
@@ -197,6 +248,12 @@ class ThreadSafeBoundedBuffer:
                 "latency_ms": avg_lat,
                 "high_water_mark": self.high_water_mark,
                 "utilization_pct": utilization,
+                "mutex_lock_count": self.mutex_lock_count,
+                "not_empty_wait_count": self.not_empty_wait_count,
+                "not_full_wait_count": self.not_full_wait_count,
+                "condition_signal_count": self.condition_signal_count,
+                "ram_ceiling_mb": ram_ceiling_mb,
+                "ram_active_mb": ram_active_mb,
             }
 
 

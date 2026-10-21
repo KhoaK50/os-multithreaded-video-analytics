@@ -43,6 +43,8 @@ class CyberHUDRenderer:
         self.font_body = self._load_font(["segoeui.ttf", "arial.ttf"], 13)
         self.font_body_bold = self._load_font(["segoeuib.ttf", "arialbd.ttf", "arial.ttf"], 13, bold=True)
         self.font_caption = self._load_font(["segoeui.ttf", "arial.ttf"], 11)
+        self._text_patch_cache = {}
+        self._text_bbox_cache = {}
 
     def _load_font(self, font_names, size, bold=False):
         """Hỗ trợ đa nền tảng Windows, Linux Ubuntu/Colab, MacOS cho tiếng Việt Unicode."""
@@ -149,6 +151,7 @@ class CyberHUDRenderer:
         """
         Vẽ chuỗi văn bản tiếng Việt Unicode mượt mà lên mảng hình ảnh OpenCV BGR bằng Pillow.
         Loại bỏ 100% hiện tượng vỡ font, ký tự rác hoặc dấu '?' của cv2.putText.
+        Tích hợp bộ đệm mảng BGR cho các nhãn có nền đặc để tránh tạo lại ảnh PIL hàng nghìn lần.
         """
         if not text:
             return
@@ -157,13 +160,21 @@ class CyberHUDRenderer:
         if x >= w or y >= h:
             return
 
-        try:
-            bbox = font.getbbox(text)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-        except Exception:
-            text_w = len(text) * 8
-            text_h = 16
+        bbox_key = (text, id(font))
+        dims = self._text_bbox_cache.get(bbox_key)
+        if dims is None:
+            try:
+                bbox = font.getbbox(text)
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
+            except Exception:
+                text_w = len(text) * 8
+                text_h = 16
+            dims = (text_w, text_h)
+            if len(self._text_bbox_cache) < 512:
+                self._text_bbox_cache[bbox_key] = dims
+        else:
+            text_w, text_h = dims
 
         patch_w = text_w + padding * 2
         patch_h = text_h + padding * 2
@@ -175,18 +186,27 @@ class CyberHUDRenderer:
         if x2 <= x1 or y2 <= y1:
             return
 
+        if bg_color_bgr is not None:
+            cache_key = (text, id(font), color_bgr, bg_color_bgr, padding)
+            cached_bgr = self._text_patch_cache.get(cache_key)
+            if cached_bgr is None:
+                bg_rgb = (bg_color_bgr[2], bg_color_bgr[1], bg_color_bgr[0])
+                color_rgb = (color_bgr[2], color_bgr[1], color_bgr[0])
+                pil_patch = Image.new("RGB", (patch_w, patch_h), bg_rgb)
+                draw = ImageDraw.Draw(pil_patch)
+                draw.text((padding, padding), text, font=font, fill=color_rgb)
+                cached_bgr = cv2.cvtColor(np.array(pil_patch), cv2.COLOR_RGB2BGR)
+                if len(self._text_patch_cache) >= 256:
+                    self._text_patch_cache.clear()
+                self._text_patch_cache[cache_key] = cached_bgr
+            img[y1:y2, x1:x2] = cached_bgr[:y2 - y1, :x2 - x1]
+            return
+
         roi = img[y1:y2, x1:x2]
         pil_patch = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(pil_patch)
-
         color_rgb = (color_bgr[2], color_bgr[1], color_bgr[0])
-
-        if bg_color_bgr is not None:
-            bg_rgb = (bg_color_bgr[2], bg_color_bgr[1], bg_color_bgr[0])
-            draw.rectangle([0, 0, x2 - x1, y2 - y1], fill=bg_rgb)
-
         draw.text((padding, padding), text, font=font, fill=color_rgb)
-
         res_bgr = cv2.cvtColor(np.array(pil_patch), cv2.COLOR_RGB2BGR)
         img[y1:y2, x1:x2] = res_bgr
 
@@ -232,20 +252,41 @@ class CyberHUDRenderer:
     draw_ergonomic_skeleton = draw_cyber_skeleton
 
     def draw_ghost_skeleton(self, img, kpts, color_bgr=(115, 125, 138)):
-        """Vẽ khung xương mờ bán trong suốt (Ghosted Skeleton) cho người ngoài cuộc/đứng xem."""
+        """Vẽ khung xương mờ bán trong suốt (Ghosted Skeleton) cho người ngoài cuộc/đứng xem (tối ưu chỉ copy vùng ROI)."""
         if kpts is None or len(kpts) == 0:
             return
 
-        overlay = img.copy()
-        # 1. Vẽ các đường xương cơ thể mỏng nhẹ
+        h, w = img.shape[:2]
+        valid_xs = []
+        valid_ys = []
+        for idx, pt in enumerate(kpts):
+            if idx < 5:
+                continue
+            conf = pt[2] if len(pt) > 2 else 1.0
+            if conf > 0.40:
+                valid_xs.append(int(pt[0]))
+                valid_ys.append(int(pt[1]))
+        if not valid_xs:
+            return
+
+        rx1 = max(0, min(valid_xs) - 6)
+        ry1 = max(0, min(valid_ys) - 6)
+        rx2 = min(w, max(valid_xs) + 7)
+        ry2 = min(h, max(valid_ys) + 7)
+        if rx2 <= rx1 or ry2 <= ry1:
+            return
+
+        sub_img = img[ry1:ry2, rx1:rx2]
+        overlay = sub_img.copy()
+        # 1. Vẽ các đường xương cơ thể mỏng nhẹ trên vùng ROI
         for (i, j) in self.SKELETON_PAIRS:
             if i < len(kpts) and j < len(kpts):
                 p1, p2 = kpts[i], kpts[j]
                 conf1 = p1[2] if len(p1) > 2 else 1.0
                 conf2 = p2[2] if len(p2) > 2 else 1.0
                 if conf1 > 0.40 and conf2 > 0.40:
-                    pt1 = (int(p1[0]), int(p1[1]))
-                    pt2 = (int(p2[0]), int(p2[1]))
+                    pt1 = (int(p1[0]) - rx1, int(p1[1]) - ry1)
+                    pt2 = (int(p2[0]) - rx1, int(p2[1]) - ry1)
                     cv2.line(overlay, pt1, pt2, color_bgr, 1, cv2.LINE_AA)
 
         # 2. Vẽ khớp xương nhỏ kín đáo
@@ -254,17 +295,25 @@ class CyberHUDRenderer:
                 continue
             conf = pt[2] if len(pt) > 2 else 1.0
             if conf > 0.40:
-                px, py = int(pt[0]), int(pt[1])
+                px, py = int(pt[0]) - rx1, int(pt[1]) - ry1
                 cv2.circle(overlay, (px, py), 2, color_bgr, -1, cv2.LINE_AA)
 
-        # Trộn mờ với ảnh gốc (alpha blending 35% để tránh tranh chấp thị giác)
-        cv2.addWeighted(overlay, 0.35, img, 0.65, 0, img)
+        # Trộn mờ trên vùng ROI với ảnh gốc (alpha blending 35%)
+        cv2.addWeighted(overlay, 0.35, sub_img, 0.65, 0, sub_img)
 
     def draw_ghost_bbox(self, img, x1, y1, x2, y2, color_bgr=(90, 98, 110)):
-        """Vẽ khung viền tối giản mờ cho người ngoài cuộc để tránh làm rối mắt."""
-        overlay = img.copy()
-        cv2.rectangle(overlay, (x1, y1), (x2, y2), color_bgr, 1, lineType=cv2.LINE_AA)
-        cv2.addWeighted(overlay, 0.25, img, 0.75, 0, img)
+        """Vẽ khung viền tối giản mờ cho người ngoài cuộc (tối ưu chỉ copy vùng ROI thay vì toàn khung hình)."""
+        h, w = img.shape[:2]
+        rx1 = max(0, int(x1) - 2)
+        ry1 = max(0, int(y1) - 2)
+        rx2 = min(w, int(x2) + 3)
+        ry2 = min(h, int(y2) + 3)
+        if rx2 <= rx1 or ry2 <= ry1:
+            return
+        sub_img = img[ry1:ry2, rx1:rx2]
+        overlay = sub_img.copy()
+        cv2.rectangle(overlay, (int(x1) - rx1, int(y1) - ry1), (int(x2) - rx1, int(y2) - ry1), color_bgr, 1, lineType=cv2.LINE_AA)
+        cv2.addWeighted(overlay, 0.25, sub_img, 0.75, 0, sub_img)
 
     def draw_technical_bbox(self, img, x1, y1, x2, y2, color_bgr, label="", score=0.0):
         """Vẽ khung định vị đối tượng chuẩn kỹ thuật (Technical Bounding Box) kèm nhãn tiếng Việt Unicode."""
@@ -296,7 +345,13 @@ class CyberHUDRenderer:
 
         # 4. Nhãn đính kèm vẽ bằng Pillow Unicode (hỗ trợ 100% tiếng Việt)
         if label:
-            tag_text = f"[{label.upper()} {int(score * 100)}%]" if score > 0 else f"[{label.upper()}]"
+            lbl_strip = label.strip()
+            if lbl_strip.startswith("[") and lbl_strip.endswith("]"):
+                tag_text = lbl_strip
+            elif score > 0.0:
+                tag_text = f"[{lbl_strip.upper()} {int(score * 100)}%]"
+            else:
+                tag_text = f"[{lbl_strip.upper()}]"
             tag_y = max(0, y1 - 22)
             self.draw_unicode_text(
                 img,
@@ -541,7 +596,7 @@ class CyberHUDRenderer:
         """Phân giải chuỗi hiển thị phân tầng mô hình (Tier-1 / Tier-2 / Tier-3) theo thời gian thực."""
         tier_str = diagnosis.get("model_tier_str") or metrics.get("model_tier_str")
         if tier_str:
-            return tier_str if tier_str.startswith("●") else f"● {tier_str}"
+            return tier_str.replace("●", "").strip()
 
         tier_val = (
             diagnosis.get("model_tier")
@@ -552,16 +607,16 @@ class CyberHUDRenderer:
         if tier_val:
             s = str(tier_val).strip()
             s_lower = s.lower()
-            if "tier_1" in s_lower or "tier-1" in s_lower or "gemini 2" in s_lower or "gemini-2" in s_lower:
-                return "● Tier-1 Gemini 2.0"
-            elif "tier_2" in s_lower or "tier-2" in s_lower or "gemini 1" in s_lower or "gemini-1" in s_lower:
-                return "● Tier-2 Gemini 1.5 Failover"
+            if "tier_1" in s_lower or "tier-1" in s_lower or "gemini 3.8" in s_lower or "gemini-3.8" in s_lower or "gemini 2" in s_lower or "gemini-2" in s_lower:
+                return "Tier-1 Gemini 3.8"
+            elif "tier_2" in s_lower or "tier-2" in s_lower or "gemini 3.5" in s_lower or "gemini-3.5" in s_lower or "gemini 1" in s_lower or "gemini-1" in s_lower:
+                return "Tier-2 Gemini 3.5 Failover"
             elif "tier_3" in s_lower or "tier-3" in s_lower or "heuristic" in s_lower or "arbiter" in s_lower or "tự hành" in s_lower:
-                return "● AI Tự Hành (Local Heuristic)"
+                return "AI Tự Hành (Local Heuristic)"
             else:
-                return s if s.startswith("●") else f"● {s}"
+                return s.replace("●", "").strip()
 
-        return "● Tier-1 Gemini 2.0"
+        return "Tier-1 Gemini 3.8"
 
     def _draw_metric_bar(self, draw, x, y, label, val_str, ratio):
         draw.text((x, y), label, font=self.font_caption, fill=self.COLORS["text_muted"])

@@ -43,8 +43,8 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
         """Khởi tạo orchestrator với API Key giả lập và mock client."""
         self.orchestrator = HierarchicalModelOrchestrator(
             api_key="mock_test_key_ai_os_2026",
-            tier1_model="gemini-2.0-flash",
-            tier2_model="gemini-1.5-flash",
+            tier1_model="gemini-3.8-flash",
+            tier2_model="gemini-3.5-flash",
             cooldown_seconds=60.0,
             rate_limit_interval=4.2
         )
@@ -83,7 +83,7 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
 
         # Kiểm tra mô hình được gọi
         call_kwargs = self.mock_client.models.generate_content.call_args.kwargs
-        self.assertEqual(call_kwargs["model"], "gemini-2.0-flash")
+        self.assertEqual(call_kwargs["model"], self.orchestrator.tier1_model)
 
         # Kiểm tra Rolling Context Memory được cập nhật
         self.assertEqual(len(self.orchestrator.context_memory.history), 1)
@@ -116,9 +116,9 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
 
         def side_effect(*args, **kwargs):
             model_called = kwargs.get("model")
-            if model_called == "gemini-2.0-flash":
+            if model_called == self.orchestrator.tier1_model:
                 raise err_429
-            elif model_called == "gemini-1.5-flash":
+            elif model_called == self.orchestrator.tier2_model:
                 return tier2_response
             raise ValueError(f"Mô hình không xác định: {model_called}")
 
@@ -155,7 +155,7 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
                     torso_angle=85.0 + idx,
                     prediction="Duy trì ổn định",
                     severity="safe",
-                    tier_used="Tier-1 Gemini 2.0"
+                    tier_used="Tier-1 Gemini 3.8"
                 )
             )
 
@@ -217,7 +217,7 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
         self.assertEqual(res["model_tier"], ModelTier.TIER_1_PRIMARY.value)
         self.assertEqual(self.orchestrator.active_tier, ModelTier.TIER_1_PRIMARY)
         call_kwargs = self.mock_client.models.generate_content.call_args.kwargs
-        self.assertEqual(call_kwargs["model"], "gemini-2.0-flash")
+        self.assertEqual(call_kwargs["model"], self.orchestrator.tier1_model)
 
     # =========================================================================
     # Test 5: Cả Tier 1 & Tier 2 đều chặn 429 -> Kích hoạt Tier 3 Heuristic Arbiter
@@ -241,7 +241,7 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
                 torso_angle=89.0,
                 prediction="Tiếp tục giảng bài",
                 severity="safe",
-                tier_used="Tier-1 Gemini 2.0"
+                tier_used="Tier-1 Gemini 3.8"
             )
         )
 
@@ -325,8 +325,8 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
         # Trạng thái ban đầu: Tier 1
         info1 = self.orchestrator.get_active_tier_info()
         self.assertEqual(info1["active_tier"], "tier_1")
-        self.assertEqual(info1["tier_name"], "gemini-2.0-flash")
-        self.assertEqual(info1["tier_badge"], "● Tier-1 Gemini 2.0")
+        self.assertEqual(info1["tier_name"], "gemini-3.8-flash")
+        self.assertEqual(info1["tier_badge"], "Tier-1 Gemini 3.8")
         self.assertFalse(info1["is_cooldown"])
         self.assertEqual(info1["cooldown_remaining"], 0.0)
 
@@ -335,8 +335,8 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
         self.orchestrator.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY)
         info2 = self.orchestrator.get_active_tier_info()
         self.assertEqual(info2["active_tier"], "tier_2")
-        self.assertEqual(info2["tier_name"], "gemini-1.5-flash")
-        self.assertEqual(info2["tier_badge"], "● Tier-2 Gemini 1.5 (Failover)")
+        self.assertEqual(info2["tier_name"], "gemini-3.5-flash")
+        self.assertEqual(info2["tier_badge"], "Tier-2 Gemini 3.5 (Failover)")
         self.assertTrue(info2["is_cooldown"])
         self.assertGreater(info2["cooldown_remaining"], 0.0)
 
@@ -344,7 +344,7 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
         self.orchestrator.active_tier = ModelTier.TIER_3_HEURISTIC
         info3 = self.orchestrator.get_active_tier_info()
         self.assertEqual(info3["active_tier"], "tier_3")
-        self.assertEqual(info3["tier_badge"], "● AI Tự Hành (Local Heuristic)")
+        self.assertEqual(info3["tier_badge"], "AI Tự Hành (Local Heuristic)")
 
     # =========================================================================
     # Test 9: Điều phối nhịp độ gọi API an toàn (Pacing >= 4.2s)
@@ -435,9 +435,9 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
 
         def side_effect(*args, **kwargs):
             m = kwargs.get("model")
-            if m == "gemini-2.0-flash":
+            if m == self.orchestrator.tier1_model:
                 raise err_429
-            elif m == "gemini-1.5-flash":
+            elif m == self.orchestrator.tier2_model:
                 return tier2_resp
             raise ValueError(f"Unknown model: {m}")
 
@@ -483,9 +483,9 @@ class TestHierarchicalFailoverSuite(unittest.TestCase):
 
         def qa_side_effect(*args, **kwargs):
             m = kwargs.get("model")
-            if m == "gemini-2.0-flash":
+            if m == self.orchestrator.tier1_model:
                 raise err_429
-            elif m == "gemini-1.5-flash":
+            elif m == self.orchestrator.tier2_model:
                 return tier2_resp
             raise ValueError(f"Unknown model: {m}")
 

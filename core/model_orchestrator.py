@@ -4,9 +4,9 @@ Học phần: Hệ điều hành — Kiến trúc Phân tích Video Đa luồng.
 
 Đặc tả kiến trúc (Milestone 1 - R1):
 1. Phân tầng mô hình ưu tiên chất lượng cao (Hierarchical Model Tiers):
-   - Tier 1: gemini-2.0-flash / gemini-2.5-flash (Thị giác cao nhất).
-   - Tier 2: gemini-1.5-flash (Dự phòng tốc độ cao khi Tier 1 chạm trần 15 RPM).
-   - Tier 3: Autonomous Heuristic Arbiter (Hội chẩn tự hành cục bộ có nhận thức ngữ cảnh).
+   - Tier 1: gemini-3.8-flash (Thị giác cao nhất).
+   - Tier 2: gemini-3.5-flash (Dự phòng tốc độ cao khi Tier 1 chạm trần 15 RPM).
+   - Tier 3: gemini-3.5-flash-lite / Autonomous Heuristic Arbiter (Hội chẩn tự hành cục bộ có nhận thức ngữ cảnh).
 2. Tự động chuyển đổi khi chạm trần 15 RPM / lỗi HTTP 429 RESOURCE_EXHAUSTED tức thì.
 3. Tự phục hồi và quay lại Tier 1 (Preemptive Cooldown Reversion) qua bộ đếm 60s sliding window.
 4. Duy trì bộ nhớ ngữ cảnh và tính liên tục tư duy (Rolling Context Memory) 3-5 chu kỳ trước.
@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 class ModelTier(str, Enum):
-    TIER_1_PRIMARY = "Tier-1 Gemini 2.0"
-    TIER_2_FALLBACK = "Tier-2 Gemini 1.5"
+    TIER_1_PRIMARY = "Tier-1 Gemini 3.8"
+    TIER_2_FALLBACK = "Tier-2 Gemini 3.5"
     TIER_3_HEURISTIC = "Tier-3 Local Arbiter"
 
 
@@ -290,6 +290,7 @@ class HierarchicalModelOrchestrator:
         else:
             self.api_key = CONFIG.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
 
+        self._explicit_tier1 = (tier1_model is not None)
         self.tier1_model = tier1_model or CONFIG.GEMINI_TIER1_MODEL
         self.tier2_model = tier2_model or CONFIG.GEMINI_TIER2_MODEL
         self.cooldown_seconds = cooldown_seconds if cooldown_seconds is not None else CONFIG.GEMINI_COOLDOWN_SECONDS
@@ -356,19 +357,19 @@ class HierarchicalModelOrchestrator:
         if self.active_tier == ModelTier.TIER_1_PRIMARY:
             tier_key = "tier_1"
             tier_name = self.tier1_model
-            tier_badge = "● Tier-1 Gemini 2.0"
+            tier_badge = "Tier-1 Gemini 3.8"
             is_cd = False
             cd_rem = 0.0
         elif self.active_tier == ModelTier.TIER_2_FALLBACK:
             tier_key = "tier_2"
             tier_name = self.tier2_model
-            tier_badge = "● Tier-2 Gemini 1.5 (Failover)"
+            tier_badge = "Tier-2 Gemini 3.5 (Failover)"
             is_cd = True
             cd_rem = self.cooldown_tracker.get_cooldown_remaining(ModelTier.TIER_1_PRIMARY)
         else:
             tier_key = "tier_3"
             tier_name = "Autonomous Heuristic"
-            tier_badge = "● AI Tự Hành (Local Heuristic)"
+            tier_badge = "AI Tự Hành (Local Heuristic)"
             is_cd = True
             cd_rem = self.cooldown_tracker.get_cooldown_remaining(ModelTier.TIER_1_PRIMARY)
 
@@ -384,21 +385,47 @@ class HierarchicalModelOrchestrator:
         }
 
     def _parse_gemini_json(self, raw_text: str) -> dict:
-        """Parse JSON an toàn, bóc tách markdown code fence."""
+        """Parse JSON an toàn, bóc tách markdown code fence và tự động sửa lỗi cắt cụt JSON trên chuỗi dài."""
         text = raw_text.strip()
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
         elif "```" in text:
             text = text.split("```")[1].split("```")[0].strip()
-        data = json.loads(text)
+        try:
+            data = json.loads(text)
+        except Exception:
+            import re
+            cleaned = re.sub(r',\s*([}\]])', r'\1', text)
+            try:
+                data = json.loads(cleaned)
+            except Exception:
+                # Khôi phục JSON bị cắt cụt ở cuối mảng segment_analyses nếu quá dài
+                last_brace = cleaned.rfind("}")
+                if last_brace != -1:
+                    candidate = cleaned[:last_brace + 1]
+                    open_sq = candidate.count("[") - candidate.count("]")
+                    open_cu = candidate.count("{") - candidate.count("}")
+                    candidate += ("]" * max(0, open_sq)) + ("}" * max(0, open_cu))
+                    candidate = re.sub(r',\s*([}\]])', r'\1', candidate)
+                    data = json.loads(candidate)
+                else:
+                    raise
         if isinstance(data, list) and len(data) > 0:
             data = data[0]
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
-        """Gọi client.models.generate_content kèm cơ chế tự động chuyển sang model tương thích nếu gặp lỗi 404 Deprecated hoặc 503 Spike."""
+        """Gọi client.models.generate_content kèm cơ chế tự động chuyển sang model tương thích nếu gặp lỗi 404 Deprecated hoặc 503 Spike.
+        Đặt gemini-3.8-flash ở vị trí áp cuối chuỗi Cloud (ngay trước mô hình 0-token cục bộ Tier-3 Local Arbiter)."""
         candidates = [model]
-        for verified_m in ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"]:
+        for verified_m in [
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash",
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+        ]:
             if verified_m not in candidates:
                 candidates.append(verified_m)
 
@@ -537,20 +564,17 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
     ) -> Tuple[Optional[dict], ModelTier]:
         """
         Thực thi suy luận đa phương thức phục vụ TokenGuard / Video Annotator:
-        Quy trình phân tầng: Tier 1 -> Tier 2 -> Key Rotation -> Fallback None.
+        Ưu tiên các mô hình Cloud ổn định (3.5-flash -> 3.5-flash-lite -> flash-lite-latest -> 3.6-flash -> 3.7-flash),
+        đặt gemini-3.8-flash ở vị trí áp cuối chuỗi Cloud ngay trước mô hình 0-token cục bộ (Tier-3 Local Arbiter).
         Trả về (data_dict, used_tier).
         """
         if not self.client:
             return None, ModelTier.TIER_3_HEURISTIC
 
-        # 1. Preemptive Reversion
-        if self.active_tier != ModelTier.TIER_1_PRIMARY and self.cooldown_tracker.is_tier1_ready():
-            self.active_tier = ModelTier.TIER_1_PRIMARY
-
-        # 2. Thử Tier 1
-        if self.cooldown_tracker.is_tier1_ready():
+        # Chuỗi Cloud cho phân tích video: đặt gemini-3.8-flash ở áp cuối (trước Tier-3 Local Arbiter 0-token)
+        if getattr(self, "_explicit_tier1", False) and self.cooldown_tracker.is_tier1_ready():
             try:
-                resp = self._safe_generate_content(
+                resp = self.client.models.generate_content(
                     model=self.tier1_model,
                     contents=contents,
                     config=config
@@ -561,37 +585,63 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                 toks = toks if isinstance(toks, (int, float)) else 0
                 self.quota_tracker.record_request(token_count=toks)
                 data = self._parse_gemini_json(raw_text)
+                if isinstance(data, dict) and toks:
+                    data["token_usage"] = int(toks)
+                self.active_tier = ModelTier.TIER_1_PRIMARY
                 return data, ModelTier.TIER_1_PRIMARY
             except Exception as e1:
                 if is_rate_limit_error(e1):
-                    logger.warning(f"execute_multimodal_failover: Tier 1 chạm 429. Chuyển sang Tier 2.")
                     self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY)
                     self.active_tier = ModelTier.TIER_2_FALLBACK
-                else:
-                    logger.error(f"execute_multimodal_failover Tier 1 lỗi: {e1}")
 
-        # 3. Thử Tier 2
-        if self.cooldown_tracker.is_tier2_ready():
+        if not self.cooldown_tracker.is_tier2_ready():
+            return None, ModelTier.TIER_3_HEURISTIC
+
+        cloud_candidates = [
+            self.tier2_model,
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash",
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+        ]
+        dedup_candidates = []
+        for m_c in cloud_candidates:
+            if m_c and m_c not in dedup_candidates:
+                if getattr(self, "_explicit_tier1", False) and m_c == self.tier1_model:
+                    continue
+                dedup_candidates.append(m_c)
+
+        for idx_m, m_cand in enumerate(dedup_candidates):
             try:
-                resp = self._safe_generate_content(
-                    model=self.tier2_model,
+                resp = self.client.models.generate_content(
+                    model=m_cand,
                     contents=contents,
                     config=config
                 )
                 raw_text = getattr(resp, "text", "") or "{}"
-                meta2 = getattr(resp, "usage_metadata", None)
-                toks = getattr(meta2, "total_token_count", 0) if meta2 else 0
+                meta = getattr(resp, "usage_metadata", None)
+                toks = getattr(meta, "total_token_count", 0) if meta else 0
                 toks = toks if isinstance(toks, (int, float)) else 0
                 self.quota_tracker.record_request(token_count=toks)
                 data = self._parse_gemini_json(raw_text)
-                return data, ModelTier.TIER_2_FALLBACK
-            except Exception as e2:
-                if is_rate_limit_error(e2):
-                    logger.warning(f"execute_multimodal_failover: Tier 2 chạm 429.")
-                    self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK)
-                    self.active_tier = ModelTier.TIER_3_HEURISTIC
+                if isinstance(data, dict) and toks:
+                    data["token_usage"] = int(toks)
+                used_tier = (
+                    ModelTier.TIER_2_FALLBACK
+                    if getattr(self, "_explicit_tier1", False) or idx_m > 0
+                    else ModelTier.TIER_1_PRIMARY
+                )
+                self.active_tier = used_tier
+                return data, used_tier
+            except Exception as e_cand:
+                if is_rate_limit_error(e_cand):
+                    if idx_m == len(dedup_candidates) - 1:
+                        self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK)
+                        self.active_tier = ModelTier.TIER_3_HEURISTIC
                 else:
-                    logger.error(f"execute_multimodal_failover Tier 2 lỗi: {e2}")
+                    logger.debug(f"execute_multimodal_failover ({m_cand}) bận tạm thời, tự động chuyển tiếp.")
 
         # 4. Thử xoay vòng key nếu có
         rotated_key = self.rotate_api_key()

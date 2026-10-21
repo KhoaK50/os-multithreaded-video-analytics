@@ -38,10 +38,14 @@ class GeminiVideoAnalyzer:
         orchestrator: Optional[Any] = None
     ):
         self.api_key = api_key or getattr(CONFIG, "GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
-        self.tier1_model = model_name or getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-2.0-flash")
-        self.tier2_model = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-1.5-flash")
-        self.model_name = self.tier1_model  # Giữ thuộc tính để tương thích ngược
         self.orchestrator = orchestrator
+        if self.orchestrator:
+            self.tier1_model = model_name or getattr(self.orchestrator, "tier1_model", None) or getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
+            self.tier2_model = getattr(self.orchestrator, "tier2_model", None) or getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-3.5-flash")
+        else:
+            self.tier1_model = model_name or getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
+            self.tier2_model = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-3.5-flash")
+        self.model_name = self.tier1_model  # Giữ thuộc tính để tương thích ngược
         self.client: Optional[genai.Client] = None
 
         if self.api_key:
@@ -174,10 +178,10 @@ Hãy trả về phản hồi dưới định dạng JSON với cấu trúc chu�
             video_file = self.client.files.upload(file=video_path)
 
             target_model = self.tier1_model
-            tier_badge = "Tier-1 Gemini 2.0"
+            tier_badge = "Tier-1 Gemini 3.8"
             if orch and not orch.cooldown_tracker.is_tier1_ready():
                 target_model = self.tier2_model
-                tier_badge = "Tier-2 Gemini 1.5"
+                tier_badge = "Tier-2 Gemini 3.5"
 
             try:
                 response = self.client.models.generate_content(
@@ -214,7 +218,7 @@ Hãy trả về phản hồi dưới định dạng JSON với cấu trúc chu�
                     )
                     result_t2 = response_t2.text or "{}"
                     data_t2 = json.loads(result_t2)
-                    data_t2["model_tier"] = "Tier-2 Gemini 1.5"
+                    data_t2["model_tier"] = "Tier-2 Gemini 3.5"
                     return data_t2
                 raise e_gen
 

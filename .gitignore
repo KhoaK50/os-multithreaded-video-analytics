@@ -267,3 +267,7 @@ ehthumbs.db
 *.wav
 *.flv
 
+
+# Runtime snapshots & cache
+snapshots/
+core/golden_cache.json

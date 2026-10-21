@@ -34,10 +34,16 @@ def parse_gemini_api_keys(raw_keys: Optional[str] = None) -> List[str]:
 
 
 def sanitize_gemini_model(model_name: Optional[str], default: str) -> str:
-    """Tự động nâng cấp model nếu cấu hình chứa tên model rỗng."""
+    """Tự động nâng cấp model nếu cấu hình chứa model cũ đã ngừng hỗ trợ (404 Deprecated)."""
     if not model_name or not model_name.strip():
         return default
-    return model_name.strip()
+    m = model_name.strip()
+    m_lower = m.lower()
+    if any(k in m_lower for k in ["2.0-flash", "2.5-flash"]):
+        return "gemini-3.8-flash"
+    elif "1.5-flash" in m_lower:
+        return "gemini-3.5-flash"
+    return m
 
 
 
@@ -78,7 +84,23 @@ class SystemConfig:
     def DEVICE(self) -> str:
         if self._cached_device is None:
             import torch
-            self._cached_device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            dev = "cpu"
+            if torch.cuda.is_available():
+                try:
+                    import subprocess, sys
+                    cmd = [
+                        sys.executable,
+                        "-c",
+                        "from ultralytics import YOLO; import numpy as np; m = YOLO('yolov8n-pose.pt'); dummy = np.zeros((64, 64, 3), dtype=np.uint8); m(dummy, device='cuda:0', verbose=False)"
+                    ]
+                    res = subprocess.run(cmd, capture_output=True, timeout=8)
+                    if res.returncode == 0:
+                        dev = "cuda:0"
+                    else:
+                        dev = "cpu"
+                except Exception:
+                    dev = "cpu"
+            self._cached_device = dev
         return self._cached_device
 
     @DEVICE.setter
@@ -102,15 +124,15 @@ class SystemConfig:
     SIDEBAR_WIDTH: int = 380
 
     # --- Cloud LLM Hierarchical Tiers & Rate Limiting (R1 Specification) ---
-    GEMINI_TIER1_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER1_MODEL"), "gemini-2.0-flash"))
-    GEMINI_TIER2_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER2_MODEL"), "gemini-1.5-flash"))
-    GEMINI_TIER3_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER3_MODEL"), "gemini-flash-lite-latest"))
+    GEMINI_TIER1_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER1_MODEL"), "gemini-3.8-flash"))
+    GEMINI_TIER2_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER2_MODEL"), "gemini-3.5-flash"))
+    GEMINI_TIER3_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_TIER3_MODEL"), "gemini-3.5-flash-lite"))
     GEMINI_COOLDOWN_SECONDS: float = field(default_factory=lambda: float(os.getenv("GEMINI_COOLDOWN_SECONDS", "60.0")))
     GEMINI_API_KEYS: List[str] = field(default_factory=parse_gemini_api_keys)
     GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
 
     # Tương thích ngược với mã nguồn cũ
-    GEMINI_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_MODEL"), os.getenv("GEMINI_TIER1_MODEL", "gemini-2.0-flash")))
+    GEMINI_MODEL: str = field(default_factory=lambda: sanitize_gemini_model(os.getenv("GEMINI_MODEL"), "gemini-3.5-flash"))
     GEMINI_INTERVAL_SECONDS: float = field(default_factory=lambda: float(os.getenv("GEMINI_INTERVAL_SECONDS", "4.2")))
     API_PACE_SECONDS: float = 4.2  # Nhịp độ khống chế >= 4.2s giữa Live Camera và Video Upload (< 15 RPM)
 

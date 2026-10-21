@@ -51,7 +51,7 @@ class TestCrossFeatureInteractions:
         # Mock client so Tier 1 raises 429
         mock_client = MagicMock()
         def side_effect(model, contents, **kwargs):
-            if "2.0" in model or "2.5" in model:
+            if any(k in model for k in ["2.0", "2.5", "3.8"]):
                 raise Exception("429 RESOURCE_EXHAUSTED: Rate limit exceeded.")
             return MockGeminiResponse(make_mock_inference_payload(action="Giám sát video"))
 

@@ -70,6 +70,41 @@ def open_browser_when_ready(url: str, timeout: float = 30.0, check_interval: flo
     return False
 
 
+def free_port_if_occupied(port: int, host: str = "127.0.0.1"):
+    """Tự động kiểm tra và giải phóng cổng nếu có tiến trình máy chủ cũ còn kẹt (tránh lỗi WinError 10048)."""
+    import socket
+    import subprocess
+
+    try:
+        if os.name == "nt":
+            out = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True, text=True, stderr=subprocess.DEVNULL)
+            killed_any = False
+            for line in out.splitlines():
+                if f":{port}" in line and "LISTENING" in line:
+                    parts = line.strip().split()
+                    pid = parts[-1]
+                    if pid.isdigit() and int(pid) != os.getpid():
+                        print(f"[*] Phát hiện tiến trình cũ (PID {pid}) đang chiếm cổng {port}. Đang tự động giải phóng...")
+                        subprocess.run(f"taskkill /F /T /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        killed_any = True
+            if killed_any:
+                for _ in range(30):
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        try:
+                            s.bind((host, port))
+                            break
+                        except OSError:
+                            time.sleep(0.15)
+        else:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.3)
+                if s.connect_ex((host, port)) == 0:
+                    subprocess.run(f"fuser -k {port}/tcp", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    time.sleep(0.6)
+    except Exception:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Cyber Surveillance Hub - He thong Giam sat Video Da Luong AI"
@@ -123,6 +158,9 @@ def main():
         print(f"    2. Video Import (Local File & Web URL qua yt-dlp) + CapCut Timeline Trimmer")
         print(f"[*] Token Guard: Giới hạn ngân sách Gemini < 1,500 Tokens / video")
         print("=" * 70)
+
+        # Tự động giải phóng cổng 8000 nếu có tiến trình máy chủ cũ còn kẹt
+        free_port_if_occupied(args.port, client_host)
 
         if not args.no_browser:
             threading.Thread(target=open_browser_when_ready, args=(url,), daemon=True).start()
