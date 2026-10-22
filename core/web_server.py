@@ -56,6 +56,7 @@ from core.token_guard import TokenGuard
 from core.enhancer import CameraEnhancer
 from core.model_orchestrator import get_model_orchestrator, ModelTier
 from core.capture import ThreadSafeBoundedBuffer
+from core.os_lab_engine import get_os_lab_engine, OSLabEngine
 
 MODEL_ORCHESTRATOR = get_model_orchestrator()
 
@@ -942,6 +943,7 @@ class LiveCameraPipeline:
 # Singleton Instances
 LIVE_CAMERA = LiveCameraPipeline(video_source=0)
 ANNOTATOR_ENGINE = VideoAnnotatorEngine()
+OS_LAB = get_os_lab_engine(camera_pipeline=LIVE_CAMERA)
 
 _token_guard_instance = None
 
@@ -1549,6 +1551,67 @@ def get_os_lab_config():
         "ram_ceiling_mb": stats.get("ram_ceiling_mb", 42.19),
         "stats": stats
     }
+
+
+# ==============================================================================
+# OS EXPERIMENTAL LAB SANDBOX ENDPOINTS (SILBERSCHATZ LAB BENCH)
+# ==============================================================================
+class OSBufferScenarioPayload(BaseModel):
+    capacity: Optional[int] = 16
+    consumer_delay_ms: Optional[int] = 0
+    policy: Optional[str] = "drop_oldest"
+
+
+class OSDeadlockResolvePayload(BaseModel):
+    method: Optional[str] = "banker_preemption"
+
+
+class OSMemorySimPayload(BaseModel):
+    policy: Optional[str] = "fifo"
+
+
+@app.get("/api/os_lab/scenarios/buffer")
+def get_os_lab_buffer_scenario():
+    """Lấy số liệu và phân tích tác động nhân quả của hàng đợi Bounded Buffer."""
+    return {"status": "ok", **OS_LAB.get_buffer_impact_telemetry()}
+
+
+@app.post("/api/os_lab/scenarios/buffer")
+def set_os_lab_buffer_scenario(req: OSBufferScenarioPayload):
+    """Cập nhật kịch bản Bounded Buffer & Bufferbloat và trả về kết quả đối chứng AI."""
+    res = OS_LAB.configure_buffer_scenario(
+        capacity=req.capacity or 16,
+        consumer_delay_ms=req.consumer_delay_ms or 0,
+        policy=req.policy or "drop_oldest"
+    )
+    return {"status": "ok", **res}
+
+
+@app.get("/api/os_lab/scenarios/deadlock")
+def get_os_lab_deadlock_status():
+    """Lấy trạng thái bế tắc và dữ liệu đồ thị cấp phát tài nguyên RAG."""
+    return {"status": "ok", **OS_LAB.get_deadlock_status()}
+
+
+@app.post("/api/os_lab/scenarios/deadlock/trigger")
+def trigger_os_lab_deadlock():
+    """Kích hoạt giả lập bế tắc đa luồng an toàn (Watchdog tự động ngắt sau 3.0s)."""
+    res = OS_LAB.trigger_deadlock_simulation()
+    return {"status": "ok", **res}
+
+
+@app.post("/api/os_lab/scenarios/deadlock/resolve")
+def resolve_os_lab_deadlock(req: OSDeadlockResolvePayload):
+    """Giải phóng bế tắc theo thuật toán Banker / Preemption."""
+    res = OS_LAB.resolve_deadlock(method=req.method or "banker_preemption")
+    return {"status": "ok", **res}
+
+
+@app.post("/api/os_lab/scenarios/memory_eviction")
+def simulate_os_lab_memory_eviction(req: OSMemorySimPayload):
+    """Thực nghiệm đối chứng thuật toán thay thế trang RAM: FIFO vs Threat-Priority."""
+    res = OS_LAB.simulate_memory_eviction(policy=req.policy or "fifo")
+    return {"status": "ok", **res}
 
 
 

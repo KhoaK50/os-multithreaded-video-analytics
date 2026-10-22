@@ -3838,6 +3838,468 @@ function releaseConveyorFrame() {
 }
 
 // ==============================================================================
+// OS EXPERIMENTAL LAB SANDBOX (SILBERSCHATZ LAB BENCH)
+// ==============================================================================
+let activeLabScenario = "buffer"; // "buffer" | "deadlock" | "memory"
+let currentLabBufferPolicy = "drop_oldest";
+let labWatchdogInterval = null;
+let labWatchdogSeconds = 3.0;
+
+function openOSExperimentModal() {
+    const modal = document.getElementById("os-experiment-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    switchLabScenario(activeLabScenario || "buffer");
+}
+
+function closeOSExperimentModal(e) {
+    if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains("modal-close-btn") && !e.target.classList.contains("btn-primary")) {
+        return;
+    }
+    const modal = document.getElementById("os-experiment-modal");
+    if (modal) modal.classList.add("hidden");
+    if (labWatchdogInterval) {
+        clearInterval(labWatchdogInterval);
+        labWatchdogInterval = null;
+    }
+}
+
+function switchLabScenario(scenarioId) {
+    activeLabScenario = scenarioId;
+    const tabBufferBtn = document.getElementById("tab-lab-buffer-btn");
+    const tabDeadlockBtn = document.getElementById("tab-lab-deadlock-btn");
+    const tabMemoryBtn = document.getElementById("tab-lab-memory-btn");
+    const panelBuffer = document.getElementById("lab-scenario-buffer");
+    const panelDeadlock = document.getElementById("lab-scenario-deadlock");
+    const panelMemory = document.getElementById("lab-scenario-memory");
+
+    if (tabBufferBtn) tabBufferBtn.classList.toggle("active", scenarioId === "buffer");
+    if (tabDeadlockBtn) tabDeadlockBtn.classList.toggle("active", scenarioId === "deadlock");
+    if (tabMemoryBtn) tabMemoryBtn.classList.toggle("active", scenarioId === "memory");
+
+    if (panelBuffer) panelBuffer.classList.toggle("active", scenarioId === "buffer");
+    if (panelDeadlock) panelDeadlock.classList.toggle("active", scenarioId === "deadlock");
+    if (panelMemory) panelMemory.classList.toggle("active", scenarioId === "memory");
+
+    if (scenarioId === "buffer") {
+        fetchLabBufferTelemetry();
+    } else if (scenarioId === "deadlock") {
+        pollLabDeadlockStatus();
+    } else if (scenarioId === "memory") {
+        runLabMemorySim("fifo");
+    }
+}
+
+// SCENARIO 1: BUFFERBLOAT & BOUNDED BUFFER
+async function fetchLabBufferTelemetry() {
+    try {
+        const resp = await fetch("/api/os_lab/scenarios/buffer");
+        if (!resp.ok) return;
+        const data = await resp.json();
+        updateLabBufferDOM(data);
+    } catch (e) {
+        console.error("fetchLabBufferTelemetry error:", e);
+    }
+}
+
+function updateLabBufferDOM(data) {
+    if (!data) return;
+    safeSetText("lab-buf-cap-val", `N = ${data.capacity}`);
+    safeSetText("lab-buf-delay-val", `${data.consumer_delay_ms} ms`);
+    safeSetText("lab-buf-policy-badge", data.policy === "block_producer" ? "Block-Producer" : "Drop-Oldest");
+
+    const capSlider = document.getElementById("lab-buf-cap-slider");
+    if (capSlider && document.activeElement !== capSlider) capSlider.value = data.capacity;
+    const delaySlider = document.getElementById("lab-buf-delay-slider");
+    if (delaySlider && document.activeElement !== delaySlider) delaySlider.value = data.consumer_delay_ms;
+
+    const btnDrop = document.getElementById("btn-pol-drop");
+    const btnBlock = document.getElementById("btn-pol-block");
+    if (btnDrop) btnDrop.classList.toggle("active-toggle", data.policy === "drop_oldest");
+    if (btnBlock) btnBlock.classList.toggle("active-toggle", data.policy === "block_producer");
+
+    safeSetText("lab-res-queue", `${data.queue_fill} / ${data.capacity} (${data.queue_fill_pct}%)`);
+    safeSetText("lab-res-latency", `${data.latency_ms} ms`);
+    safeSetText("lab-res-drop", `${data.drop_rate_pct}%`);
+    safeSetText("lab-res-ram", `${data.ram_usage_mb} MB / ${data.ram_ceiling_mb} MB`);
+
+    const fidelityEl = document.getElementById("lab-res-fidelity");
+    if (fidelityEl) {
+        fidelityEl.textContent = data.status_badge || "HOÀN HẢO";
+        fidelityEl.className = `badge ${data.badge_class || "badge-safe"} mono`;
+    }
+    safeSetText("lab-res-score", `${data.threat_score} / 10`);
+    safeSetText("lab-res-diagnosis", data.ai_diagnosis || "--");
+}
+
+let labBufferDebounceTimer = null;
+function onLabBufferKnobChange() {
+    const capSlider = document.getElementById("lab-buf-cap-slider");
+    const delaySlider = document.getElementById("lab-buf-delay-slider");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+
+    safeSetText("lab-buf-cap-val", `N = ${capVal}`);
+    safeSetText("lab-buf-delay-val", `${delayVal} ms`);
+
+    clearTimeout(labBufferDebounceTimer);
+    labBufferDebounceTimer = setTimeout(async () => {
+        try {
+            const resp = await fetch("/api/os_lab/scenarios/buffer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    capacity: capVal,
+                    consumer_delay_ms: delayVal,
+                    policy: currentLabBufferPolicy
+                })
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                updateLabBufferDOM(data);
+            }
+        } catch (e) {
+            console.error("onLabBufferKnobChange error:", e);
+        }
+    }, 120);
+}
+
+async function setLabBufferPolicy(policy) {
+    currentLabBufferPolicy = policy;
+    const capSlider = document.getElementById("lab-buf-cap-slider");
+    const delaySlider = document.getElementById("lab-buf-delay-slider");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+
+    try {
+        const resp = await fetch("/api/os_lab/scenarios/buffer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                capacity: capVal,
+                consumer_delay_ms: delayVal,
+                policy: currentLabBufferPolicy
+            })
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            updateLabBufferDOM(data);
+        }
+    } catch (e) {
+        console.error("setLabBufferPolicy error:", e);
+    }
+}
+
+async function applyLabBufferPreset(cap, delay, policy) {
+    currentLabBufferPolicy = policy;
+    const btnBalanced = document.getElementById("btn-lab-pre-balanced");
+    const btnBloat = document.getElementById("btn-lab-pre-bloat");
+    const btnDrop = document.getElementById("btn-lab-pre-drop");
+
+    if (btnBalanced) btnBalanced.classList.toggle("active-preset", cap === 16 && delay === 0);
+    if (btnBloat) btnBloat.classList.toggle("active-preset", cap === 48 && delay === 85);
+    if (btnDrop) btnDrop.classList.toggle("active-preset", cap === 2 && delay === 45);
+
+    try {
+        const resp = await fetch("/api/os_lab/scenarios/buffer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                capacity: cap,
+                consumer_delay_ms: delay,
+                policy: policy
+            })
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            updateLabBufferDOM(data);
+        }
+    } catch (e) {
+        console.error("applyLabBufferPreset error:", e);
+    }
+}
+
+// SCENARIO 2: DEADLOCK & RESOURCE ALLOCATION GRAPH (RAG)
+async function triggerLabDeadlock() {
+    const triggerBtn = document.getElementById("btn-trigger-deadlock");
+    const resolveBtn = document.getElementById("btn-resolve-deadlock");
+    if (triggerBtn) triggerBtn.disabled = true;
+    if (resolveBtn) resolveBtn.disabled = false;
+
+    try {
+        const resp = await fetch("/api/os_lab/scenarios/deadlock/trigger", { method: "POST" });
+        if (resp.ok) {
+            const data = await resp.json();
+            updateLabDeadlockDOM(data);
+            startLabWatchdogCountdown(3.0);
+        }
+    } catch (e) {
+        console.error("triggerLabDeadlock error:", e);
+        if (triggerBtn) triggerBtn.disabled = false;
+    }
+}
+
+async function resolveLabDeadlock(method = "banker_preemption") {
+    const resolveBtn = document.getElementById("btn-resolve-deadlock");
+    if (resolveBtn) resolveBtn.disabled = true;
+
+    try {
+        const resp = await fetch("/api/os_lab/scenarios/deadlock/resolve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ method: method })
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            stopLabWatchdogCountdown();
+            updateLabDeadlockDOM(data);
+            const triggerBtn = document.getElementById("btn-trigger-deadlock");
+            if (triggerBtn) triggerBtn.disabled = false;
+        }
+    } catch (e) {
+        console.error("resolveLabDeadlock error:", e);
+    }
+}
+
+async function pollLabDeadlockStatus() {
+    try {
+        const resp = await fetch("/api/os_lab/scenarios/deadlock");
+        if (resp.ok) {
+            const data = await resp.json();
+            updateLabDeadlockDOM(data);
+        }
+    } catch (e) {
+        console.error("pollLabDeadlockStatus error:", e);
+    }
+}
+
+function startLabWatchdogCountdown(initialSec = 3.0) {
+    stopLabWatchdogCountdown();
+    let remaining = initialSec;
+    const timerEl = document.getElementById("lab-watchdog-timer");
+    const barEl = document.getElementById("lab-watchdog-bar");
+
+    labWatchdogInterval = setInterval(async () => {
+        remaining -= 0.1;
+        if (remaining <= 0) {
+            remaining = 0;
+            stopLabWatchdogCountdown();
+            await pollLabDeadlockStatus();
+            const triggerBtn = document.getElementById("btn-trigger-deadlock");
+            const resolveBtn = document.getElementById("btn-resolve-deadlock");
+            if (triggerBtn) triggerBtn.disabled = false;
+            if (resolveBtn) resolveBtn.disabled = true;
+        }
+        if (timerEl) timerEl.textContent = `${remaining.toFixed(1)}s`;
+        if (barEl) {
+            const pct = Math.round(((3.0 - remaining) / 3.0) * 100);
+            barEl.style.width = `${pct}%`;
+        }
+    }, 100);
+}
+
+function stopLabWatchdogCountdown() {
+    if (labWatchdogInterval) {
+        clearInterval(labWatchdogInterval);
+        labWatchdogInterval = null;
+    }
+    const timerEl = document.getElementById("lab-watchdog-timer");
+    const barEl = document.getElementById("lab-watchdog-bar");
+    if (timerEl) timerEl.textContent = "3.0s";
+    if (barEl) barEl.style.width = "0%";
+}
+
+function updateLabDeadlockDOM(data) {
+    if (!data) return;
+    safeSetText("lab-dl-video-state", data.video_state || "--");
+    safeSetText("lab-dl-cycle", data.cycle_detected ? "Chu trình phát hiện: T1 ➔ R2 ➔ T2 ➔ R1 ➔ T1 (Deadlock!)" : "Không có chu trình (An toàn)");
+    safeSetText("lab-dl-ai-impact", data.resolution_reason || data.ai_impact || "--");
+
+    const statusBadge = document.getElementById("lab-rag-status-badge");
+    if (statusBadge) {
+        if (data.deadlock_state === "DEADLOCK_ACTIVE") {
+            statusBadge.textContent = "BẾ TẮC CHU TRÌNH (DEADLOCK ACTIVE)";
+            statusBadge.className = "badge badge-danger mono";
+        } else if (data.deadlock_state === "RESOLVED") {
+            statusBadge.textContent = "ĐÃ GỠ BẾ TẮC (RESOLVED)";
+            statusBadge.className = "badge badge-safe mono";
+        } else {
+            statusBadge.textContent = "KHÔNG BẾ TẮC (NORMAL)";
+            statusBadge.className = "badge badge-safe mono";
+        }
+    }
+
+    renderRAGGraph(data.rag_nodes || [], data.rag_edges || [], data.cycle_detected || false);
+}
+
+function renderRAGGraph(nodes, edges, cycleDetected) {
+    const svg = document.getElementById("os-rag-svg");
+    if (!svg) return;
+
+    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+    const bgNodeThread = isDark ? "#1e293b" : "#e2e8f0";
+    const bgNodeResource = isDark ? "#0f172a" : "#f1f5f9";
+    const strokeNormal = isDark ? "#475569" : "#cbd5e1";
+    const textPrimary = isDark ? "#f8fafc" : "#0f172a";
+    const textMuted = isDark ? "#94a3b8" : "#64748b";
+
+    let html = `
+        <defs>
+            <marker id="arrow-normal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+            </marker>
+            <marker id="arrow-cycle" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#ef4444" />
+            </marker>
+            <marker id="arrow-resolved" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
+            </marker>
+        </defs>
+    `;
+
+    // Coordinates:
+    // T1 (Thread AI): circle cx=130, cy=60, r=32
+    // R2 (Resource GPU): rect x=460, y=28, w=110, h=64
+    // T2 (Thread Writer): circle cx=515, cy=160, r=32
+    // R1 (Resource FrameBuffer): rect x=75, y=128, w=110, h=64
+
+    // Edges
+    if (cycleDetected) {
+        // T1 -> R2 (Request edge)
+        html += `<path d="M 162 60 L 452 60" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="307" y="52" fill="#ef4444" font-size="10.5" font-family="JetBrains Mono" font-weight="700" text-anchor="middle">T1 YÊU CẦU R2</text>`;
+
+        // R2 -> T2 (Assignment edge)
+        html += `<path d="M 515 92 L 515 120" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="525" y="112" fill="#ef4444" font-size="10.5" font-family="JetBrains Mono" font-weight="700">R2 ĐANG GIỮ BỞI T2</text>`;
+
+        // T2 -> R1 (Request edge)
+        html += `<path d="M 483 160 L 193 160" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="338" y="174" fill="#ef4444" font-size="10.5" font-family="JetBrains Mono" font-weight="700" text-anchor="middle">T2 YÊU CẦU R1</text>`;
+
+        // R1 -> T1 (Assignment edge)
+        html += `<path d="M 130 128 L 130 100" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="140" y="118" fill="#ef4444" font-size="10.5" font-family="JetBrains Mono" font-weight="700">R1 ĐANG GIỮ BỞI T1</text>`;
+    } else {
+        // Normal safe flow
+        html += `<path d="M 162 60 L 452 60" stroke="#3b82f6" stroke-width="1.8" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-normal)" />`;
+        html += `<text x="307" y="52" fill="#3b82f6" font-size="10" font-family="JetBrains Mono" text-anchor="middle">Hàng đợi điều phối an toàn</text>`;
+
+        html += `<path d="M 483 160 L 193 160" stroke="#10b981" stroke-width="2" fill="none" marker-end="url(#arrow-resolved)" />`;
+        html += `<text x="338" y="175" fill="#10b981" font-size="10" font-family="JetBrains Mono" text-anchor="middle">Tuần tự giải phóng khóa</text>`;
+    }
+
+    // Node T1 (Thread Circle)
+    html += `
+        <circle cx="130" cy="60" r="32" fill="${bgNodeThread}" stroke="${cycleDetected ? '#ef4444' : '#3b82f6'}" stroke-width="2.5" />
+        <text x="130" y="56" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">T1</text>
+        <text x="130" y="70" fill="${textMuted}" font-size="9" text-anchor="middle">AI Worker</text>
+    `;
+
+    // Node R2 (Resource Rect)
+    html += `
+        <rect x="460" y="28" width="110" height="64" rx="6" fill="${bgNodeResource}" stroke="${cycleDetected ? '#ef4444' : strokeNormal}" stroke-width="2" />
+        <text x="515" y="54" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">R2 (GPU)</text>
+        <text x="515" y="72" fill="${cycleDetected ? '#f87171' : textMuted}" font-size="9.5" text-anchor="middle">${cycleDetected ? 'Khóa bị tranh chấp' : 'Khóa tài nguyên'}</text>
+    `;
+
+    // Node T2 (Thread Circle)
+    html += `
+        <circle cx="515" cy="160" r="32" fill="${bgNodeThread}" stroke="${cycleDetected ? '#ef4444' : '#3b82f6'}" stroke-width="2.5" />
+        <text x="515" y="156" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">T2</text>
+        <text x="515" y="170" fill="${textMuted}" font-size="9" text-anchor="middle">Writer Stream</text>
+    `;
+
+    // Node R1 (Resource Rect)
+    html += `
+        <rect x="75" y="128" width="110" height="64" rx="6" fill="${bgNodeResource}" stroke="${cycleDetected ? '#ef4444' : strokeNormal}" stroke-width="2" />
+        <text x="130" y="154" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">R1 (Buffer)</text>
+        <text x="130" y="172" fill="${cycleDetected ? '#f87171' : textMuted}" font-size="9.5" text-anchor="middle">${cycleDetected ? 'Khóa bị giữ kín' : 'Khóa hàng đợi đệm'}</text>
+    `;
+
+    svg.innerHTML = html;
+}
+
+// SCENARIO 3: KEYFRAME MEMORY EVICTION SIMULATOR (FIFO VS THREAT-PRIORITY)
+async function runLabMemorySim(policy = "fifo") {
+    const btnFifo = document.getElementById("btn-mem-fifo");
+    const btnPriority = document.getElementById("btn-mem-priority");
+    if (btnFifo) btnFifo.classList.toggle("active-toggle", policy === "fifo");
+    if (btnPriority) btnPriority.classList.toggle("active-toggle", policy !== "fifo");
+
+    try {
+        const resp = await fetch("/api/os_lab/scenarios/memory_eviction", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ policy: policy })
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            updateLabMemoryDOM(data);
+        }
+    } catch (e) {
+        console.error("runLabMemorySim error:", e);
+    }
+}
+
+function updateLabMemoryDOM(data) {
+    if (!data) return;
+    safeSetText("lab-mem-policy-badge", `Chính sách: ${data.policy_name}`);
+
+    // Render 3 RAM Slots
+    const slotsGrid = document.getElementById("lab-ram-slots-grid");
+    if (slotsGrid && Array.isArray(data.final_slots)) {
+        slotsGrid.innerHTML = data.final_slots.map((s, idx) => {
+            const isCombat = s.is_combat || s.threat_score >= 8.0;
+            const cardClass = isCombat ? "slot-combat" : "slot-calm";
+            const badgeClass = isCombat ? "badge-danger" : "badge-safe";
+            return `
+                <div class="os-ram-slot-card ${cardClass}">
+                    <div class="os-ram-slot-top">
+                        <span class="slot-index-badge mono">RAM SLOT #${idx + 1}</span>
+                        <span class="badge ${badgeClass} mono">${s.threat_score.toFixed(1)} / 10</span>
+                    </div>
+                    <strong class="slot-frame-title mono">${s.id} · ${s.time}</strong>
+                    <span class="slot-action-desc">${escapeHtml(s.action)}</span>
+                </div>
+            `;
+        }).join("");
+    }
+
+    // Render Timeline Eviction Table
+    const tableBody = document.getElementById("lab-mem-table-body");
+    if (tableBody && Array.isArray(data.slots_log)) {
+        tableBody.innerHTML = data.slots_log.map(item => {
+            const isEvictLoss = item.evicted_frame === "KF-02";
+            const heldSpan = item.held_combat_frame
+                ? `<span class="badge badge-safe mono" style="font-size: 9.5px;">CÒN TRONG RAM (KF-02)</span>`
+                : `<span class="badge badge-danger mono" style="font-size: 9.5px;">MẤT DỮ LIỆU BẠO LỰC</span>`;
+            return `
+                <tr>
+                    <td class="mono">#${item.step}</td>
+                    <td class="mono"><strong>${item.incoming_frame}</strong> (${item.incoming_score.toFixed(1)})</td>
+                    <td>${item.incoming_score >= 8.0 ? '<span class="badge badge-danger mono" style="font-size: 9.5px;">Xung đột đỉnh</span>' : '<span class="badge badge-safe mono" style="font-size: 9.5px;">Bình thường</span>'}</td>
+                    <td class="mono" style="${isEvictLoss ? 'color: var(--accent-crimson); font-weight: 700;' : ''}">${item.evicted_frame}</td>
+                    <td class="mono">[${item.ram_slots.join(", ")}]</td>
+                    <td>${heldSpan}</td>
+                </tr>
+            `;
+        }).join("");
+    }
+
+    // Render Verdict Box
+    safeSetText("lab-mem-verdict-title", data.gemini_verdict || "--");
+    safeSetText("lab-mem-verdict-desc", data.gemini_explanation || "--");
+    safeSetText("lab-mem-verdict-critique", data.policy_critique || "--");
+
+    const verdictBadge = document.getElementById("lab-mem-verdict-badge");
+    if (verdictBadge) {
+        verdictBadge.textContent = data.verdict_accuracy || "--";
+        verdictBadge.className = `badge ${data.accuracy_class || "badge-safe"} mono`;
+    }
+}
+
+// ==============================================================================
 // GLOBAL WINDOW BINDINGS
 // ==============================================================================
 window.switchTab = switchTab;
@@ -3891,3 +4353,13 @@ window.getSegmentMilestoneTitle = getSegmentMilestoneTitle;
 window.updateEventFlowPlayhead = updateEventFlowPlayhead;
 window.showEventFlowTooltip = showEventFlowTooltip;
 window.hideEventFlowTooltip = hideEventFlowTooltip;
+
+window.openOSExperimentModal = openOSExperimentModal;
+window.closeOSExperimentModal = closeOSExperimentModal;
+window.switchLabScenario = switchLabScenario;
+window.applyLabBufferPreset = applyLabBufferPreset;
+window.setLabBufferPolicy = setLabBufferPolicy;
+window.onLabBufferKnobChange = onLabBufferKnobChange;
+window.triggerLabDeadlock = triggerLabDeadlock;
+window.resolveLabDeadlock = resolveLabDeadlock;
+window.runLabMemorySim = runLabMemorySim;

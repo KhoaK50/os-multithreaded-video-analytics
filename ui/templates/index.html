@@ -35,6 +35,9 @@
             <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()" title="Chuyển đổi giao diện Sáng / Tối" aria-label="Chuyển giao diện Sáng / Tối">
                 <span id="theme-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
             </button>
+            <button class="btn btn-sm btn-outline header-lab-btn" id="btn-open-os-lab-modal" onclick="openOSExperimentModal()" title="Mở Phòng Thực Nghiệm Đối Chứng Hệ Điều Hành">
+                <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.31"/><path d="M14 9.3V2"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></svg> <span>Thực Nghiệm HĐH</span>
+            </button>
             <div class="hardware-pill">
                 <span class="pill-badge">GPU</span>
                 <span class="pill-text" id="header-gpu-text">NVIDIA RTX 5060</span>
@@ -1177,6 +1180,271 @@
             <div class="modal-footer">
                 <a id="modal-download-link" href="#" download="snapshot.jpg" class="btn btn-outline"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> <span>Tải ảnh về máy</span></a>
                 <button class="btn btn-primary" onclick="closeSnapshotModal()">Đóng cửa sổ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- MODAL 4: PHÒNG THỰC NGHIỆM ĐỐI CHỨNG HỆ ĐIỀU HÀNH & ĐA LUỒNG      -->
+    <!-- (SANDBOX AN TOÀN · TRẦN RAM 50MB · WATCHDOG TỰ ĐỘNG 3.0S)        -->
+    <!-- ================================================================= -->
+    <div id="os-experiment-modal" class="modal-overlay hidden" onclick="closeOSExperimentModal(event)">
+        <div class="modal-container os-lab-modal-container" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="modal-badge mono">OS LAB BENCH</span>
+                    <h3 class="modal-title">
+                        <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.31"/><path d="M14 9.3V2"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></svg>
+                        <span>PHÒNG THỰC NGHIỆM ĐỐI CHỨNG HỆ ĐIỀU HÀNH &amp; ĐA LUỒNG</span>
+                    </h3>
+                </div>
+                <div class="os-lab-header-badges">
+                    <span class="badge badge-safe mono" title="Bộ bảo vệ: Trần RAM tối đa 50MB, tự động ngắt sau 3.0s">SANDBOX AN TOÀN · RAM &le; 50MB · WATCHDOG 3.0S</span>
+                    <button class="modal-close-btn" onclick="closeOSExperimentModal()" title="Đóng cửa sổ thực nghiệm">
+                        <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Navigation for 3 Scenarios -->
+            <div class="os-lab-nav-tabs">
+                <button class="os-lab-tab-btn active" id="tab-lab-buffer-btn" onclick="switchLabScenario('buffer')">
+                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                    <span>1. Bounded Buffer &amp; Bufferbloat</span>
+                </button>
+                <button class="os-lab-tab-btn" id="tab-lab-deadlock-btn" onclick="switchLabScenario('deadlock')">
+                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                    <span>2. Bế Tắc Deadlock &amp; Đồ Thị RAG</span>
+                </button>
+                <button class="os-lab-tab-btn" id="tab-lab-memory-btn" onclick="switchLabScenario('memory')">
+                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    <span>3. Bộ Nhớ Đệm: FIFO vs Threat-Priority</span>
+                </button>
+            </div>
+
+            <div class="modal-body os-lab-modal-body">
+                <!-- SCENARIO 1: BOUNDED BUFFER & BUFFERBLOAT -->
+                <div class="os-lab-panel active" id="lab-scenario-buffer">
+                    <div class="os-lab-scenario-intro">
+                        <strong>Chương 3, 4, 6 (Silberschatz):</strong> Quan sát mối quan hệ nhân quả giữa kích thước Hàng đợi đệm giới hạn (<em>N</em>), độ trễ xử lý của Consumer và hiện tượng <em>Bufferbloat</em> làm sai lệch độ chính xác phân tích AI.
+                    </div>
+
+                    <!-- Presets -->
+                    <div class="os-lab-preset-strip">
+                        <span class="os-lab-strip-label">Kịch bản nhanh:</span>
+                        <button class="btn btn-xs btn-outline active-preset" id="btn-lab-pre-balanced" onclick="applyLabBufferPreset(16, 0, 'drop_oldest')">Cân Bằng Chuẩn · N=16, 0ms</button>
+                        <button class="btn btn-xs btn-outline" id="btn-lab-pre-bloat" onclick="applyLabBufferPreset(48, 85, 'block_producer')">Trễ Tích Lũy Bufferbloat · N=48, 85ms</button>
+                        <button class="btn btn-xs btn-outline" id="btn-lab-pre-drop" onclick="applyLabBufferPreset(2, 45, 'drop_oldest')">Ép Rớt Khung Hình · N=2, 45ms</button>
+                    </div>
+
+                    <!-- Interactive Knobs Grid -->
+                    <div class="os-lab-knobs-grid">
+                        <div class="os-lab-knob-card">
+                            <div class="os-lab-knob-header">
+                                <span>Dung Lượng Hàng Đợi (N Frames)</span>
+                                <strong class="mono" id="lab-buf-cap-val">N = 16</strong>
+                            </div>
+                            <input type="range" class="os-lab-slider" id="lab-buf-cap-slider" min="2" max="48" step="2" value="16" oninput="onLabBufferKnobChange()" />
+                            <div class="os-lab-scale mono">
+                                <span>2</span>
+                                <span>16</span>
+                                <span>32</span>
+                                <span>48</span>
+                            </div>
+                        </div>
+
+                        <div class="os-lab-knob-card">
+                            <div class="os-lab-knob-header">
+                                <span>Độ Trễ Giả Lập Consumer</span>
+                                <strong class="mono" id="lab-buf-delay-val">0 ms</strong>
+                            </div>
+                            <input type="range" class="os-lab-slider" id="lab-buf-delay-slider" min="0" max="120" step="5" value="0" oninput="onLabBufferKnobChange()" />
+                            <div class="os-lab-scale mono">
+                                <span>0 ms</span>
+                                <span>40 ms</span>
+                                <span>80 ms</span>
+                                <span>120 ms</span>
+                            </div>
+                        </div>
+
+                        <div class="os-lab-knob-card">
+                            <div class="os-lab-knob-header">
+                                <span>Chính Sách Khi Hàng Đợi Đầy</span>
+                                <span class="badge badge-neutral mono" id="lab-buf-policy-badge">Drop-Oldest</span>
+                            </div>
+                            <div class="os-lab-policy-toggle-group">
+                                <button class="btn btn-xs btn-outline active-toggle" id="btn-pol-drop" onclick="setLabBufferPolicy('drop_oldest')">Drop-Oldest (Bỏ khung cũ)</button>
+                                <button class="btn btn-xs btn-outline" id="btn-pol-block" onclick="setLabBufferPolicy('block_producer')">Block-Producer (Chặn nguồn thu)</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Cause-and-Effect Comparison Matrix -->
+                    <div class="os-lab-comparison-matrix">
+                        <div class="os-lab-impact-card">
+                            <div class="impact-card-title">
+                                <span class="impact-tag tag-os">HỆ ĐIỀU HÀNH</span>
+                                <strong>Hiệu Năng Hàng Đợi &amp; Bộ Nhớ</strong>
+                            </div>
+                            <div class="impact-metrics-row">
+                                <div class="im-box">
+                                    <span class="im-label">Lấp đầy đệm:</span>
+                                    <strong class="im-val mono" id="lab-res-queue">4 / 16 (25%)</strong>
+                                </div>
+                                <div class="im-box">
+                                    <span class="im-label">Độ trễ tích lũy:</span>
+                                    <strong class="im-val mono" id="lab-res-latency">133 ms</strong>
+                                </div>
+                                <div class="im-box">
+                                    <span class="im-label">Tỷ lệ hủy khung:</span>
+                                    <strong class="im-val mono" id="lab-res-drop">0.0%</strong>
+                                </div>
+                                <div class="im-box">
+                                    <span class="im-label">Dung lượng RAM:</span>
+                                    <strong class="im-val mono" id="lab-res-ram">42.2 MB / 50 MB</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="os-lab-impact-card">
+                            <div class="impact-card-title">
+                                <span class="impact-tag tag-ai">THỊ GIÁC AI</span>
+                                <strong>Tác Động Lên Độ Chính Xác Phân Tích</strong>
+                            </div>
+                            <div class="impact-ai-content">
+                                <div class="ai-status-row">
+                                    <span>Độ trung thực xung lực:</span>
+                                    <span class="badge badge-safe mono" id="lab-res-fidelity">HOÀN HẢO</span>
+                                </div>
+                                <div class="ai-status-row">
+                                    <span>Điểm nguy hiểm ước lượng:</span>
+                                    <strong class="mono" id="lab-res-score">8.8 / 10</strong>
+                                </div>
+                                <p class="ai-diagnosis-quote" id="lab-res-diagnosis">
+                                    Trạng thái tối ưu: Hàng đợi kiểm soát tốt, độ trễ thấp, AI ghi nhận trọn vẹn gia tốc xung lực (8.8 / 10).
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 2: DEADLOCK & RESOURCE ALLOCATION GRAPH (RAG) -->
+                <div class="os-lab-panel" id="lab-scenario-deadlock">
+                    <div class="os-lab-scenario-intro">
+                        <strong>Chương 7 &amp; 8 (Silberschatz):</strong> Mô phỏng Bế tắc Đa luồng (Deadlock) qua Đồ thị Cấp phát Tài nguyên (RAG). Hệ thống được bảo vệ bằng <strong>Bộ đếm Watchdog Timer 3.0s</strong> tự động giải phóng khóa, tuyệt đối không gây treo ứng dụng.
+                    </div>
+
+                    <div class="os-deadlock-control-bar">
+                        <button class="btn btn-sm btn-danger" id="btn-trigger-deadlock" onclick="triggerLabDeadlock()">
+                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            <span>Kích Hoạt Thử Nghiệm Deadlock</span>
+                        </button>
+                        <button class="btn btn-sm btn-primary" id="btn-resolve-deadlock" onclick="resolveLabDeadlock('banker_preemption')" disabled>
+                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                            <span>Thu Hồi Khóa Banker (Phục Hồi Ngay)</span>
+                        </button>
+                        <div class="os-watchdog-indicator">
+                            <span class="wi-label">Watchdog Tự Ngắt:</span>
+                            <span class="wi-timer mono" id="lab-watchdog-timer">3.0s</span>
+                            <div class="wi-bar-wrap"><div class="wi-bar" id="lab-watchdog-bar" style="width: 0%;"></div></div>
+                        </div>
+                    </div>
+
+                    <!-- Interactive RAG SVG Visualizer -->
+                    <div class="os-rag-visualizer-container">
+                        <div class="os-rag-header">
+                            <span class="mono">ĐỒ THỊ CẤP PHÁT TÀI NGUYÊN (RESOURCE ALLOCATION GRAPH — RAG)</span>
+                            <span class="badge badge-safe mono" id="lab-rag-status-badge">KHÔNG BẾ TẮC (NORMAL)</span>
+                        </div>
+                        <div class="os-rag-canvas-wrap">
+                            <svg id="os-rag-svg" class="os-rag-svg" viewBox="0 0 680 220" width="100%" height="220">
+                                <!-- Rendered dynamically via renderRAGGraph() in app.js -->
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Deadlock Impact Breakdown -->
+                    <div class="os-deadlock-impact-box">
+                        <div class="im-box">
+                            <span class="im-label">Trạng thái luồng video:</span>
+                            <strong class="im-val mono" id="lab-dl-video-state">BÌNH THƯỜNG (30.0 FPS)</strong>
+                        </div>
+                        <div class="im-box">
+                            <span class="im-label">Chu trình bế tắc (Cycle):</span>
+                            <strong class="im-val mono" id="lab-dl-cycle">Không phát hiện</strong>
+                        </div>
+                        <div class="im-box full-span">
+                            <span class="im-label">Giải trình nhân quả &amp; Thuật toán phục hồi:</span>
+                            <p class="ai-diagnosis-quote" id="lab-dl-ai-impact">
+                                Các luồng đồng bộ hóa tuần tự theo miền găng Mutex tiêu chuẩn. Không xảy ra tranh chấp chu trình.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SCENARIO 3: KEYFRAME MEMORY EVICTION (FIFO VS PRIORITY) -->
+                <div class="os-lab-panel" id="lab-scenario-memory">
+                    <div class="os-lab-scenario-intro">
+                        <strong>Chương 9 &amp; 10 (Silberschatz):</strong> Minh chứng sự sống còn của Thuật toán Thay thế Trang (Memory Eviction). Khi RAM chỉ cấp phát 3 slot cố định, so sánh xem thuật toán <strong>FIFO</strong> hay <strong>Threat-Priority</strong> giữ được khung ảnh va chạm then chốt cho Gemini hội chẩn.
+                    </div>
+
+                    <div class="os-memory-policy-selector">
+                        <button class="btn btn-sm btn-outline active-toggle" id="btn-mem-fifo" onclick="runLabMemorySim('fifo')">
+                            <span>Thực Nghiệm Thuật Toán FIFO (Vào Trước Ra Trước)</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline" id="btn-mem-priority" onclick="runLabMemorySim('priority')">
+                            <span>Thực Nghiệm Thuật Toán Threat-Priority (Trục Xuất Theo Điểm Rủi Ro)</span>
+                        </button>
+                    </div>
+
+                    <!-- 3 RAM Slot Cards Visualizer -->
+                    <div class="os-ram-slots-container">
+                        <div class="os-ram-slots-header">
+                            <span class="mono">BỘ NHỚ ĐỆM 3 KHUNG HÌNH TRONG RAM (FIXED 3-SLOT MEMORY POOL &le; 10MB)</span>
+                            <span class="badge badge-neutral mono" id="lab-mem-policy-badge">Chính sách: FIFO</span>
+                        </div>
+                        <div class="os-ram-slots-grid" id="lab-ram-slots-grid">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Step-by-Step Eviction Timeline Table -->
+                    <div class="os-mem-timeline-wrap">
+                        <table class="os-mem-table">
+                            <thead>
+                                <tr>
+                                    <th>Bước</th>
+                                    <th>Khung Nạp Vào</th>
+                                    <th>Mức Nguy Cơ</th>
+                                    <th>Khung Bị Trục Xuất (Evicted)</th>
+                                    <th>Trạng Thái RAM (3 Slots)</th>
+                                    <th>Giữ Khung Va Chạm (KF-02)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lab-mem-table-body">
+                                <!-- Populated dynamically via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Gemini Diagnosis Consequence Card -->
+                    <div class="os-mem-verdict-box" id="lab-mem-verdict-box">
+                        <div class="verdict-header">
+                            <span>HỘI CHẨN TỔNG HỢP GEMINI:</span>
+                            <span class="badge badge-danger mono" id="lab-mem-verdict-badge">SAI LỆCH NGHIÊM TRỌNG (BỎ LỌT BẠO LỰC!)</span>
+                        </div>
+                        <div class="verdict-body">
+                            <strong id="lab-mem-verdict-title">AN TOÀN (1.4 / 10)</strong>
+                            <p id="lab-mem-verdict-desc">Chẩn đoán Gemini: Các ảnh lưu trong bộ nhớ (KF-04, KF-05, KF-06) đều là học sinh ngồi yên hoặc đứng quan sát. Kết luận: Khu vực an ninh trật tự hoàn toàn bình thường.</p>
+                            <p class="verdict-critique" id="lab-mem-verdict-critique">Lỗ hổng của FIFO: Khung ảnh cú đấm KF-02 (9.2 điểm) ở đầu video bị các khung ảnh tĩnh vào sau đẩy văng khỏi RAM. Gemini chỉ nhìn thấy ảnh an toàn nên đưa ra kết luận hoàn toàn sai lệch!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer os-lab-modal-footer">
+                <span class="mono text-muted">Học phần: Hệ điều hành (2611COMP133202) — Silberschatz Operating System Concepts (Ch. 3, 5, 7, 8, 9)</span>
+                <button class="btn btn-primary" onclick="closeOSExperimentModal()">Đóng Phòng Thực Nghiệm</button>
             </div>
         </div>
     </div>

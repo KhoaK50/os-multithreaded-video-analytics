@@ -1,0 +1,173 @@
+"""
+Test Suite: OS Experimental Lab Bench (Phòng Thực Nghiệm Hệ Điều Hành Đối Chứng)
+Học phần: Hệ điều hành (2611COMP133202)
+
+Kiểm thử toàn diện 3 kịch bản thực nghiệm đối chứng:
+1. Bounded Buffer & Bufferbloat vs Drop-Rate
+2. Deadlock & Resource Allocation Graph (RAG) với Watchdog Timer 3.0s
+3. Keyframe Memory Eviction Policy (FIFO vs Threat-Priority)
+4. Tích hợp FastAPI Endpoints an toàn & trần RAM < 50MB
+"""
+
+import time
+import pytest
+from starlette.testclient import TestClient
+from core.os_lab_engine import OSLabEngine, HARD_RAM_CEILING_MB, DEADLOCK_WATCHDOG_TIMEOUT_SEC
+from core.web_server import app
+
+
+class TestOSLabEngineScenarios:
+    """Kiểm thử logic lõi của bộ điều phối OSLabEngine."""
+
+    def test_buffer_clamping_and_ram_ceiling(self):
+        """Kiểm tra giới hạn dung lượng đệm (2..48) và trần RAM cứng (<50MB)."""
+        engine = OSLabEngine()
+
+        # Thử ép giá trị vượt trần
+        res_high = engine.configure_buffer_scenario(capacity=999, consumer_delay_ms=500, policy="drop_oldest")
+        assert res_high["capacity"] == 48
+        assert res_high["consumer_delay_ms"] == 120
+        assert res_high["ram_usage_mb"] <= HARD_RAM_CEILING_MB
+
+        # Thử ép giá trị dưới đáy
+        res_low = engine.configure_buffer_scenario(capacity=0, consumer_delay_ms=-50, policy="drop_oldest")
+        assert res_low["capacity"] == 2
+        assert res_low["consumer_delay_ms"] == 0
+
+    def test_buffer_policy_drop_vs_block(self):
+        """Kiểm chứng tác động của 2 chính sách: Drop-Oldest vs Block-Producer."""
+        engine = OSLabEngine()
+
+        # Kịch bản 1A: Drop-oldest khi Consumer bị chậm 80ms
+        res_drop = engine.configure_buffer_scenario(capacity=16, consumer_delay_ms=80, policy="drop_oldest")
+        assert res_drop["drop_rate_pct"] > 0.0
+        assert res_drop["threat_score"] < 8.8  # Đỉnh xung lực bị giảm do rơi khung hình
+        assert "RƠI KHUNG" in res_drop["status_badge"] or "MẤT ĐỈNH" in res_drop["kinetic_fidelity"]
+
+        # Kịch bản 1B: Block-producer (Bufferbloat)
+        res_block = engine.configure_buffer_scenario(capacity=48, consumer_delay_ms=85, policy="block_producer")
+        assert res_block["drop_rate_pct"] == 0.0
+        assert res_block["latency_ms"] >= 1500
+        assert "BUFFERBLOAT" in res_block["status_badge"]
+
+    def test_deadlock_trigger_and_manual_banker_resolve(self):
+        """Kiểm chứng kích hoạt bế tắc và giải phóng thủ công bằng thuật toán Banker."""
+        engine = OSLabEngine()
+
+        status_init = engine.get_deadlock_status()
+        assert status_init["deadlock_state"] == "NORMAL"
+        assert not status_init["cycle_detected"]
+
+        # Kích hoạt Deadlock
+        status_deadlock = engine.trigger_deadlock_simulation()
+        assert status_deadlock["deadlock_state"] == "DEADLOCK_ACTIVE"
+        assert status_deadlock["cycle_detected"] is True
+        assert status_deadlock["pipeline_fps"] == 0.0
+        assert len(status_deadlock["rag_edges"]) == 4
+
+        # Giải phóng bằng Banker Preemption
+        status_resolved = engine.resolve_deadlock(method="banker_preemption")
+        assert status_resolved["deadlock_state"] == "RESOLVED"
+        assert status_resolved["cycle_detected"] is False
+        assert status_resolved["pipeline_fps"] == 30.0
+        assert "Banker" in status_resolved["resolution_reason"]
+
+    def test_deadlock_hard_watchdog_auto_preemption(self):
+        """Bảo vệ phần cứng: Watchdog ngầm bắt buộc tự động ngắt Deadlock sau 3.0s mà không cần người dùng can thiệp."""
+        engine = OSLabEngine()
+        engine.trigger_deadlock_simulation()
+        assert engine.deadlock_state == "DEADLOCK_ACTIVE"
+
+        # Chờ 3.2s để watchdog thread thức dậy và tự ngắt
+        time.sleep(3.2)
+
+        status_after_watchdog = engine.get_deadlock_status()
+        assert status_after_watchdog["deadlock_state"] == "RESOLVED"
+        assert not status_after_watchdog["cycle_detected"]
+        assert "Watchdog Timer" in status_after_watchdog["resolution_reason"]
+        assert status_after_watchdog["pipeline_fps"] == 30.0
+
+    def test_memory_eviction_fifo_vs_threat_priority(self):
+        """
+        Kiểm chứng thuật toán trục xuất bộ nhớ đệm 3-Slot:
+        - FIFO: Đẩy mất khung hình bạo lực KF-02 (9.2 điểm) ra khỏi RAM -> Gemini chuẩn đoán sai lệch (Bỏ lọt bạo lực).
+        - Threat-Priority: Khóa KF-02 trong RAM -> Gemini chuẩn đoán chuẩn xác xô xát.
+        """
+        engine = OSLabEngine()
+
+        # Chạy kiểm nghiệm FIFO
+        res_fifo = engine.simulate_memory_eviction(policy="fifo")
+        assert res_fifo["has_peak_frame"] is False
+        assert "SAI LỆCH" in res_fifo["verdict_accuracy"]
+        # Cuối cùng RAM chỉ chứa các khung hình lành tính KF-04, KF-05, KF-06
+        final_ids_fifo = [slot["id"] for slot in res_fifo["final_slots"]]
+        assert "KF-02" not in final_ids_fifo
+
+        # Chạy kiểm nghiệm Threat-Priority
+        res_prio = engine.simulate_memory_eviction(policy="priority")
+        assert res_prio["has_peak_frame"] is True
+        assert "CHÍNH XÁC" in res_prio["verdict_accuracy"]
+        # Khung bạo lực KF-02 bắt buộc phải còn nguyên trong RAM
+        final_ids_prio = [slot["id"] for slot in res_prio["final_slots"]]
+        assert "KF-02" in final_ids_prio
+
+
+class TestOSLabAPIEndpoints:
+    """Kiểm thử các REST API endpoints của OS Lab qua TestClient."""
+
+    @pytest.fixture(autouse=True)
+    def setup_client(self):
+        self.client = TestClient(app)
+
+    def test_api_buffer_telemetry(self):
+        resp = self.client.get("/api/os_lab/scenarios/buffer")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "capacity" in data
+        assert "consumer_delay_ms" in data
+        assert "ram_ceiling_mb" in data
+        assert data["ram_ceiling_mb"] == 50.0
+
+        # Cập nhật thông số buffer
+        post_resp = self.client.post("/api/os_lab/scenarios/buffer", json={
+            "capacity": 32,
+            "consumer_delay_ms": 60,
+            "policy": "block_producer"
+        })
+        assert post_resp.status_code == 200
+        post_data = post_resp.json()
+        assert post_data["capacity"] == 32
+        assert post_data["consumer_delay_ms"] == 60
+        assert post_data["policy"] == "block_producer"
+
+    def test_api_deadlock_endpoints(self):
+        # Kiểm tra endpoint status
+        get_resp = self.client.get("/api/os_lab/scenarios/deadlock")
+        assert get_resp.status_code == 200
+
+        # Trigger deadlock
+        trig_resp = self.client.post("/api/os_lab/scenarios/deadlock/trigger")
+        assert trig_resp.status_code == 200
+        trig_data = trig_resp.json()
+        assert trig_data["deadlock_state"] == "DEADLOCK_ACTIVE"
+        assert trig_data["cycle_detected"] is True
+
+        # Resolve deadlock
+        res_resp = self.client.post("/api/os_lab/scenarios/deadlock/resolve", json={"method": "banker_preemption"})
+        assert res_resp.status_code == 200
+        res_data = res_resp.json()
+        assert res_data["deadlock_state"] == "RESOLVED"
+        assert res_data["cycle_detected"] is False
+
+    def test_api_memory_eviction(self):
+        resp_fifo = self.client.post("/api/os_lab/scenarios/memory_eviction", json={"policy": "fifo"})
+        assert resp_fifo.status_code == 200
+        data_fifo = resp_fifo.json()
+        assert data_fifo["policy"] == "fifo"
+        assert data_fifo["has_peak_frame"] is False
+
+        resp_prio = self.client.post("/api/os_lab/scenarios/memory_eviction", json={"policy": "priority"})
+        assert resp_prio.status_code == 200
+        data_prio = resp_prio.json()
+        assert data_prio["policy"] == "priority"
+        assert data_prio["has_peak_frame"] is True
