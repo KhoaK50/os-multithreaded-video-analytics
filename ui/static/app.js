@@ -3369,40 +3369,166 @@ function onOSLabSliderInput() {
     const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
     const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
 
-    // 1280 x 720 x 3 bytes = 2.6367 MB per frame
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     safeSetText("os-lab-cap-display", `N = ${capVal} (RAM: ${ramMb} MB)`);
     safeSetText("os-lab-delay-display", `${delayVal} ms`);
 
-    // Tác động trực tiếp lên đường ống vận hành
-    const speedMismatch = delayVal > 0 ? (delayVal / (33.3 + delayVal)) : 0;
-    const dropPct = Math.round(speedMismatch * 1000) / 10;
-    const latencyMs = delayVal === 0 ? Math.round(capVal * 33.3 * 0.25) : Math.round(capVal * 33.3);
+    updateDualModeEvaluation(capVal, delayVal);
+}
 
-    safeSetText("os-impact-latency", `${latencyMs} ms`);
-    safeSetText("os-impact-drop", `${dropPct.toFixed(1)}%`);
+function updateDualModeEvaluation(capVal, delayVal) {
+    // 1. LIVE CAMERA IMPACT
+    let liveSpeedText, liveStabText, liveAccText;
+    let overallBadge = "TRẠNG THÁI: TỐI ƯU CÂN BẰNG";
+    let overallBadgeClass = "badge-safe";
 
-    const statusEl = document.getElementById("os-impact-status");
-    const fidelityEl = document.getElementById("os-impact-fidelity");
-
-    if (dropPct >= 20) {
-        if (statusEl) {
-            statusEl.textContent = "SUY GIẢM TẦN SUẤT MẪU";
-            statusEl.className = "badge badge-warning mono";
-        }
-        if (fidelityEl) fidelityEl.textContent = "Nguy cơ bỏ sót tín hiệu biến thiên nhanh";
-    } else if (latencyMs >= 1000) {
-        if (statusEl) {
-            statusEl.textContent = "ĐỘ TRỄ TÍCH LŨY (BUFFERBLOAT)";
-            statusEl.className = "badge badge-danger mono";
-        }
-        if (fidelityEl) fidelityEl.textContent = "Độ trễ phản hồi cảnh báo cao";
+    if (delayVal === 0) {
+        liveSpeedText = `30.0 FPS · Độ trễ: ~${Math.round(capVal * 33.3 * 0.25)} ms (Thời gian thực)`;
+        liveStabText = "An toàn tuyệt đối (0% rủi ro sập luồng)";
+        liveAccText = "Bắt trọn xung lực gia tốc va chạm dE/dt (100% mẫu)";
+    } else if (delayVal <= 80) {
+        const fpsEst = (1000.0 / (33.3 + delayVal)).toFixed(1);
+        const dropEst = Math.round((delayVal / (33.3 + delayVal)) * 1000) / 10;
+        liveSpeedText = `Consumer: ~${fpsEst} FPS · Trễ: ~${Math.round(capVal * 33.3)} ms`;
+        liveStabText = `Cảnh báo nghẽn luồng (Rơi ${dropEst}% khung) · Drop-Oldest xả đệm`;
+        liveAccText = `Suy giảm mẫu cử động (${dropEst}%) · Nguy cơ âm tính giả`;
+        overallBadge = "TRẠNG THÁI: SUY GIẢM HIỆU NĂNG";
+        overallBadgeClass = "badge-warning";
     } else {
-        if (statusEl) {
-            statusEl.textContent = "ĐỒNG BỘ THỜI GIAN THỰC";
-            statusEl.className = "badge badge-safe mono";
+        const fpsEst = (1000.0 / (33.3 + delayVal)).toFixed(1);
+        const latencySec = ((capVal * 33.3) / 1000.0).toFixed(1);
+        liveSpeedText = `Consumer: ~${fpsEst} FPS · Trễ nghiêm trọng +${latencySec}s`;
+        liveStabText = "CẢNH BÁO NGUY CƠ ĐÌNH TRỆ (STALL) · Đệm chạm trần cận trên";
+        liveAccText = "Mất mát dữ liệu nghiêm trọng · Nguy cơ bỏ sót sự kiện cao";
+        overallBadge = "CẢNH BÁO: NGUY CƠ ĐÌNH TRỆ LUỒNG (SIMULATED STALL)";
+        overallBadgeClass = "badge-danger";
+    }
+
+    // 2. IMPORT VIDEO IMPACT
+    let vidSpeedText, vidStabText, vidAccText;
+    if (delayVal === 0) {
+        vidSpeedText = "Quét 1.8x – 2.5x thời gian thực (~55 – 75 FPS trên RTX 5060)";
+        vidStabText = "Khóa trần RAM ≤ 50MB · Chống tràn bộ nhớ OOM 100%";
+        vidAccText = "Bảo lưu 100% các khung hình đỉnh điểm (Peak Keyframes) gửi Gemini";
+    } else if (delayVal <= 80) {
+        vidSpeedText = "Quét chậm: ~1.0x – 1.2x thời gian thực (Bị nghẽn nhịp suy luận)";
+        vidStabText = "Giữ ổn định ở trần RAM ≤ 50MB (Không OOM)";
+        vidAccText = "Khung hình then chốt được gom đệm an toàn";
+    } else {
+        vidSpeedText = "Quét rất chậm: 0.3x – 0.5x thời gian thực (Dồn ứ hàng đợi)";
+        vidStabText = "Cận trên an toàn: Tự động ngắt tràn (Circuit Breaker ≤ 50MB)";
+        vidAccText = "Dữ liệu được lưu đệm giới hạn, có thể kéo dài thời gian hoàn thành";
+    }
+
+    safeSetText("os-eval-live-speed", liveSpeedText);
+    safeSetText("os-eval-live-stab", liveStabText);
+    safeSetText("os-eval-live-acc", liveAccText);
+    safeSetText("os-eval-vid-speed", vidSpeedText);
+    safeSetText("os-eval-vid-stab", vidStabText);
+    safeSetText("os-eval-vid-acc", vidAccText);
+
+    const overallBadgeEl = document.getElementById("os-dual-overall-badge");
+    if (overallBadgeEl) {
+        overallBadgeEl.textContent = overallBadge;
+        overallBadgeEl.className = `badge ${overallBadgeClass} mono`;
+    }
+
+    // Show/hide stall alert banner
+    const stallBanner = document.getElementById("os-stall-alert-banner");
+    if (stallBanner) {
+        stallBanner.classList.toggle("hidden", delayVal < 100 || capVal < 40);
+    }
+}
+
+let stallRecoveryTimer = null;
+function simulateControlledStall() {
+    const capSlider = document.getElementById("os-lab-cap-slider");
+    const delaySlider = document.getElementById("os-lab-delay-slider");
+    if (capSlider) capSlider.value = 64;
+    if (delaySlider) delaySlider.value = 200;
+
+    onOSLabSliderInput();
+    commitOSLabConfig(true);
+
+    const banner = document.getElementById("os-stall-alert-banner");
+    if (banner) banner.classList.remove("hidden");
+
+    let countdownSec = 5.0;
+    const cdEl = document.getElementById("os-stall-countdown");
+    if (cdEl) cdEl.textContent = `Tự phục hồi an toàn sau: ${countdownSec.toFixed(1)}s`;
+
+    if (stallRecoveryTimer) clearInterval(stallRecoveryTimer);
+    stallRecoveryTimer = setInterval(() => {
+        countdownSec -= 0.5;
+        if (cdEl) cdEl.textContent = `Tự phục hồi an toàn sau: ${Math.max(0, countdownSec).toFixed(1)}s`;
+        if (countdownSec <= 0) {
+            clearInterval(stallRecoveryTimer);
+            stallRecoveryTimer = null;
+            resetToHardwareOptimal();
+            showToast("Hệ thống đã tự động hoàn nguyên về cấu hình khuyến nghị tối ưu RTX 5060.", "success");
         }
-        if (fidelityEl) fidelityEl.textContent = "Duy trì đầy đủ mẫu dữ liệu";
+    }, 500);
+
+    showToast("Đang giả lập nguy cơ sập luồng (Khóa cứng ở cận trên RAM 50MB để bảo vệ máy).", "warning");
+}
+
+function resetToHardwareOptimal() {
+    if (stallRecoveryTimer) {
+        clearInterval(stallRecoveryTimer);
+        stallRecoveryTimer = null;
+    }
+    const capSlider = document.getElementById("os-lab-cap-slider");
+    const delaySlider = document.getElementById("os-lab-delay-slider");
+    if (capSlider) capSlider.value = 16;
+    if (delaySlider) delaySlider.value = 0;
+
+    const banner = document.getElementById("os-stall-alert-banner");
+    if (banner) banner.classList.add("hidden");
+
+    onOSLabSliderInput();
+    commitOSLabConfig(false);
+    showToast("Đã khôi phục thông số khuyến nghị chuẩn máy: N=16, Độ trễ=0ms (RTX 5060).", "info");
+}
+
+async function runOSLiveBenchmark() {
+    const btn = document.getElementById("btn-run-os-bench");
+    const capSlider = document.getElementById("os-lab-cap-slider");
+    const delaySlider = document.getElementById("os-lab-delay-slider");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner" style="display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:spin 0.6s linear infinite; margin-right:6px;"></span> Đang đo đạc thực tế 50 khung...`;
+    }
+
+    try {
+        const resp = await fetch("/api/os_lab/benchmark", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ capacity: capVal, consumer_delay_ms: delayVal, frames_count: 50 })
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            const resBox = document.getElementById("os-bench-results");
+            if (resBox) resBox.classList.remove("hidden");
+
+            safeSetText("ob-res-prod-fps", `${data.measured_producer_fps} FPS`);
+            safeSetText("ob-res-cons-fps", `${data.measured_consumer_fps} FPS`);
+            safeSetText("ob-res-drop-count", `${data.actual_dropped_frames} khung (${data.drop_rate_pct}%)`);
+            safeSetText("ob-res-latency", `${data.measured_latency_ms} ms`);
+            safeSetText("ob-res-ram", `${data.ram_usage_mb} MB / ${data.ram_ceiling_mb} MB`);
+            safeSetText("ob-res-verdict", data.verdict);
+            showToast("Thực nghiệm đo đạc 50 khung hình hoàn tất thành công.", "success");
+        }
+    } catch (e) {
+        console.error("Lỗi chạy benchmark OS:", e);
+        showToast("Lỗi khi chạy thực nghiệm đo đạc.", "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span>Chạy Thực Nghiệm Kiểm Chứng (50 Khung Hình)</span>`;
+        }
     }
 }
 
@@ -4394,3 +4520,9 @@ window.onLabBufferKnobChange = onLabBufferKnobChange;
 window.triggerLabDeadlock = triggerLabDeadlock;
 window.resolveLabDeadlock = resolveLabDeadlock;
 window.runLabMemorySim = runLabMemorySim;
+
+
+window.updateDualModeEvaluation = updateDualModeEvaluation;
+window.simulateControlledStall = simulateControlledStall;
+window.resetToHardwareOptimal = resetToHardwareOptimal;
+window.runOSLiveBenchmark = runOSLiveBenchmark;

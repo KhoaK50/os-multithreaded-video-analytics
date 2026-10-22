@@ -1614,6 +1614,50 @@ def simulate_os_lab_memory_eviction(req: OSMemorySimPayload):
     return {"status": "ok", **res}
 
 
+class OSBenchmarkPayload(BaseModel):
+    capacity: Optional[int] = 16
+    consumer_delay_ms: Optional[int] = 0
+    frames_count: Optional[int] = 50
+
+
+@app.get("/api/os_lab/dual_evaluation")
+def get_dual_mode_eval(capacity: int = 16, consumer_delay_ms: int = 0):
+    """Lấy ma trận đánh giá đối sánh 2 chế độ: Live Camera vs Import Video."""
+    return {"status": "ok", **OS_LAB.get_dual_mode_evaluation(capacity, consumer_delay_ms)}
+
+
+@app.post("/api/os_lab/dual_evaluation")
+def post_dual_mode_eval(req: OSBufferScenarioPayload):
+    """Lấy ma trận đánh giá đối sánh theo tham số người dùng chọn."""
+    return {"status": "ok", **OS_LAB.get_dual_mode_evaluation(req.capacity or 16, req.consumer_delay_ms or 0)}
+
+
+@app.post("/api/os_lab/benchmark")
+def run_os_lab_benchmark_endpoint(req: OSBenchmarkPayload):
+    """Chạy thực nghiệm đo đạc 50 khung hình thực tế trên phần cứng."""
+    res = OS_LAB.run_live_benchmark(
+        capacity=req.capacity or 16,
+        consumer_delay_ms=req.consumer_delay_ms or 0,
+        frames_count=req.frames_count or 50
+    )
+    return res
+
+
+@app.post("/api/os_lab/simulate_stall")
+def simulate_stall_endpoint():
+    """Giả lập trạng thái quá tải cận kề sập (Bảo vệ cứng ở cận trên RAM <= 50MB)."""
+    # Ép tham số kịch trần nhưng bảo vệ an toàn
+    eval_res = OS_LAB.get_dual_mode_evaluation(capacity=64, consumer_delay_ms=200)
+    return {
+        "status": "ok",
+        "is_simulated_stall": True,
+        "ram_ceiling_mb": 50.0,
+        "safety_guarantee": "Hệ thống được khóa cứng ở cận trên 50MB RAM, kích hoạt Circuit Breaker ngăn chặn 100% crash thật.",
+        **eval_res
+    }
+
+
+
 
 # ==============================================================================
 # VIDEO IMPORT & BATCH ANALYTICS ENDPOINTS

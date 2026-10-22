@@ -171,3 +171,60 @@ class TestOSLabAPIEndpoints:
         data_prio = resp_prio.json()
         assert data_prio["policy"] == "priority"
         assert data_prio["has_peak_frame"] is True
+
+    def test_dual_mode_evaluation_logic(self):
+        """Kiểm chứng tính toán ma trận đối sánh 2 chế độ: Live Camera vs Import Video."""
+        engine = OSLabEngine()
+
+        # Mặc định tối ưu RTX 5060 (N=16, delay=0ms)
+        opt_eval = engine.get_dual_mode_evaluation(capacity=16, consumer_delay_ms=0)
+        assert opt_eval["is_stall_risk"] is False
+        assert "TỐI ƯU CÂN BẰNG" in opt_eval["overall_badge"]
+        assert "30.0 FPS" in opt_eval["live_camera"]["speed"]
+        assert "0% rủi ro" in opt_eval["live_camera"]["stability"]
+        assert "Khóa trần RAM" in opt_eval["import_video"]["stability"]
+
+        # Trạng thái giả lập nghẽn / quá tải cực đoan
+        stall_eval = engine.get_dual_mode_evaluation(capacity=64, consumer_delay_ms=200)
+        assert stall_eval["is_stall_risk"] is True
+        assert "STALL" in stall_eval["overall_badge"]
+        assert "CẢNH BÁO" in stall_eval["live_camera"]["stability"]
+        assert stall_eval["ram_ceiling_mb"] == 50.0
+
+    def test_live_benchmark_execution(self):
+        """Kiểm chứng chạy thực nghiệm đo đạc 50 khung hình trên phần cứng."""
+        engine = OSLabEngine()
+        bench_res = engine.run_live_benchmark(capacity=16, consumer_delay_ms=0, frames_count=50)
+        assert bench_res["status"] == "ok"
+        assert bench_res["frames_processed"] == 50
+        assert bench_res["measured_producer_fps"] > 0
+        assert bench_res["measured_consumer_fps"] > 0
+        assert bench_res["ram_usage_mb"] <= 50.0
+        assert bench_res["is_safe"] is True
+
+    def test_api_dual_eval_and_benchmark(self):
+        """Kiểm thử REST endpoints /api/os_lab/dual_evaluation và /api/os_lab/benchmark."""
+        # GET dual_evaluation
+        get_resp = self.client.get("/api/os_lab/dual_evaluation?capacity=16&consumer_delay_ms=0")
+        assert get_resp.status_code == 200
+        get_data = get_resp.json()
+        assert "live_camera" in get_data
+        assert "import_video" in get_data
+
+        # POST benchmark
+        post_bench = self.client.post("/api/os_lab/benchmark", json={
+            "capacity": 16,
+            "consumer_delay_ms": 0,
+            "frames_count": 50
+        })
+        assert post_bench.status_code == 200
+        bench_data = post_bench.json()
+        assert bench_data["status"] == "ok"
+        assert bench_data["frames_processed"] == 50
+
+        # POST simulate_stall
+        stall_resp = self.client.post("/api/os_lab/simulate_stall")
+        assert stall_resp.status_code == 200
+        stall_data = stall_resp.json()
+        assert stall_data["is_simulated_stall"] is True
+        assert stall_data["ram_ceiling_mb"] == 50.0
