@@ -1,6 +1,6 @@
 """
 OS Experimental Lab Engine (Phòng Thực Nghiệm Hệ Điều Hành Đối Chứng).
-Học phần: Hệ điều hành (2611COMP133202).
+Kiến trúc Phân tích Video Đa luồng & Điều phối Bộ nhớ.
 
 Nguyên tắc an toàn & bảo vệ phần cứng:
 1. Hard Memory Ceiling (Trần RAM cứng): Toàn bộ cấu trúc đệm chỉ được phép chiếm tối đa 50MB.
@@ -23,7 +23,7 @@ DEADLOCK_WATCHDOG_TIMEOUT_SEC = 3.0
 class OSLabEngine:
     """
     Bộ điều phối phòng thực nghiệm Hệ điều hành đa luồng an toàn (Sandboxed OS Lab).
-    Cung cấp 3 kịch bản đối chứng trực quan chuẩn giáo trình Silberschatz:
+    Cung cấp 3 kịch bản đối chứng trực quan theo cơ chế phân tích đối chứng:
     - Kịch bản 1: Hàng đợi Bounded Buffer & Hiện tượng Bufferbloat vs Drop-Rate.
     - Kịch bản 2: Bế tắc Đa luồng (Deadlock) & Đồ thị RAG với Watchdog tự ngắt 3.0s.
     - Kịch bản 3: Thuật toán Trục xuất Bộ nhớ đệm Keyframe (FIFO vs Threat-Priority Eviction).
@@ -107,10 +107,10 @@ class OSLabEngine:
         # Tác động nhân quả lên phân tích AI:
         # Nếu rớt khung hình > 20%, mất đỉnh xung lực gia tốc va chạm dE/dt -> Điểm nguy hiểm bị sai lệch
         if drop_rate_pct >= 25.0:
-            kinetic_fidelity = "MẤT ĐỈNH XUNG LỰC (Rơi khung hình)"
+            kinetic_fidelity = "GIẢM TẦN SUẤT MẪU (Rơi khung hình)"
             threat_score_impact = -4.2  # Bỏ lọt hành vi bạo lực
             simulated_threat_score = round(max(1.8, 8.8 + threat_score_impact), 1)
-            ai_diagnosis = f"Cảnh báo: Tỷ lệ rớt khung hình {drop_rate_pct}% làm mất đỉnh va chạm dE/dt. Điểm nguy hiểm bị hạ từ 8.8 xuống {simulated_threat_score} (Bỏ lọt xung đột!)."
+            ai_diagnosis = f"Cảnh báo: Tỷ lệ rớt khung hình {drop_rate_pct}% làm giảm tần suất lấy mẫu. Điểm nguy hiểm ước lượng giảm từ 8.8 xuống {simulated_threat_score}."
             status_badge = "CẢNH BÁO RƠI KHUNG"
             badge_class = "tag-warning"
         elif latency_ms >= 1500:
@@ -221,7 +221,7 @@ class OSLabEngine:
         time_remaining = max(0.0, round(deadline_t - now, 1)) if state == "DEADLOCK_ACTIVE" else 0.0
         elapsed_sec = round(now - start_t, 1) if state == "DEADLOCK_ACTIVE" else (3.0 if state == "RESOLVED" else 0.0)
 
-        # Cấu trúc Đồ thị Cấp phát Tài nguyên (Resource Allocation Graph - RAG) chuẩn sách giáo trình Silberschatz:
+        # Cấu trúc Đồ thị Cấp phát Tài nguyên (Resource Allocation Graph - RAG) gồm các luồng và khóa tài nguyên:
         # 2 Luồng: T1 (AI Worker), T2 (Stream Writer)
         # 2 Tài nguyên: R1 (Frame Buffer Lock), R2 (GPU Context Lock)
         nodes = [
@@ -240,7 +240,7 @@ class OSLabEngine:
             ]
             cycle_detected = True
             pipeline_fps = 0.0
-            video_state = "ĐÓNG BĂNG HOÀN TOÀN (DEADLOCK FREEZE)"
+            video_state = "ĐÌNH TRỆ LUỒNG XỬ LÝ (0.0 FPS)"
             ai_impact = "Toàn bộ chu kỳ suy luận thị giác bị tê liệt, FPS rớt về 0.0."
         elif state == "RESOLVED":
             edges = [
@@ -289,8 +289,8 @@ class OSLabEngine:
         # Chuỗi 6 khung hình sự kiện điển hình:
         frames_stream = [
             {"id": "KF-01", "time": "00:01", "action": "Học sinh ngồi tự học tại bàn", "threat_score": 0.8, "is_combat": False},
-            {"id": "KF-02", "time": "00:04", "action": "ĐỐI TƯỢNG LAO VÀO ĐẤM NGÃ NẠN NHÂN (ĐỈNH ĐIỂM)", "threat_score": 9.2, "is_combat": True},
-            {"id": "KF-03", "time": "00:06", "action": "Giằng co xô xát dưới sàn lớp học", "threat_score": 8.5, "is_combat": True},
+            {"id": "KF-02", "time": "00:04", "action": "Khung hình sự kiện va chạm (Trọng số 9.2)", "threat_score": 9.2, "is_combat": True},
+            {"id": "KF-03", "time": "00:06", "action": "Khung hình xô xát thể chất (Trọng số 8.5)", "threat_score": 8.5, "is_combat": True},
             {"id": "KF-04", "time": "00:15", "action": "Các bạn cùng lớp đứng quanh quan sát", "threat_score": 2.1, "is_combat": False},
             {"id": "KF-05", "time": "00:22", "action": "Học sinh quay trở về ghế ngồi ổn định", "threat_score": 1.2, "is_combat": False},
             {"id": "KF-06", "time": "00:30", "action": "Không gian lớp học yên tĩnh bình thường", "threat_score": 0.6, "is_combat": False}
@@ -326,7 +326,7 @@ class OSLabEngine:
                 "Chẩn đoán Gemini: Các ảnh lưu trong bộ nhớ (KF-04, KF-05, KF-06) đều là học sinh ngồi yên "
                 "hoặc đứng quan sát. Kết luận: Khu vực an ninh trật tự hoàn toàn bình thường."
             )
-            verdict_accuracy = "SAI LỆCH NGHIÊM TRỌNG (BỎ LỌT BẠO LỰC!)"
+            verdict_accuracy = "ÂM TÍNH GIẢ (BỎ SÓT SỰ KIỆN TRỌNG YẾU)"
             accuracy_class = "tag-danger"
             policy_critique = (
                 "Lỗ hổng của FIFO: Khung ảnh cú đấm KF-02 (9.2 điểm) ở đầu video bị các khung ảnh tĩnh "
@@ -370,7 +370,7 @@ class OSLabEngine:
                 "Chẩn đoán Gemini: Nhận diện xung đột bạo lực nghiêm trọng tại khung KF-02 và KF-03 "
                 "(Đối tượng vung đòn trực diện gây ngã sụp đổ). Đề xuất kỷ luật và hỗ trợ tại chỗ ngay lập tức."
             )
-            verdict_accuracy = "CHÍNH XÁC TUYỆT ĐỐI (100%)"
+            verdict_accuracy = "DUY TRÌ NHẬN DIỆN NHẤT QUÁN"
             accuracy_class = "tag-safe"
             policy_critique = (
                 "Ưu thế của Threat-Priority: Khung ảnh cú đấm KF-02 (9.2) và xô xát KF-03 (8.5) được ghim chặt (Page Pinning) "

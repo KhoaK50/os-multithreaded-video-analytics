@@ -98,7 +98,7 @@ class TestOSLabEngineScenarios:
         # Chạy kiểm nghiệm FIFO
         res_fifo = engine.simulate_memory_eviction(policy="fifo")
         assert res_fifo["has_peak_frame"] is False
-        assert "SAI LỆCH" in res_fifo["verdict_accuracy"]
+        assert "ÂM TÍNH GIẢ" in res_fifo["verdict_accuracy"]
         # Cuối cùng RAM chỉ chứa các khung hình lành tính KF-04, KF-05, KF-06
         final_ids_fifo = [slot["id"] for slot in res_fifo["final_slots"]]
         assert "KF-02" not in final_ids_fifo
@@ -106,7 +106,7 @@ class TestOSLabEngineScenarios:
         # Chạy kiểm nghiệm Threat-Priority
         res_prio = engine.simulate_memory_eviction(policy="priority")
         assert res_prio["has_peak_frame"] is True
-        assert "CHÍNH XÁC" in res_prio["verdict_accuracy"]
+        assert "DUY TRÌ NHẬN DIỆN" in res_prio["verdict_accuracy"]
         # Khung bạo lực KF-02 bắt buộc phải còn nguyên trong RAM
         final_ids_prio = [slot["id"] for slot in res_prio["final_slots"]]
         assert "KF-02" in final_ids_prio

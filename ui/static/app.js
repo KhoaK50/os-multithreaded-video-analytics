@@ -201,11 +201,11 @@ async function fetchTelemetry() {
         // Nếu không ở Tab Trực Tiếp, bỏ qua cập nhật các thành phần dành riêng cho Camera
         if (currentTab !== "live") return;
 
-        // Cập nhật OS Metrics an toàn tuyệt đối
+        // Cập nhật số liệu vận hành Hệ điều hành
         safeSetText("live-fps", `${data.fps || 0} FPS`);
         safeSetText("live-consumer-fps", `${data.consumer_fps || data.fps || 30.0} FPS`);
         safeSetText("live-cpu", `${data.cpu_percent || 0}%`);
-        safeSetText("live-vram", `${data.gpu_vram_mb || 0} / ${data.gpu_vram_total_mb || 8192} MB`);
+        safeSetText("live-vram", `${((data.gpu_vram_mb || 0) / 1024).toFixed(1)} / ${((data.gpu_vram_total_mb || 8192) / 1024).toFixed(1)} GB`);
         safeSetText("live-ram", `${data.ram_percent || 0}%`);
 
         // Cập nhật Bounded Buffer & Flow Control thời gian thực
@@ -3373,6 +3373,37 @@ function onOSLabSliderInput() {
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     safeSetText("os-lab-cap-display", `N = ${capVal} (RAM: ${ramMb} MB)`);
     safeSetText("os-lab-delay-display", `${delayVal} ms`);
+
+    // Tác động trực tiếp lên đường ống vận hành
+    const speedMismatch = delayVal > 0 ? (delayVal / (33.3 + delayVal)) : 0;
+    const dropPct = Math.round(speedMismatch * 1000) / 10;
+    const latencyMs = delayVal === 0 ? Math.round(capVal * 33.3 * 0.25) : Math.round(capVal * 33.3);
+
+    safeSetText("os-impact-latency", `${latencyMs} ms`);
+    safeSetText("os-impact-drop", `${dropPct.toFixed(1)}%`);
+
+    const statusEl = document.getElementById("os-impact-status");
+    const fidelityEl = document.getElementById("os-impact-fidelity");
+
+    if (dropPct >= 20) {
+        if (statusEl) {
+            statusEl.textContent = "SUY GIẢM TẦN SUẤT MẪU";
+            statusEl.className = "badge badge-warning mono";
+        }
+        if (fidelityEl) fidelityEl.textContent = "Nguy cơ bỏ sót tín hiệu biến thiên nhanh";
+    } else if (latencyMs >= 1000) {
+        if (statusEl) {
+            statusEl.textContent = "ĐỘ TRỄ TÍCH LŨY (BUFFERBLOAT)";
+            statusEl.className = "badge badge-danger mono";
+        }
+        if (fidelityEl) fidelityEl.textContent = "Độ trễ phản hồi cảnh báo cao";
+    } else {
+        if (statusEl) {
+            statusEl.textContent = "ĐỒNG BỘ THỜI GIAN THỰC";
+            statusEl.className = "badge badge-safe mono";
+        }
+        if (fidelityEl) fidelityEl.textContent = "Duy trì đầy đủ mẫu dữ liệu";
+    }
 }
 
 async function commitOSLabConfig(triggerBurst = false) {
@@ -3838,7 +3869,7 @@ function releaseConveyorFrame() {
 }
 
 // ==============================================================================
-// OS EXPERIMENTAL LAB SANDBOX (SILBERSCHATZ LAB BENCH)
+// OS EXPERIMENTAL TELEMETRY SERVICES
 // ==============================================================================
 let activeLabScenario = "buffer"; // "buffer" | "deadlock" | "memory"
 let currentLabBufferPolicy = "drop_oldest";
@@ -4118,7 +4149,7 @@ function updateLabDeadlockDOM(data) {
     const statusBadge = document.getElementById("lab-rag-status-badge");
     if (statusBadge) {
         if (data.deadlock_state === "DEADLOCK_ACTIVE") {
-            statusBadge.textContent = "BẾ TẮC CHU TRÌNH (DEADLOCK ACTIVE)";
+            statusBadge.textContent = "CHU TRÌNH CHỜ VÒNG TRÒN (DEADLOCK)";
             statusBadge.className = "badge badge-danger mono";
         } else if (data.deadlock_state === "RESOLVED") {
             statusBadge.textContent = "ĐÃ GỠ BẾ TẮC (RESOLVED)";
