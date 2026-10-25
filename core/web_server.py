@@ -281,11 +281,11 @@ class LiveCameraPipeline:
             self.last_log_time = now_t
             self.last_logged_action = posture
 
-            # Lưu ảnh khung hình đại diện (Peak Keyframe)
+            # Lưu ảnh khung hình đại diện (Peak Keyframe) chất lượng cao
             snap_name = f"snap_{self.action_counter:04d}_{int(now_t)}.jpg"
             snap_path = os.path.join(self.snapshots_dir, snap_name)
             if frame is not None and frame.size > 0:
-                cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
             if is_danger:
                 code_prefix = "DANGER"
@@ -358,11 +358,11 @@ class LiveCameraPipeline:
                     dummy = np.zeros((480, 640, 3), dtype=np.uint8)
                     self.yolo_model(dummy, device=device, verbose=False)
 
-                # Mở Camera an toàn với cơ chế dò đa backend trên Windows
+                # Mở Camera an toàn với cơ chế dò đa backend trên Windows ở độ phân giải tối đa (Full HD 1920x1080)
                 self.cap = None
                 self.camera_device_available = False
-                cam_w = getattr(CONFIG, "CAMERA_WIDTH", 640)
-                cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 480)
+                cam_w = getattr(CONFIG, "CAMERA_WIDTH", 1920)
+                cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 1080)
 
                 if isinstance(self.video_source, int):
                     backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if sys.platform == "win32" else [cv2.CAP_ANY]
@@ -371,14 +371,23 @@ class LiveCameraPipeline:
                         try:
                             cap_test = cv2.VideoCapture(self.video_source, backend)
                             if cap_test is not None and cap_test.isOpened():
-                                cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, cam_w)
-                                cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_h)
+                                # Kích hoạt codec phần cứng MJPG trước để mở khóa băng thông 1080p/720p 30 FPS trên USB/UVC Webcam
+                                cap_test.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
                                 cap_test.set(cv2.CAP_PROP_FPS, 30)
+                                for req_w, req_h in [(cam_w, cam_h), (1920, 1080), (1280, 720)]:
+                                    cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, req_w)
+                                    cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, req_h)
+                                    actual_w = int(cap_test.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                                    actual_h = int(cap_test.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                                    if actual_w >= 1280 and actual_h >= 720:
+                                        break
+                                cap_test.set(cv2.CAP_PROP_AUTOFOCUS, 1)
                                 ret, test_frame = cap_test.read()
                                 if ret and test_frame is not None and test_frame.size > 0:
                                     self.cap = cap_test
                                     self.camera_device_available = True
-                                    print(f"[+] Mo webcam thanh cong qua backend {backend_name} (index {self.video_source})!")
+                                    fh, fw = test_frame.shape[:2]
+                                    print(f"[+] Mo webcam thanh cong qua backend {backend_name} (index {self.video_source}) tai do phan giai {fw}x{fh}!")
                                     break
                                 else:
                                     cap_test.release()
@@ -503,7 +512,7 @@ class LiveCameraPipeline:
                     try:
                         self.action_counter += 1
                         init_snap = f"snap_init_{self.action_counter:04d}_{int(t_start)}.jpg"
-                        cv2.imwrite(os.path.join(self.snapshots_dir, init_snap), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        cv2.imwrite(os.path.join(self.snapshots_dir, init_snap), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
                         heur_res = self._synthesize_heuristic_action(bio.get("posture", "Ngồi thẳng bình thường"), bio)
                         init_entry = {
                             "id": f"#{self.action_counter:03d}",
@@ -529,7 +538,7 @@ class LiveCameraPipeline:
                     self.action_counter += 1
                     snap_name = f"snap_gemini_{self.action_counter:04d}_{int(t_start)}.jpg"
                     snap_path = os.path.join(self.snapshots_dir, snap_name)
-                    cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
                     with self.ai_lock:
                         bio = dict(self.biomechanics)
@@ -921,12 +930,15 @@ class LiveCameraPipeline:
             danger_score = 9 if is_danger else 1
             danger_level = "NGUY HIEM" if is_danger else "AN TOAN"
 
-            # Khung hiển thị Camera chuẩn 16:9 Widescreen (1280x720) toàn màn hình, không bị ép tỉ lệ
-            target_w, target_h = 1280, 720
-            cam_viewport = cv2.resize(raw, (target_w, target_h))
-
-            # Scale coordinates từ raw sang viewport 1280x720
+            # Khung hiển thị Camera chuẩn 16:9 Widescreen Full HD (1920x1080) sắc nét tối đa
+            target_w, target_h = 1920, 1080
             raw_h, raw_w = raw.shape[:2]
+            if raw_w == target_w and raw_h == target_h:
+                cam_viewport = raw.copy()
+            else:
+                cam_viewport = cv2.resize(raw, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
+
+            # Scale coordinates từ raw sang viewport 1920x1080
             scale_x = target_w / max(1, raw_w)
             scale_y = target_h / max(1, raw_h)
 
@@ -1139,7 +1151,7 @@ def stream_live():
             while True:
                 frame = LIVE_CAMERA.get_latest_hud()
                 if frame is not None:
-                    ret, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    ret, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
                     if ret:
                         yield (
                             b"--frame\r\n"

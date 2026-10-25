@@ -76,8 +76,8 @@ class SystemConfig:
     FRAME_QUEUE_MAXSIZE: int = 32  # Bounded buffer to prevent memory bloat
     CAPTURE_FPS: int = 30           # Standard camera rate
     INFERENCE_INTERVAL_FRAMES: int = 8  # Step size for sliding window
-    CAMERA_WIDTH: int = 640
-    CAMERA_HEIGHT: int = 480
+    CAMERA_WIDTH: int = 1920
+    CAMERA_HEIGHT: int = 1080
     _cached_device: Optional[str] = field(default=None, init=False, repr=False)
 
     @property

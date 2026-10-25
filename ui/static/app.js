@@ -445,8 +445,9 @@ async function toggleBrowserWebcam() {
 
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30 },
                 facingMode: "user"
             },
             audio: false
@@ -480,19 +481,27 @@ async function toggleBrowserWebcam() {
         const offlineOverlay = document.getElementById("cam-offline-overlay");
         if (offlineOverlay) offlineOverlay.classList.add("hidden");
 
-        // Bắt đầu vòng lặp gửi khung hình (Adaptive Ping-Pong)
+        // Bắt đầu vòng lặp gửi khung hình Full HD sắc nét (Adaptive Ping-Pong)
         const canvas = document.getElementById("client-webcam-canvas");
-        canvas.width = 480;
-        canvas.height = 360;
+        const capW = (video && video.videoWidth >= 640) ? video.videoWidth : 1920;
+        const capH = (video && video.videoHeight >= 480) ? video.videoHeight : 1080;
+        canvas.width = capW;
+        canvas.height = capH;
         const ctx = canvas.getContext("2d");
 
         async function streamLoop() {
             while (isStreamingBrowserCam) {
                 if (video && video.readyState >= 2) {
-                    ctx.drawImage(video, 0, 0, 480, 360);
+                    const vw = video.videoWidth || capW;
+                    const vh = video.videoHeight || capH;
+                    if (canvas.width !== vw || canvas.height !== vh) {
+                        canvas.width = vw;
+                        canvas.height = vh;
+                    }
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                     try {
                         const blob = await new Promise((resolve) => {
-                            canvas.toBlob(resolve, "image/jpeg", 0.45);
+                            canvas.toBlob(resolve, "image/jpeg", 0.92);
                         });
                         if (blob && isStreamingBrowserCam) {
                             const formData = new FormData();
@@ -4927,16 +4936,20 @@ function renderLiveParallelLoop() {
 
         if (yCanvas) {
             const yCtx = yCanvas.getContext("2d");
-            const w = yCanvas.width || 1280;
-            const h = yCanvas.height || 720;
+            yCtx.imageSmoothingEnabled = true;
+            yCtx.imageSmoothingQuality = "high";
+            const w = yCanvas.width || 1920;
+            const h = yCanvas.height || 1080;
             drawImageContain(yCtx, activeSource, w, h);
             pushFrameToRingBuffer(liveRingBuffer, activeSource, w, h);
         }
 
         if (zCanvas) {
             const zCtx = zCanvas.getContext("2d");
-            const w = zCanvas.width || 1280;
-            const h = zCanvas.height || 720;
+            zCtx.imageSmoothingEnabled = true;
+            zCtx.imageSmoothingQuality = "high";
+            const w = zCanvas.width || 1920;
+            const h = zCanvas.height || 1080;
             const shouldRefreshZ = !st.isStall && (liveTickCounter % Math.max(1, st.zSkipStride) === 0);
 
             if (liveRingBuffer.length > 0) {

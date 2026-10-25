@@ -91,14 +91,18 @@ class CameraEnhancer:
             ycrcb[:, :, 0] = cv2.LUT(ycrcb[:, :, 0], self.lut_tone)
             frame = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
 
-        # 3. Khử nhiễu thích ứng giữ biên cạnh (Chroma Denoise + Fast Bilateral Filter)
+        # 3. Khử nhiễu thích ứng giữ biên cạnh & Tăng cường độ sắc nét (Luminance Unsharp Mask + Chroma Denoise)
         if self.denoise:
             ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
-            # Khử nhiễu hạt Luminance bằng Bilateral Filter giữ sắc nét biên cạnh
-            ycrcb[:, :, 0] = cv2.bilateralFilter(ycrcb[:, :, 0], d=5, sigmaColor=35, sigmaSpace=35)
-            # Khử nhiễu màu (Chroma Noise) trên Cr và Cb giúp da mịn tự nhiên, triệt tiêu đốm hạt đỏ/xanh khi thiếu sáng
-            ycrcb[:, :, 1] = cv2.GaussianBlur(ycrcb[:, :, 1], (5, 5), 1.5)
-            ycrcb[:, :, 2] = cv2.GaussianBlur(ycrcb[:, :, 2], (5, 5), 1.5)
+            y_chan = ycrcb[:, :, 0]
+            # Lọc nhiễu nhẹ giữ nguyên chi tiết biên cạnh (tránh bệt ảnh ở độ phân giải Full HD)
+            y_denoised = cv2.bilateralFilter(y_chan, d=3, sigmaColor=14, sigmaSpace=14)
+            # Tăng độ sắc nét viền (Luminance Unsharp Masking) giúp hình ảnh trong và nét căng
+            y_blur = cv2.GaussianBlur(y_denoised, (0, 0), 1.0)
+            ycrcb[:, :, 0] = cv2.addWeighted(y_denoised, 1.35, y_blur, -0.35, 0)
+            # Khử nhiễu màu (Chroma Noise) trên Cr và Cb giúp triệt tiêu đốm hạt đỏ/xanh khi thiếu sáng
+            ycrcb[:, :, 1] = cv2.GaussianBlur(ycrcb[:, :, 1], (3, 3), 1.0)
+            ycrcb[:, :, 2] = cv2.GaussianBlur(ycrcb[:, :, 2], (3, 3), 1.0)
             frame = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
 
         return frame
