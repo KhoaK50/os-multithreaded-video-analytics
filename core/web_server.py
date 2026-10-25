@@ -99,6 +99,7 @@ class LiveCameraPipeline:
         self.running = False
         self.is_starting = False
         self.start_lock = threading.Lock()
+        self.cam_init_event = threading.Event()
         self.camera_device_available = True
         self.cap = None
         self.threads = []
@@ -352,7 +353,6 @@ class LiveCameraPipeline:
                     if cap_test is not None and cap_test.isOpened():
                         cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, cam_w)
                         cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_h)
-                        cap_test.set(cv2.CAP_PROP_FPS, 30)
                         ret, test_frame = cap_test.read()
                         if ret and test_frame is not None and test_frame.size > 0:
                             self.cap = cap_test
@@ -386,17 +386,12 @@ class LiveCameraPipeline:
 
             print("[*] Khoi dong Live Camera Pipeline da luong...")
             try:
-                # Mở Camera an toàn với cơ chế dò đa backend trên Windows ở độ phân giải HD 1280x720 chuẩn phần cứng
                 self.cap = None
                 self.camera_device_available = False
-                self._open_hardware_camera()
-
-                if not self.camera_device_available:
-                    print(f"[!] Luu y: Khong the mo camera vat ly index {self.video_source}. He thong san sang tiep nhan luong Webcam Trinh Duyet (Browser Ingest).")
-
+                self.cam_init_event.clear()
                 self.running = True
 
-                # Khởi động các luồng
+                # Khởi động các luồng (CamProducer trực tiếp mở cv2.VideoCapture trên đúng COM Apartment Thread của nó)
                 t_capture = threading.Thread(target=self._capture_worker, name="CamProducer", daemon=True)
                 t_ai = threading.Thread(target=self._ai_worker, name="CamEdgeAI", daemon=True)
                 t_render = threading.Thread(target=self._render_worker, name="CamCompositor", daemon=True)
@@ -405,6 +400,11 @@ class LiveCameraPipeline:
                 self.threads = [t_capture, t_ai, t_render, t_gemini]
                 for t in self.threads:
                     t.start()
+
+                # Đợi luồng CamProducer mở phần cứng camera xong (tối đa 3.5s)
+                self.cam_init_event.wait(timeout=3.5)
+                if not self.camera_device_available:
+                    print(f"[!] Luu y: Khong the mo camera vat ly index {self.video_source}. He thong san sang tiep nhan luong Webcam Trinh Duyet (Browser Ingest).")
                 print("[+] Live Camera Pipeline da san sang!")
             except Exception as e:
                 print(f"[!] Loi khi khoi dong Live Camera: {e}")
@@ -421,8 +421,15 @@ class LiveCameraPipeline:
             self.user_stopped = True
             self.is_client_streaming = False
             self.last_client_frame_time = 0.0
+            # Đợi ngắn để CamProducer tự giải phóng self.cap trên đúng luồng COM
+            for t in self.threads:
+                if t.name == "CamProducer" and t.is_alive():
+                    t.join(timeout=1.2)
             if self.cap and self.cap.isOpened():
-                self.cap.release()
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
             self.cap = None
             with self.frame_lock:
                 self.latest_raw_frame = None
@@ -597,44 +604,60 @@ class LiveCameraPipeline:
             time.sleep(wait_t)
 
     def _capture_worker(self):
-        last_reopen_try = 0.0
-        while self.running:
-            # Nếu đang có luồng Webcam Trình Duyệt gửi tới, nhường hoàn toàn cho client frame để không bị xung đột
-            if time.time() - self.last_client_frame_time < 1.5:
-                self.thread_states["CamProducer"] = "RUNNING"
-                time.sleep(0.04)
-                continue
+        # Mở phần cứng camera trực tiếp trên luồng CamProducer để tuân thủ chuẩn COM Single-Threaded Apartment (STA) của DirectShow ở 1280x720
+        try:
+            self._open_hardware_camera()
+        finally:
+            self.cam_init_event.set()
 
-            if not self.cap or not self.cap.isOpened():
-                self.thread_states["CamProducer"] = "WAITING"
-                if time.time() - last_reopen_try > 1.5:
-                    last_reopen_try = time.time()
-                    self._open_hardware_camera()
-                time.sleep(0.1)
-                continue
-            self.thread_states["CamProducer"] = "RUNNING"
-            ret, frame = self.cap.read()
-            if not ret or frame is None:
-                time.sleep(0.01)
-                continue
-
-            # Kiểm tra và bỏ qua khung xám lỗi UVC driver Windows (std < 1.8 và mean ~128)
-            if frame.shape[0] > 10 and frame.shape[1] > 10:
-                if float(np.std(frame)) < 1.8 and 110 < float(np.mean(frame)) < 145:
-                    time.sleep(0.03)
+        last_reopen_try = time.time()
+        try:
+            while self.running:
+                # Nếu đang có luồng Webcam Trình Duyệt gửi tới, nhường hoàn toàn cho client frame để không bị xung đột
+                if time.time() - self.last_client_frame_time < 1.5:
+                    self.thread_states["CamProducer"] = "RUNNING"
+                    time.sleep(0.04)
                     continue
 
-            # Tiền xử lý trực tiếp trên khung hình thu nhận: Lật gương, Chống chói đèn trần, Khử nhiễu
-            frame = self.enhancer.enhance(frame)
-            now_ts = time.time()
-            if hasattr(self, "frame_buffer"):
-                self.thread_states["CamProducer"] = "CRITICAL_SECTION"
-                self.frame_buffer.put_drop_oldest((now_ts, frame))
+                if not self.cap or not self.cap.isOpened():
+                    self.thread_states["CamProducer"] = "WAITING"
+                    if time.time() - last_reopen_try > 1.5:
+                        last_reopen_try = time.time()
+                        self._open_hardware_camera()
+                    time.sleep(0.1)
+                    continue
                 self.thread_states["CamProducer"] = "RUNNING"
-            with self.frame_lock:
-                self.latest_raw_frame = frame
-                self.frame_count += 1
-        self.thread_states["CamProducer"] = "READY"
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    time.sleep(0.01)
+                    continue
+
+                # Kiểm tra và bỏ qua khung đen khởi động cảm biến (mean < 1.0) hoặc khung xám lỗi UVC driver Windows (std < 1.8 và mean ~128)
+                if frame.shape[0] > 10 and frame.shape[1] > 10:
+                    f_std = float(np.std(frame))
+                    f_mean = float(np.mean(frame))
+                    if (f_mean < 1.0 and f_std < 1.0) or (f_std < 1.8 and 110 < f_mean < 145):
+                        time.sleep(0.03)
+                        continue
+
+                # Tiền xử lý trực tiếp trên khung hình thu nhận: Lật gương, Chống chói đèn trần, Khử nhiễu
+                frame = self.enhancer.enhance(frame)
+                now_ts = time.time()
+                if hasattr(self, "frame_buffer"):
+                    self.thread_states["CamProducer"] = "CRITICAL_SECTION"
+                    self.frame_buffer.put_drop_oldest((now_ts, frame))
+                    self.thread_states["CamProducer"] = "RUNNING"
+                with self.frame_lock:
+                    self.latest_raw_frame = frame
+                    self.frame_count += 1
+        finally:
+            if self.cap and self.cap.isOpened():
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+            self.cap = None
+            self.thread_states["CamProducer"] = "READY"
 
     def _ai_worker(self):
         device = CONFIG.DEVICE

@@ -311,8 +311,6 @@ class VideoCaptureProducer(threading.Thread):
 
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        if isinstance(self.video_source, int):
-            cap.set(cv2.CAP_PROP_FPS, 30)
 
         self._is_running = True
         self._last_fps_calc_time = time.time()

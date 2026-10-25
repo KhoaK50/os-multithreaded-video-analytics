@@ -74,6 +74,8 @@ class CameraEnhancer:
         - Tự động nhả bộ đệm = 1.0 tại vùng có chuyển động thực để triệt tiêu 100% bóng ma (ghosting).
         """
         frame_f = frame.astype(np.float32)
+        if float(np.mean(frame_f)) < 1.0:
+            return frame
         if self._temporal_acc is None or self._temporal_acc.shape != frame_f.shape:
             self._temporal_acc = frame_f.copy()
             return frame
