@@ -340,6 +340,43 @@ class LiveCameraPipeline:
         )
         return entry
 
+    def _open_hardware_camera(self):
+        cam_w = getattr(CONFIG, "CAMERA_WIDTH", 1280)
+        cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 720)
+        if isinstance(self.video_source, int):
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if sys.platform == "win32" else [cv2.CAP_ANY]
+            for backend in backends:
+                backend_name = "DSHOW" if backend == cv2.CAP_DSHOW else ("MSMF" if backend == cv2.CAP_MSMF else "ANY")
+                try:
+                    cap_test = cv2.VideoCapture(self.video_source, backend)
+                    if cap_test is not None and cap_test.isOpened():
+                        cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, cam_w)
+                        cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_h)
+                        cap_test.set(cv2.CAP_PROP_FPS, 30)
+                        ret, test_frame = cap_test.read()
+                        if ret and test_frame is not None and test_frame.size > 0:
+                            self.cap = cap_test
+                            self.camera_device_available = True
+                            fh, fw = test_frame.shape[:2]
+                            print(f"[+] Mo webcam thanh cong qua backend {backend_name} (index {self.video_source}) tai do phan giai {fw}x{fh}!")
+                            return True
+                        else:
+                            cap_test.release()
+                    else:
+                        if cap_test:
+                            cap_test.release()
+                except Exception as e_back:
+                    print(f"[!] Thu backend {backend_name} gap loi: {e_back}")
+        else:
+            try:
+                self.cap = cv2.VideoCapture(self.video_source)
+                if self.cap and self.cap.isOpened():
+                    self.camera_device_available = True
+                    return True
+            except Exception as e_file:
+                print(f"[!] Loi mo nguon video: {e_file}")
+        return False
+
     def start(self):
         with self.start_lock:
             if self.running or self.is_starting:
@@ -349,60 +386,10 @@ class LiveCameraPipeline:
 
             print("[*] Khoi dong Live Camera Pipeline da luong...")
             try:
-                device = CONFIG.DEVICE
-
-                # Nạp model YOLOv8-Pose
-                if self.yolo_model is None:
-                    from ultralytics import YOLO
-                    self.yolo_model = YOLO(CONFIG.YOLO_MODEL_NAME)
-                    dummy = np.zeros((480, 640, 3), dtype=np.uint8)
-                    self.yolo_model(dummy, device=device, verbose=False)
-
                 # Mở Camera an toàn với cơ chế dò đa backend trên Windows ở độ phân giải HD 1280x720 chuẩn phần cứng
                 self.cap = None
                 self.camera_device_available = False
-                cam_w = getattr(CONFIG, "CAMERA_WIDTH", 1280)
-                cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 720)
-
-                if isinstance(self.video_source, int):
-                    backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if sys.platform == "win32" else [cv2.CAP_ANY]
-                    for backend in backends:
-                        backend_name = "DSHOW" if backend == cv2.CAP_DSHOW else ("MSMF" if backend == cv2.CAP_MSMF else "ANY")
-                        try:
-                            cap_test = cv2.VideoCapture(self.video_source, backend)
-                            if cap_test is not None and cap_test.isOpened():
-                                cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, cam_w)
-                                cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_h)
-                                cap_test.set(cv2.CAP_PROP_FPS, 30)
-                                # Đọc bỏ vài khung khởi động đầu tiên để cảm biến ổn định phơi sáng (tránh khung đen 0x00)
-                                valid_frame = None
-                                for _ in range(6):
-                                    ret, test_frame = cap_test.read()
-                                    if ret and test_frame is not None and test_frame.size > 0:
-                                        if float(np.std(test_frame)) > 1.8 and float(np.mean(test_frame)) > 2.5:
-                                            valid_frame = test_frame
-                                            break
-                                    time.sleep(0.03)
-                                if valid_frame is not None:
-                                    self.cap = cap_test
-                                    self.camera_device_available = True
-                                    fh, fw = valid_frame.shape[:2]
-                                    print(f"[+] Mo webcam thanh cong qua backend {backend_name} (index {self.video_source}) tai do phan giai {fw}x{fh}!")
-                                    break
-                                else:
-                                    cap_test.release()
-                            else:
-                                if cap_test:
-                                    cap_test.release()
-                        except Exception as e_back:
-                            print(f"[!] Thu backend {backend_name} gap loi: {e_back}")
-                else:
-                    try:
-                        self.cap = cv2.VideoCapture(self.video_source)
-                        if self.cap and self.cap.isOpened():
-                            self.camera_device_available = True
-                    except Exception as e_file:
-                        print(f"[!] Loi mo nguon video: {e_file}")
+                self._open_hardware_camera()
 
                 if not self.camera_device_available:
                     print(f"[!] Luu y: Khong the mo camera vat ly index {self.video_source}. He thong san sang tiep nhan luong Webcam Trinh Duyet (Browser Ingest).")
@@ -610,6 +597,7 @@ class LiveCameraPipeline:
             time.sleep(wait_t)
 
     def _capture_worker(self):
+        last_reopen_try = 0.0
         while self.running:
             # Nếu đang có luồng Webcam Trình Duyệt gửi tới, nhường hoàn toàn cho client frame để không bị xung đột
             if time.time() - self.last_client_frame_time < 1.5:
@@ -619,6 +607,9 @@ class LiveCameraPipeline:
 
             if not self.cap or not self.cap.isOpened():
                 self.thread_states["CamProducer"] = "WAITING"
+                if time.time() - last_reopen_try > 1.5:
+                    last_reopen_try = time.time()
+                    self._open_hardware_camera()
                 time.sleep(0.1)
                 continue
             self.thread_states["CamProducer"] = "RUNNING"
@@ -627,11 +618,9 @@ class LiveCameraPipeline:
                 time.sleep(0.01)
                 continue
 
-            # Kiểm tra và bỏ qua khung đen khởi động (mean < 2.5) hoặc khung xám lỗi UVC driver Windows (std < 1.8 và mean ~128)
+            # Kiểm tra và bỏ qua khung xám lỗi UVC driver Windows (std < 1.8 và mean ~128)
             if frame.shape[0] > 10 and frame.shape[1] > 10:
-                f_std = float(np.std(frame))
-                f_mean = float(np.mean(frame))
-                if f_mean < 2.5 or (f_std < 1.8 and 110 < f_mean < 145):
+                if float(np.std(frame)) < 1.8 and 110 < float(np.mean(frame)) < 145:
                     time.sleep(0.03)
                     continue
 
@@ -649,6 +638,14 @@ class LiveCameraPipeline:
 
     def _ai_worker(self):
         device = CONFIG.DEVICE
+        if self.yolo_model is None:
+            try:
+                from ultralytics import YOLO
+                self.yolo_model = YOLO(CONFIG.YOLO_MODEL_NAME)
+                dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+                self.yolo_model(dummy, device=device, verbose=False)
+            except Exception as e_yolo:
+                print(f"[!] Loi nap YOLOv8-Pose: {e_yolo}")
         prev_time = time.time()
         while self.running:
             raw = None
