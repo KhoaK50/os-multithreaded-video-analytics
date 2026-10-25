@@ -33,43 +33,71 @@ class CameraEnhancer:
         mirror: bool = True,
         anti_glare: bool = True,
         denoise: bool = True,
-        clahe_clip_limit: float = 1.6,
-        clahe_grid_size: Tuple[int, int] = (8, 8),
+        clahe_clip_limit: float = 1.15,
+        clahe_grid_size: Tuple[int, int] = (4, 4),
     ):
         self.mirror = bool(mirror)
         self.anti_glare = bool(anti_glare)
         self.denoise = bool(denoise)
 
-        # 1. Khởi tạo bộ cân bằng độ tương phản thích ứng cục bộ CLAHE trên kênh Luminance
+        # 1. Bộ cân bằng sáng cục bộ siêu nhẹ (clipLimit=1.15, lưới rộng 4x4) tránh kích nhiễu hạt vùng tối
         self.clahe = cv2.createCLAHE(
             clipLimit=float(clahe_clip_limit),
             tileGridSize=clahe_grid_size,
         )
 
-        # 2. Xây dựng bảng tra Tone Mapping LUT tĩnh nén highlight và boost shadow
+        # 2. Bảng tra Tone Mapping LUT nén mượt vùng cháy sáng mà không khuếch đại nhiễu nền tối
         self.lut_tone = self._build_lut_table()
+
+        # 3. Bộ đệm tích lũy thời gian 3D (Motion-Adaptive Temporal Denoiser)
+        self._temporal_acc: Optional[np.ndarray] = None
 
     @staticmethod
     def _build_lut_table() -> np.ndarray:
         """
         Xây dựng bảng tra 256 giá trị:
-        - Highlight knee curve (Y > 180): val = 180.0 + (val - 180.0) * 0.60
-        - Shadow boost (Y < 50): val = val * 1.20
+        - Highlight knee curve (Y > 185): nén mượt vùng đèn trần chói lóa
+        - Giữ nguyên dải tối/trung tính để không khuếch đại nhiễu ISO của cảm biến webcam
         """
         lut = np.zeros(256, dtype=np.uint8)
         for i in range(256):
             val = float(i)
-            if val > 180.0:
-                val = 180.0 + (val - 180.0) * 0.60
-            elif val < 50.0:
-                val = val * 1.20
+            if val > 185.0:
+                val = 185.0 + (val - 185.0) * 0.55
             lut[i] = int(np.clip(round(val), 0, 255))
         return lut
 
+    def _apply_temporal_denoise(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Khử nhiễu 3D theo thời gian thích ứng chuyển động (Motion-Adaptive Temporal EMA Filter):
+        - Trung bình hóa nhiễu hạt ngẫu nhiên giữa các khung hình liên tiếp ở vùng tĩnh (khuôn mặt, tường, bàn).
+        - Tự động nhả bộ đệm = 1.0 tại vùng có chuyển động thực để triệt tiêu 100% bóng ma (ghosting).
+        """
+        frame_f = frame.astype(np.float32)
+        if self._temporal_acc is None or self._temporal_acc.shape != frame_f.shape:
+            self._temporal_acc = frame_f.copy()
+            return frame
+
+        # Tính độ lệch chuyển động trung bình giữa khung hiện tại và bộ tích lũy thời gian
+        diff = np.mean(np.abs(frame_f - self._temporal_acc), axis=2)
+        # Làm mịn mặt nạ chuyển động 3x3 để nhiễu hạt đơn lẻ không bị nhầm là chuyển động
+        diff_smooth = cv2.blur(diff, (3, 3))
+
+        # Ngưỡng dưới (<= 5.5): vùng tĩnh bị nhiễu cảm biến -> giữ 78% lịch sử (alpha = 0.22)
+        # Ngưỡng trên (>= 24.0): vùng chuyển động thực -> lấy 100% khung mới (alpha = 1.0)
+        alpha = np.clip((diff_smooth - 5.5) / (24.0 - 5.5), 0.0, 1.0)
+        alpha = 0.22 + 0.78 * (alpha * alpha)
+        alpha_3c = alpha[:, :, np.newaxis]
+
+        self._temporal_acc = self._temporal_acc * (1.0 - alpha_3c) + frame_f * alpha_3c
+        return np.clip(self._temporal_acc, 0, 255).astype(np.uint8)
+
     def enhance(self, frame: np.ndarray) -> np.ndarray:
         """
-        Xử lý nâng cao chất lượng khung hình BGR theo chuỗi pipeline tối ưu.
-        Đảm bảo độ trễ per-frame < 3.5ms trên 640x480.
+        Xử lý nâng cao chất lượng khung hình BGR theo chuỗi ISP 3 tầng:
+        1. Lật gương ngang (Mirror)
+        2. Khử nhiễu 3D Temporal + 2D Edge-Preserving Chroma/Luma Denoise
+        3. Cân bằng chống chói đèn trần (Soft-Knee Highlight Compression)
         """
         if frame is None or not isinstance(frame, np.ndarray) or frame.size == 0:
             return frame
@@ -82,27 +110,28 @@ class CameraEnhancer:
         if self.mirror:
             frame = cv2.flip(frame, 1)
 
-        # 2. Cân bằng sáng chống chói đèn trần (YCrCb + CLAHE thích ứng + LUT Knee Curve)
-        if self.anti_glare:
-            ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
-            # Áp dụng CLAHE thích ứng cục bộ để nâng sáng chi tiết vùng tối/mặt mà không làm gắt vùng sáng
-            ycrcb[:, :, 0] = self.clahe.apply(ycrcb[:, :, 0])
-            # Áp dụng bảng tra Tone Mapping LUT nén mượt dải highlight cháy sáng (Soft-Shoulder Knee Curve)
-            ycrcb[:, :, 0] = cv2.LUT(ycrcb[:, :, 0], self.lut_tone)
-            frame = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
-
-        # 3. Khử nhiễu thích ứng giữ biên cạnh & Tăng cường độ sắc nét (Luminance Unsharp Mask + Chroma Denoise)
+        # 2. Khử nhiễu đa tầng (3D Temporal EMA + YCrCb Chroma/Luma Bilateral Denoise)
         if self.denoise:
+            # Bước 2a: Khử nhiễu hạt nhấp nháy theo thời gian (3D Temporal Filter)
+            frame = self._apply_temporal_denoise(frame)
+
+            # Bước 2b: Khử nhiễu không gian tách kênh màu (YCrCb)
             ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
             y_chan = ycrcb[:, :, 0]
-            # Lọc nhiễu nhẹ giữ nguyên chi tiết biên cạnh (tránh bệt ảnh ở độ phân giải Full HD)
-            y_denoised = cv2.bilateralFilter(y_chan, d=3, sigmaColor=14, sigmaSpace=14)
-            # Tăng độ sắc nét viền (Luminance Unsharp Masking) giúp hình ảnh trong và nét căng
-            y_blur = cv2.GaussianBlur(y_denoised, (0, 0), 1.0)
-            ycrcb[:, :, 0] = cv2.addWeighted(y_denoised, 1.35, y_blur, -0.35, 0)
-            # Khử nhiễu màu (Chroma Noise) trên Cr và Cb giúp triệt tiêu đốm hạt đỏ/xanh khi thiếu sáng
-            ycrcb[:, :, 1] = cv2.GaussianBlur(ycrcb[:, :, 1], (3, 3), 1.0)
-            ycrcb[:, :, 2] = cv2.GaussianBlur(ycrcb[:, :, 2], (3, 3), 1.0)
+            # Lọc biên kép trên kênh độ chói Y: làm phẳng hạt nhiễu trên da và tường nhưng giữ sắc nét mắt/tóc/viền áo
+            y_pass1 = cv2.bilateralFilter(y_chan, d=5, sigmaColor=24, sigmaSpace=24)
+            ycrcb[:, :, 0] = cv2.bilateralFilter(y_pass1, d=5, sigmaColor=16, sigmaSpace=16)
+            # Khử sạch đốm nhiễu màu (Chroma Blotches đỏ/xanh/vàng) đặc trưng của cảm biến CMOS thiếu sáng
+            ycrcb[:, :, 1] = cv2.GaussianBlur(ycrcb[:, :, 1], (7, 7), 2.0)
+            ycrcb[:, :, 2] = cv2.GaussianBlur(ycrcb[:, :, 2], (7, 7), 2.0)
+            frame = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
+        else:
+            self._temporal_acc = None
+
+        # 3. Cân bằng sáng chống chói đèn trần (chỉ nén vùng cháy sáng, không kích nhiễu vùng tối)
+        if self.anti_glare:
+            ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+            ycrcb[:, :, 0] = cv2.LUT(ycrcb[:, :, 0], self.lut_tone)
             frame = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
 
         return frame

@@ -930,15 +930,16 @@ class LiveCameraPipeline:
             danger_score = 9 if is_danger else 1
             danger_level = "NGUY HIEM" if is_danger else "AN TOAN"
 
-            # Khung hiển thị Camera chuẩn 16:9 Widescreen Full HD (1920x1080) sắc nét tối đa
-            target_w, target_h = 1920, 1080
+            # Giữ nguyên độ phân giải gốc 1:1 của cảm biến (1920x1080 hoặc 1280x720) để tránh nội suy phóng đại hạt nhiễu
             raw_h, raw_w = raw.shape[:2]
-            if raw_w == target_w and raw_h == target_h:
+            if raw_w >= 1280 and raw_h >= 720:
+                target_w, target_h = raw_w, raw_h
                 cam_viewport = raw.copy()
             else:
-                cam_viewport = cv2.resize(raw, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
+                target_w, target_h = 1280, 720
+                cam_viewport = cv2.resize(raw, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
 
-            # Scale coordinates từ raw sang viewport 1920x1080
+            # Scale coordinates từ raw sang viewport
             scale_x = target_w / max(1, raw_w)
             scale_y = target_h / max(1, raw_h)
 
