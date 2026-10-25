@@ -2584,13 +2584,9 @@ class VideoAnnotatorEngine:
                                         frame_h=orig_h,
                                         causal_role=stable_role if (stable_danger and stable_threat_score >= 7.5) else None
                                     )
-                                    if anchor:
-                                        clean_box_label = f"[{id_label}: {anchor}]"
-                                    else:
-                                        clean_box_label = f"[{id_label}]"
+                                    clean_box_label = id_label
 
-                                    # Bounding Box góc ngoặc mượt mà: CHỈ HIỂN THỊ [ID #0X] hoặc [ID #0X: Mỏ neo]
-                                    # score=0.0 để loại bỏ hoàn toàn % phỏng đoán
+                                    # Bounding Box góc ngoặc mượt mà: chỉ hiển thị mã ID ngắn gọn trên video
                                     self.hud.draw_corner_bracket_bbox(frame, x1, y1, x2, y2, color, clean_box_label, 0.0)
     
                                     # Khung xương 17 khớp nối thanh mảnh

@@ -60,8 +60,9 @@
     --btn-success-bg: #1e7e4e;
     --btn-success-hover: #16653f;
 
-    --font-ui: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+    --font-ui: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-heading: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
     --font-body: var(--font-ui);
     --border-color: var(--border-subtle);
     --text-main: var(--text-primary);
@@ -167,8 +168,11 @@ body {
     color: var(--text-primary);
     font-family: var(--font-ui);
     font-weight: 400;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 13.5px;
+    line-height: 1.55;
+    letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -178,6 +182,8 @@ body {
 .mono,
 .font-mono {
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
 }
 
 button,
@@ -6846,16 +6852,16 @@ tr.active-segment-row {
 
 .parallel-columns-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 16px;
-    align-items: start;
+    align-items: stretch;
     width: 100%;
 }
 
 .parallel-col {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     background: var(--bg-surface);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
@@ -6873,8 +6879,11 @@ tr.active-segment-row {
 
 .pcol-header {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 42px;
     padding-bottom: 10px;
     border-bottom: 1px solid var(--border-subtle);
 }
@@ -6894,12 +6903,14 @@ tr.active-segment-row {
 }
 
 .pcol-config-lock {
-    font-size: 11px;
+    font-size: 11.5px;
+    font-weight: 500;
     color: var(--text-secondary);
     background: var(--bg-surface-elevated);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    padding: 4px 8px;
+    padding: 4px 10px;
+    white-space: nowrap;
 }
 
 .pcol-video-card {
@@ -6936,7 +6947,8 @@ tr.active-segment-row {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-    font-size: 11px;
+    min-height: 34px;
+    font-size: 11.5px;
     color: var(--text-secondary);
     padding: 6px 10px;
     background: var(--bg-surface);
@@ -7204,25 +7216,26 @@ tr.active-segment-row {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 12px 14px;
+    padding: 12px 16px;
     background: var(--bg-surface-elevated);
-    border: 1px solid rgba(245, 158, 11, 0.42);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    border-left: 3px solid var(--accent-amber);
+    border-radius: var(--radius-md);
 }
 
 .sit-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
 }
 
 .sit-title {
     font-family: var(--font-heading);
-    font-size: 11.5px;
-    font-weight: 800;
-    letter-spacing: 0.03em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
     color: var(--accent-amber);
 }
 
@@ -7236,14 +7249,14 @@ tr.active-segment-row {
 .sit-controls-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
+    gap: 12px;
 }
 
 .sit-control-box {
     display: flex;
     flex-direction: column;
     gap: 5px;
-    padding: 8px 10px;
+    padding: 8px 12px;
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
@@ -7253,15 +7266,15 @@ tr.active-segment-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 4px;
-    font-size: 11px;
+    gap: 6px;
+    font-size: 11.5px;
     font-weight: 600;
     color: var(--text-secondary);
 }
 
 .sit-label-row strong {
     color: var(--text-primary);
-    font-size: 11px;
+    font-size: 11.5px;
 }
 
 .split-cam-offline {
@@ -7297,14 +7310,29 @@ tr.active-segment-row {
 .split-log-card,
 .split-synthesis-card,
 .split-segments-card {
-    margin-top: 4px;
+    margin-top: 0;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
 }
 
+.split-synthesis-card {
+    min-height: 230px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.split-log-card,
+.split-segments-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
 .split-table-wrapper {
-    max-height: 440px;
+    flex: 1;
+    max-height: 420px;
     overflow-y: auto;
     overflow-x: auto;
 }

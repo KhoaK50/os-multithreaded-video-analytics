@@ -339,82 +339,29 @@ class CyberHUDRenderer:
         cv2.line(img, (x2, y2), (x2 - corner_len, y2), color_bgr, thickness)
         cv2.line(img, (x2, y2), (x2, y2 - corner_len), color_bgr, thickness)
 
-        # 3. Tâm điểm định vị
-        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-        cv2.drawMarker(img, (cx, cy), color_bgr, cv2.MARKER_CROSS, 6, 1)
-
-        # 4. Nhãn đính kèm vẽ bằng Pillow Unicode (hỗ trợ 100% tiếng Việt)
+        # 3. Nhãn định danh gọn (chỉ hiển thị mã ID ngắn như ID #01, không vẽ tâm ngắm hay chú thích dài đè lên hình)
         if label:
-            lbl_strip = label.strip()
-            if lbl_strip.startswith("[") and lbl_strip.endswith("]"):
-                tag_text = lbl_strip
-            elif score > 0.0:
-                tag_text = f"[{lbl_strip.upper()} {int(score * 100)}%]"
-            else:
-                tag_text = f"[{lbl_strip.upper()}]"
-            tag_y = max(0, y1 - 22)
-            self.draw_unicode_text(
-                img,
-                tag_text,
-                (x1, tag_y),
-                font=self.font_caption,
-                color_bgr=color_bgr,
-                bg_color_bgr=(15, 20, 28),
-                padding=2
-            )
+            lbl_strip = label.strip().strip("[]").strip()
+            if ":" in lbl_strip:
+                lbl_strip = lbl_strip.split(":", 1)[0].strip()
+            if lbl_strip.upper().startswith("ID"):
+                tag_y = max(0, y1 - 20)
+                self.draw_unicode_text(
+                    img,
+                    lbl_strip.upper(),
+                    (x1, tag_y),
+                    font=self.font_caption,
+                    color_bgr=color_bgr,
+                    bg_color_bgr=(15, 20, 28),
+                    padding=2
+                )
 
     # Tương thích ngược với các module gọi hàm cũ
     draw_corner_bracket_bbox = draw_technical_bbox
 
     def draw_camera_decorations(self, frame_vp, fps=30.0, is_ai_busy=False, danger_level="AN TOAN"):
-        """Vẽ các chỉ số viễn trắc phụ xung quanh khung hình camera."""
-        h, w = frame_vp.shape[:2]
-
-        # 1. Đèn REC nhấp nháy góc trên-trái
-        is_blink = int(time.time() * 2) % 2 == 0
-        rec_color = (0, 0, 255) if is_blink else (0, 0, 150)
-        cv2.circle(frame_vp, (22, 22), 6, rec_color, -1)
-        cv2.putText(frame_vp, f"LIVE REC | {fps:.1f} FPS", (36, 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (230, 230, 230), 1, cv2.LINE_AA)
-
-        # 2. Camera ID & Timestamp góc trên-phải
-        curr_time = time.strftime("%Y-%m-%d  %H:%M:%S")
-        cv2.putText(frame_vp, f"CAM-01 [HD 720p]  {curr_time}", (w - 290, 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 240, 255), 1, cv2.LINE_AA)
-
-        # 3. Dấu chữ thập trung tâm (Crosshair) mờ nhẹ
-        cx, cy = w // 2, h // 2
-        cv2.line(frame_vp, (cx - 15, cy), (cx + 15, cy), (80, 100, 120), 1)
-        cv2.line(frame_vp, (cx, cy - 15), (cx, cy + 15), (80, 100, 120), 1)
-        cv2.circle(frame_vp, (cx, cy), 22, (80, 100, 120), 1)
-
-        # 4. Khi luồng Consumer AI Cloud đang xử lý: hiển thị đèn LED trạng thái công nghiệp + nhãn Unicode
-        if is_ai_busy:
-            ai_text = "ĐIỀU PHỐI AI CLOUD (CHU KỲ 4S)"
-            box_w = 260
-            box_h = 28
-            box_x = (w - box_w) // 2
-            box_y = h - 38
-            cv2.rectangle(frame_vp, (box_x, box_y), (box_x + box_w, box_y + box_h), (15, 20, 28), -1)
-            cv2.rectangle(frame_vp, (box_x, box_y), (box_x + box_w, box_y + box_h), (0, 240, 255), 1)
-
-            # Đèn LED trạng thái chuyên nghiệp (chấm tròn LED nhỏ 4px, không dùng đồ họa radar viễn tưởng)
-            led_blink = int(time.time() * 4) % 2 == 0
-            led_color = (0, 240, 255) if led_blink else (0, 150, 180)
-            cv2.circle(frame_vp, (box_x + 16, box_y + 14), 4, led_color, -1)
-
-            # Dán nhãn tiếng Việt Unicode mượt mà bằng Pillow
-            self.draw_unicode_text(
-                frame_vp,
-                ai_text,
-                (box_x + 28, box_y + 6),
-                font=self.font_caption,
-                color_bgr=(0, 240, 255),
-                bg_color_bgr=None,
-                padding=0
-            )
-
-        # Tuyệt đối không vẽ viền đỏ nhấp nháy toàn màn hình (chỉ hiển thị màu sắc trên khung xương cá nhân)
+        """Giữ khung hình camera sạch sẽ, không vẽ chữ LIVE REC, CAM-01 hay vòng ngắm đè lên video."""
+        return
 
     def render_sidebar_pil(self, diagnosis, entities, metrics, danger_score, danger_level, biomechanics=None):
         """Render toàn bộ cột bên phải (380x720) với font tiếng Việt Unicode mượt mà bằng Pillow."""
