@@ -279,17 +279,12 @@ class TestOSLabAPIEndpoints:
             'id="live-split-z-canvas"',
             'id="btn-launch-live-parallel"',
             'id="btn-launch-video-parallel"',
-            'id="os-budget-partition-box"',
-            'id="budget-seg-y"',
-            'id="budget-seg-z"',
-            'id="budget-seg-reserve"',
             'id="os-lab-cap-slider"',
             'id="os-lab-delay-slider"',
             'id="os-lab-policy-select"',
             'id="vid-z-cap-slider"',
             'id="vid-z-delay-slider"',
             'id="vid-z-policy-select"',
-            'id="video-os-diff-card"',
             'id="video-parallel-workspace"',
             'id="split-vid-y-player"',
             'id="split-vid-z-canvas"',
@@ -304,12 +299,14 @@ class TestOSLabAPIEndpoints:
         for marker in required_markers:
             assert marker in html, f"Thiếu thành phần giao diện bắt buộc: {marker}"
 
-        # Đảm bảo đã gỡ bỏ hoàn toàn ký hiệu nội bộ (Y || Z, X = Y + Z), thanh kéo cũ và người que (drawSyntheticLivePreview)
+        # Đảm bảo đã gỡ bỏ hoàn toàn ký hiệu nội bộ (Y || Z, X = Y + Z), thanh kéo cũ, DOM ẩn thừa và người que (drawSyntheticLivePreview)
         assert "Y ‖ Z" not in html
         assert "X = Y + Z" not in html
         assert 'id="live-ab-overlay"' not in html
         assert 'id="video-ab-overlay"' not in html
         assert 'id="os-experiment-modal"' not in html
+        assert 'id="video-os-diff-card"' not in html
+        assert 'id="os-budget-partition-box"' not in html
         assert "Silberschatz" not in html
 
         js_resp = self.client.get("/static/app.js")

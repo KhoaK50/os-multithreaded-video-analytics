@@ -70,7 +70,7 @@ function showToast(message, type = "info") {
     }
     const toast = document.createElement("div");
     toast.className = `custom-toast toast-${type}`;
-    const icon = type === "error" ? ICONS.alertTriangle : (type === "warning" ? ICONS.alertTriangle : (type === "success" ? ICONS.check : ICONS.sparkles));
+    const icon = type === "error" ? ICONS.alertTriangle : (type === "warning" ? ICONS.alertTriangle : ICONS.check);
     const msgSpan = document.createElement("span");
     msgSpan.className = "toast-msg";
     msgSpan.textContent = String(message || "");
@@ -681,7 +681,6 @@ function renderBehaviorTable(logs) {
                 <td class="desc-cell">${escapeHtml(item.description)}</td>
                 <td class="prediction-cell">
                     <div class="prediction-badge">
-                        <span class="pred-icon">${ICONS.sparkles}</span>
                         <span class="pred-text">${escapeHtml(predText)}</span>
                     </div>
                 </td>
@@ -1590,13 +1589,13 @@ function updateTimelineReadout() {
     if (meterBadge) {
         if (selDuration <= 60.0) {
             meterBadge.className = "token-meter-badge";
-            meterBadge.innerHTML = `<span class="meter-dot dot-safe"></span><span>TỐI ƯU HOÀN HẢO — Dự kiến xử lý ${estTimeLabel}, &lt;1,200 tokens</span>`;
+            meterBadge.innerHTML = `<span class="meter-dot dot-safe"></span><span>Trong ngưỡng tối ưu · ${estTimeLabel} · &lt;1,200 tokens</span>`;
         } else if (selDuration <= 90.0) {
             meterBadge.className = "token-meter-badge warning";
-            meterBadge.innerHTML = `<span class="meter-dot dot-warn"></span><span>ĐẠT TIÊU CHUẨN — Dự kiến xử lý ${estTimeLabel}, ~1,500 tokens</span>`;
+            meterBadge.innerHTML = `<span class="meter-dot dot-warn"></span><span>Đạt tiêu chuẩn · ${estTimeLabel} · ~1,500 tokens</span>`;
         } else {
             meterBadge.className = "token-meter-badge danger";
-            meterBadge.innerHTML = `<span class="meter-dot dot-danger"></span><span>THỜI LƯỢNG DÀI — Dự kiến xử lý ${estTimeLabel}</span>`;
+            meterBadge.innerHTML = `<span class="meter-dot dot-danger"></span><span>Thời lượng dài · ${estTimeLabel}</span>`;
         }
     }
 }
@@ -3414,11 +3413,11 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
     }
 
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
-    safeSetText("os-lab-cap-display", `N = ${capVal} (${ramMb} MB)`);
+    safeSetText("os-lab-cap-display", `N = ${capVal} · ${ramMb} MB`);
     safeSetText("os-lab-delay-display", `${delayVal} ms`);
-    safeSetText("os-lab-policy-display", policyVal === "drop_oldest" ? "Drop-Oldest + Priority" : "Block-Producer + FIFO");
+    safeSetText("os-lab-policy-display", policyVal === "drop_oldest" ? "Drop-Oldest · Priority" : "Block-Producer · FIFO");
 
-    safeSetText("vid-z-cap-val", `N = ${capVal} (${ramMb} MB)`);
+    safeSetText("vid-z-cap-val", `N = ${capVal} · ${ramMb} MB`);
     safeSetText("vid-z-delay-val", `${delayVal} ms`);
 }
 
@@ -3553,25 +3552,25 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     }
     if (segRes) segRes.style.width = `${reservePct}%`;
 
-    safeSetText("budget-label-y", `Luồng Chuẩn: ${branchYPct.toFixed(1)}% (${ramY} MB)`);
-    safeSetText("budget-label-z", `Luồng Tùy Chỉnh: ${branchZPct.toFixed(1)}% (${ramZ} MB)`);
-    safeSetText("budget-label-reserve", `Dự Trữ Hệ Điều Hành: ${reservePct.toFixed(1)}% (Khóa cứng ≥ 20%)`);
+    safeSetText("budget-label-y", `Luồng Chuẩn: ${branchYPct.toFixed(1)}% · ${ramY} MB`);
+    safeSetText("budget-label-z", `Luồng Tùy Chỉnh: ${branchZPct.toFixed(1)}% · ${ramZ} MB`);
+    safeSetText("budget-label-reserve", `Dự Trữ Hệ Điều Hành: ${reservePct.toFixed(1)}% · Khóa cứng ≥ 20%`);
 
     const sweetBadge = document.getElementById("os-sweet-spot-badge");
-    let sweetTitle = "Điểm Cân Bằng Tối Ưu (Chuẩn Khuyến Nghị)";
+    let sweetTitle = "Điểm Cân Bằng Tối Ưu";
     let sweetClass = "badge-safe";
-    let sweetVerdict = "Luồng Tùy Chỉnh đang khớp 100% với Luồng Chuẩn Khuyến Nghị (N=16, 0ms, Drop-Oldest + Priority): Đạt trần 30.0 FPS, độ trễ 33ms và bảo toàn 100% sự kiện với mức RAM tối ưu 42.19 MB.";
+    let sweetVerdict = "Luồng Tùy Chỉnh khớp 100% với Luồng Chuẩn Khuyến Nghị: Đạt trần 30.0 FPS, độ trễ 33ms và bảo toàn 100% sự kiện với 42.19 MB RAM.";
 
     if (capVal === 16 && delayVal === 0 && pol === "drop_oldest") {
         // Optimal
     } else if (capVal > 16 && delayVal === 0 && pol === "drop_oldest") {
-        sweetTitle = `Cấp Phát Dư Thừa (Tốn gấp ${ramRatio}x RAM)`;
+        sweetTitle = `Cấp Phát Dư Thừa · ${ramRatio}x RAM`;
         sweetClass = "badge-warning";
-        sweetVerdict = `Dù cấp phát bộ đệm lớn gấp ${ramRatio}x lần mức khuyến nghị (${ramZ} MB so với 42.19 MB), tốc độ đầu ra không thể vượt trần 30.0 FPS nhưng lại gây lãng phí RAM và tạo độ trễ hàng đợi (Bufferbloat ~${zLatencyMs} ms).`;
+        sweetVerdict = `Cấp phát bộ đệm lớn gấp ${ramRatio}x mức khuyến nghị nhưng tốc độ đầu ra không vượt trần 30.0 FPS và tạo độ trễ hàng đợi ~${zLatencyMs} ms.`;
     } else {
         sweetTitle = isStall ? "Quá Tải Hàng Đợi · Ngắt Mạch Bảo Vệ" : "Cấu Hình Lệch Chuẩn · Suy Giảm Chất Lượng AI";
         sweetClass = isStall ? "badge-danger" : "badge-warning";
-        sweetVerdict = `Do bộ đệm (N=${capVal}), độ trễ xử lý (${delayVal}ms) hoặc chính sách (${pol === "drop_oldest" ? "Drop-Oldest" : "Block-FIFO"}) chưa tối ưu, tốc độ sụt giảm còn ~${zFps} FPS (rơi ${zDropPct}% khung hình), khiến kết quả nhận diện AI bên phải bị trễ và sai lệch so với bên trái.`;
+        sweetVerdict = `Bộ đệm N=${capVal}, độ trễ ${delayVal}ms làm tốc độ sụt giảm còn ~${zFps} FPS và rơi ${zDropPct}% khung hình.`;
     }
 
     if (sweetBadge) {
@@ -4443,76 +4442,68 @@ function renderRAGGraph(nodes, edges, cycleDetected) {
     const svg = document.getElementById("os-rag-svg");
     if (!svg) return;
 
-    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
-    const bgNodeThread = isDark ? "#1e293b" : "#e2e8f0";
-    const bgNodeResource = isDark ? "#0f172a" : "#f1f5f9";
-    const strokeNormal = isDark ? "#475569" : "#cbd5e1";
-    const textPrimary = isDark ? "#f8fafc" : "#0f172a";
-    const textMuted = isDark ? "#94a3b8" : "#64748b";
+    const cs = getComputedStyle(document.documentElement);
+    const bgNodeThread = cs.getPropertyValue("--bg-surface-elevated").trim() || "#212225";
+    const bgNodeResource = cs.getPropertyValue("--bg-surface").trim() || "#18191b";
+    const strokeNormal = cs.getPropertyValue("--border-strong").trim() || "#43484e";
+    const textPrimary = cs.getPropertyValue("--text-primary").trim() || "#ecedee";
+    const textMuted = cs.getPropertyValue("--text-secondary").trim() || "#9ba1a6";
+    const colPrimary = cs.getPropertyValue("--accent-primary").trim() || "#3e63dd";
+    const colDanger = cs.getPropertyValue("--accent-crimson").trim() || "#e5484d";
+    const colSafe = cs.getPropertyValue("--accent-emerald").trim() || "#30a46c";
 
     let html = `
         <defs>
             <marker id="arrow-normal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="${colPrimary}" />
             </marker>
             <marker id="arrow-cycle" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#ef4444" />
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="${colDanger}" />
             </marker>
             <marker id="arrow-resolved" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="${colSafe}" />
             </marker>
         </defs>
     `;
 
-    // Coordinates:
-    // T1 (Thread AI): circle cx=130, cy=60, r=32
-    // R2 (Resource GPU): rect x=460, y=28, w=110, h=64
-    // T2 (Thread Writer): circle cx=515, cy=160, r=32
-    // R1 (Resource FrameBuffer): rect x=75, y=128, w=110, h=64
-
     // Edges
     if (cycleDetected) {
-        // T1 -> R2 (Request edge)
-        html += `<path d="M 162 60 L 452 60" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
-        html += `<text x="307" y="52" fill="#ef4444" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700" text-anchor="middle">T1 YÊU CẦU R2</text>`;
+        html += `<path d="M 162 60 L 452 60" stroke="${colDanger}" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="307" y="52" fill="${colDanger}" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700" text-anchor="middle">T1 YÊU CẦU R2</text>`;
 
-        // R2 -> T2 (Assignment edge)
-        html += `<path d="M 515 92 L 515 120" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
-        html += `<text x="525" y="112" fill="#ef4444" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700">R2 ĐANG GIỮ BỞI T2</text>`;
+        html += `<path d="M 515 92 L 515 120" stroke="${colDanger}" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="525" y="112" fill="${colDanger}" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700">R2 ĐANG GIỮ BỞI T2</text>`;
 
-        // T2 -> R1 (Request edge)
-        html += `<path d="M 483 160 L 193 160" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
-        html += `<text x="338" y="174" fill="#ef4444" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700" text-anchor="middle">T2 YÊU CẦU R1</text>`;
+        html += `<path d="M 483 160 L 193 160" stroke="${colDanger}" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="338" y="174" fill="${colDanger}" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700" text-anchor="middle">T2 YÊU CẦU R1</text>`;
 
-        // R1 -> T1 (Assignment edge)
-        html += `<path d="M 130 128 L 130 100" stroke="#ef4444" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
-        html += `<text x="140" y="118" fill="#ef4444" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700">R1 ĐANG GIỮ BỞI T1</text>`;
+        html += `<path d="M 130 128 L 130 100" stroke="${colDanger}" stroke-width="2.5" class="rag-edge-cycle" fill="none" marker-end="url(#arrow-cycle)" />`;
+        html += `<text x="140" y="118" fill="${colDanger}" font-size="10.5" font-family="'Be Vietnam Pro', sans-serif" font-weight="700">R1 ĐANG GIỮ BỞI T1</text>`;
     } else {
-        // Normal safe flow
-        html += `<path d="M 162 60 L 452 60" stroke="#3b82f6" stroke-width="1.8" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-normal)" />`;
-        html += `<text x="307" y="52" fill="#3b82f6" font-size="10" font-family="'Be Vietnam Pro', sans-serif" text-anchor="middle">Hàng đợi điều phối an toàn</text>`;
+        html += `<path d="M 162 60 L 452 60" stroke="${colPrimary}" stroke-width="1.8" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-normal)" />`;
+        html += `<text x="307" y="52" fill="${colPrimary}" font-size="10" font-family="'Be Vietnam Pro', sans-serif" text-anchor="middle">Hàng đợi điều phối an toàn</text>`;
 
-        html += `<path d="M 483 160 L 193 160" stroke="#10b981" stroke-width="2" fill="none" marker-end="url(#arrow-resolved)" />`;
-        html += `<text x="338" y="175" fill="#10b981" font-size="10" font-family="'Be Vietnam Pro', sans-serif" text-anchor="middle">Tuần tự giải phóng khóa</text>`;
+        html += `<path d="M 483 160 L 193 160" stroke="${colSafe}" stroke-width="2" fill="none" marker-end="url(#arrow-resolved)" />`;
+        html += `<text x="338" y="175" fill="${colSafe}" font-size="10" font-family="'Be Vietnam Pro', sans-serif" text-anchor="middle">Tuần tự giải phóng khóa</text>`;
     }
 
     // Node T1 (Thread Circle)
     html += `
-        <circle cx="130" cy="60" r="32" fill="${bgNodeThread}" stroke="${cycleDetected ? '#ef4444' : '#3b82f6'}" stroke-width="2.5" />
+        <circle cx="130" cy="60" r="32" fill="${bgNodeThread}" stroke="${cycleDetected ? colDanger : colPrimary}" stroke-width="2" />
         <text x="130" y="56" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">T1</text>
         <text x="130" y="70" fill="${textMuted}" font-size="9" text-anchor="middle">AI Worker</text>
     `;
 
     // Node R2 (Resource Rect)
     html += `
-        <rect x="460" y="28" width="110" height="64" rx="6" fill="${bgNodeResource}" stroke="${cycleDetected ? '#ef4444' : strokeNormal}" stroke-width="2" />
-        <text x="515" y="54" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">R2 (GPU)</text>
-        <text x="515" y="72" fill="${cycleDetected ? '#f87171' : textMuted}" font-size="9.5" text-anchor="middle">${cycleDetected ? 'Khóa bị tranh chấp' : 'Khóa tài nguyên'}</text>
+        <rect x="460" y="28" width="110" height="64" rx="3" fill="${bgNodeResource}" stroke="${cycleDetected ? colDanger : strokeNormal}" stroke-width="1.5" />
+        <text x="515" y="54" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">R2 · GPU</text>
+        <text x="515" y="72" fill="${cycleDetected ? colDanger : textMuted}" font-size="9.5" text-anchor="middle">${cycleDetected ? 'Khóa bị tranh chấp' : 'Khóa tài nguyên'}</text>
     `;
 
     // Node T2 (Thread Circle)
     html += `
-        <circle cx="515" cy="160" r="32" fill="${bgNodeThread}" stroke="${cycleDetected ? '#ef4444' : '#3b82f6'}" stroke-width="2.5" />
+        <circle cx="515" cy="160" r="32" fill="${bgNodeThread}" stroke="${cycleDetected ? colDanger : colPrimary}" stroke-width="2" />
         <text x="515" y="156" fill="${textPrimary}" font-size="11" font-weight="700" text-anchor="middle">T2</text>
         <text x="515" y="170" fill="${textMuted}" font-size="9" text-anchor="middle">Writer Stream</text>
     `;
@@ -4690,7 +4681,7 @@ function updateLiveParallelReportsAndLogs() {
     const isOptimal = (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest");
     const isOverProvisioned = (st.cap > 16 && st.delay === 0 && st.policy === "drop_oldest");
 
-    safeSetText("live-split-z-config-text", `N = ${st.cap} (${ramMb} MB) · ${st.delay} ms · ${polText}`);
+    safeSetText("live-split-z-config-text", `N = ${st.cap} · ${ramMb} MB · ${st.delay} ms · ${polText}`);
     safeSetText("live-split-z-fps", `${st.zFps} FPS`);
     safeSetText("live-split-z-lat", `~${st.zLatencyMs} ms`);
     safeSetText("live-split-z-drop", `${st.zDropPct}%`);
@@ -4720,7 +4711,7 @@ function updateLiveParallelReportsAndLogs() {
     const hasRealLogs = (typeof cachedLogs !== "undefined" && Array.isArray(cachedLogs) && cachedLogs.length > 0);
     const sourceLogs = hasRealLogs ? cachedLogs : [];
 
-    // Tính toán thống kê cho Cột Trái (Luồng Chuẩn Khuyến Nghị)
+    // Tính toán thống kê cho Cột Trái
     let ySafe = 0, yWarn = 0, yDanger = 0;
     sourceLogs.forEach(item => {
         if (item.severity === "danger") yDanger += 1;
@@ -4758,7 +4749,7 @@ function updateLiveParallelReportsAndLogs() {
         return;
     }
 
-    // Render Bảng 7 cột chuẩn trên Cột Trái (Luồng Chuẩn Khuyến Nghị)
+    // Render Bảng 7 cột chuẩn trên Cột Trái
     if (yList) {
         yList.innerHTML = sourceLogs.map(item => {
             const isDanger = item.severity === "danger";
@@ -4779,7 +4770,6 @@ function updateLiveParallelReportsAndLogs() {
                     <td class="desc-cell">${escapeHtml(item.description)}</td>
                     <td class="prediction-cell">
                         <div class="prediction-badge">
-                            <span class="pred-icon">${ICONS.sparkles}</span>
                             <span class="pred-text">${escapeHtml(predText)}</span>
                         </div>
                     </td>
@@ -4789,7 +4779,7 @@ function updateLiveParallelReportsAndLogs() {
         }).join("");
     }
 
-    // Render Bảng 7 cột trên Cột Phải (Luồng Tùy Chỉnh Tài Nguyên)
+    // Render Bảng 7 cột trên Cột Phải
     let zSafe = 0, zWarn = 0, zDanger = 0;
     if (zList) {
         zList.innerHTML = sourceLogs.map((item, idx) => {
@@ -4815,7 +4805,6 @@ function updateLiveParallelReportsAndLogs() {
                         <td class="desc-cell">${escapeHtml(item.description)}</td>
                         <td class="prediction-cell">
                             <div class="prediction-badge">
-                                <span class="pred-icon">${ICONS.sparkles}</span>
                                 <span class="pred-text">${escapeHtml(predText)}</span>
                             </div>
                         </td>
@@ -4840,14 +4829,13 @@ function updateLiveParallelReportsAndLogs() {
                 return `
                     <tr class="${isDanger ? "row-danger" : ""}">
                         <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
-                        <td class="mono">${escapeHtml(item.timestamp || "--:--:--")} <span class="text-muted">(+${st.zLatencyMs}ms)</span></td>
+                        <td class="mono">${escapeHtml(item.timestamp || "--:--:--")} · <span class="text-muted">+${st.zLatencyMs}ms</span></td>
                         <td>${getModelTierBadge(item.model_tier)}</td>
                         <td><span class="badge ${badgeClass}">${escapeHtml(item.action)}</span></td>
-                        <td class="desc-cell">${escapeHtml(item.description)} <span style="color: var(--accent-amber);">[Không tăng độ chính xác · Tốn ${ramMb} MB]</span></td>
+                        <td class="desc-cell">${escapeHtml(item.description)} <span style="color: var(--accent-amber);">· Tốn ${ramMb} MB RAM</span></td>
                         <td class="prediction-cell">
                             <div class="prediction-badge">
-                                <span class="pred-icon">${ICONS.sparkles}</span>
-                                <span class="pred-text">${escapeHtml(predText)} (+${st.zLatencyMs}ms)</span>
+                                <span class="pred-text">${escapeHtml(predText)} · +${st.zLatencyMs}ms</span>
                             </div>
                         </td>
                         <td style="text-align: center;">${snapHtml}</td>
@@ -4864,17 +4852,17 @@ function updateLiveParallelReportsAndLogs() {
             if (item.severity === "danger" || item.severity === "warning") {
                 zSev = "safe";
                 zAction = st.policy === "block_fifo"
-                    ? "An toàn giả tạo (Trôi khung FIFO)"
-                    : `Bỏ sót biến cố (Rơi ${st.zDropPct}% khung)`;
-                zDesc = `Mất khung biến cố do N=${st.cap}, trễ ${st.delay}ms (${polText}); AI chỉ nhận khung tĩnh cũ.`;
-                zPred = `Sai lệch dự báo (+${st.zLatencyMs}ms)`;
+                    ? "An toàn giả tạo · Trôi khung FIFO"
+                    : `Bỏ sót biến cố · Rơi ${st.zDropPct}% khung`;
+                zDesc = `Mất khung biến cố do N=${st.cap}, trễ ${st.delay}ms · ${polText}; AI chỉ nhận khung tĩnh cũ.`;
+                zPred = `Sai lệch dự báo · +${st.zLatencyMs}ms`;
             } else {
                 zSev = st.isStall ? "danger" : "warning";
                 zAction = st.isStall
                     ? "Đình trệ hàng đợi"
                     : "Nhiễu góc nghiêng cột sống";
-                zDesc = `Tụt còn ~${st.zFps} FPS (rơi ${st.zDropPct}% khung) làm đứt quãng chuỗi khớp xương.`;
-                zPred = `Thiếu mẫu liên tiếp (+${st.zLatencyMs}ms)`;
+                zDesc = `Tụt còn ~${st.zFps} FPS · Rơi ${st.zDropPct}% khung làm đứt quãng chuỗi khớp xương.`;
+                zPred = `Thiếu mẫu liên tiếp · +${st.zLatencyMs}ms`;
             }
 
             if (zSev === "danger") zDanger += 1;
@@ -4885,7 +4873,7 @@ function updateLiveParallelReportsAndLogs() {
             const laggedItem = sourceLogs[Math.min(sourceLogs.length - 1, idx + 1)] || item;
             const snapUrl = laggedItem.snapshot_url || item.snapshot_url;
             const snapHtml = snapUrl
-                ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(zAction)}" class="snapshot-thumb" style="filter: contrast(0.92) sepia(0.18); border: 1.5px solid var(--accent-amber);" loading="lazy" onclick="openSnapshotModal('${escapeHtml(snapUrl)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(zAction)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(zDesc)}', '${escapeHtml(zPred)}')" title="Khung hình trễ +${st.zLatencyMs}ms" />`
+                ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(zAction)}" class="snapshot-thumb" style="filter: contrast(0.92) sepia(0.18); border: 1px solid var(--accent-amber);" loading="lazy" onclick="openSnapshotModal('${escapeHtml(snapUrl)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(zAction)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(zDesc)}', '${escapeHtml(zPred)}')" title="Khung hình trễ +${st.zLatencyMs}ms" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -4897,7 +4885,6 @@ function updateLiveParallelReportsAndLogs() {
                     <td class="desc-cell">${escapeHtml(zDesc)}</td>
                     <td class="prediction-cell">
                         <div class="prediction-badge">
-                            <span class="pred-icon">${ICONS.sparkles}</span>
                             <span class="pred-text">${escapeHtml(zPred)}</span>
                         </div>
                     </td>
@@ -4915,7 +4902,7 @@ function updateLiveParallelReportsAndLogs() {
         safeSetText("live-z-rep-ergo", baseErgoText);
     } else {
         const degradedErgo = Math.max(35, baseErgoNum - Math.round(st.zDropPct * 0.55) - (st.policy === "block_fifo" ? 16 : 6));
-        safeSetText("live-z-rep-ergo", `${degradedErgo} / 100 (Lệch)`);
+        safeSetText("live-z-rep-ergo", `${degradedErgo} / 100`);
     }
 }
 
@@ -5025,7 +5012,7 @@ function populateVideoParallelSplitView() {
     const isOptimal = (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest");
     const isOverProvisioned = (st.cap > 16 && st.delay === 0 && st.policy === "drop_oldest");
 
-    safeSetText("split-vid-z-config-text", `N = ${st.cap} (${ramMb} MB) · ${st.delay} ms · ${polText}`);
+    safeSetText("split-vid-z-config-text", `N = ${st.cap} · ${ramMb} MB · ${st.delay} ms · ${polText}`);
     safeSetText("split-vid-z-fps", `${st.zFps} FPS`);
     safeSetText("split-vid-z-drop", `${st.zDropPct}%`);
     safeSetText("split-vid-z-ram", `${ramMb} MB`);
@@ -5202,7 +5189,7 @@ function populateVideoParallelSplitView() {
                         <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")} · +${st.zLatencyMs}ms</div>
                     </td>
                     <td>
-                        <div class="seg-summary-line">${escapeHtml(summaryText)} <span class="text-muted">(Trễ +${st.zLatencyMs}ms · ${ramMb} MB RAM)</span></div>
+                        <div class="seg-summary-line">${escapeHtml(summaryText)} · <span class="text-muted">Trễ +${st.zLatencyMs}ms · ${ramMb} MB RAM</span></div>
                     </td>
                     <td>
                         <div class="threat-header-row">
@@ -5226,11 +5213,11 @@ function populateVideoParallelSplitView() {
 
             const wrongReason = evictedByFifo
                 ? `Mất mẫu đỉnh điểm do trục xuất FIFO; AI nhận nhầm khung tĩnh cuối video.`
-                : `Rơi ${st.zDropPct}% khung hình (N=${st.cap}, trễ ${st.delay}ms); điểm rủi ro tụt từ ${numScore.toFixed(1)} xuống ${wrongScore.toFixed(1)}/10.`;
+                : `Rơi ${st.zDropPct}% khung hình · N=${st.cap}, trễ ${st.delay}ms; điểm rủi ro tụt từ ${numScore.toFixed(1)} xuống ${wrongScore.toFixed(1)}/10.`;
 
             const wrongSnap = calmFallbackSnap || s.snapshot_url;
             const snapHtml = wrongSnap
-                ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: grayscale(0.45) contrast(0.88); border: 1.5px solid var(--accent-crimson);" title="Khung hình bị lệch mẫu" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Nhận diện sai lệch', '${escapeHtml(s.time_range)}', '${escapeHtml(wrongReason)}', '')" />`
+                ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: grayscale(0.45) contrast(0.88); border: 1px solid var(--accent-crimson);" title="Khung hình bị lệch mẫu" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Nhận diện sai lệch', '${escapeHtml(s.time_range)}', '${escapeHtml(wrongReason)}', '')" />`
                 : `<span class="mono text-muted">Mất khung</span>`;
 
             return `
@@ -5266,7 +5253,7 @@ function populateVideoParallelSplitView() {
                     <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")} · +${st.zLatencyMs}ms</div>
                 </td>
                 <td>
-                    <div class="seg-summary-line">${escapeHtml(summaryText)} <span style="color: var(--accent-amber);">(~${st.zFps} FPS)</span></div>
+                    <div class="seg-summary-line">${escapeHtml(summaryText)} · <span style="color: var(--accent-amber);">~${st.zFps} FPS</span></div>
                 </td>
                 <td>
                     <div class="threat-header-row">
@@ -5287,51 +5274,44 @@ function populateVideoParallelSplitView() {
         : (isOptimal || isOverProvisioned ? 100 : Math.max(20, Math.round(100 - st.zDropPct)));
     const ramRatio = (st.cap / 16.0).toFixed(1);
 
-    safeSetText("vod-retention-val", `${retentionPct}% (${droppedHighRiskCount > 0 ? `Bỏ sót ${droppedHighRiskCount} biến cố` : "Bảo toàn đầy đủ"})`);
-    safeSetText("vod-ram-diff-val", `${ramMb} MB / 42.19 MB (${ramRatio}x)`);
-
     const zThreatBadge = document.getElementById("split-z-rep-threat");
     if (isOptimal) {
         if (zThreatBadge) {
-            zThreatBadge.textContent = `${yThreatText} (CHUẨN 100%)`;
+            zThreatBadge.textContent = `${yThreatText} · CHUẨN 100%`;
             zThreatBadge.className = yThreatClass;
         }
         safeSetText("split-z-rep-incident", yIncident);
         safeSetText("split-z-rep-diagnosis", yDiagnosis);
         safeSetText("split-z-rep-rec", yRec);
-        safeSetText("vod-verdict-text", "Đạt điểm cân bằng tối ưu: Bảo toàn 100% khung hình đỉnh điểm với 42.19 MB RAM.");
     } else if (isOverProvisioned) {
         if (zThreatBadge) {
-            zThreatBadge.textContent = `${yThreatText} (DƯ ${ramRatio}x RAM)`;
+            zThreatBadge.textContent = `${yThreatText} · DƯ ${ramRatio}x RAM`;
             zThreatBadge.className = "badge badge-warning";
         }
-        safeSetText("split-z-rep-incident", `${yIncident} (Tốn ${ramMb} MB RAM, không tăng độ chính xác)`);
+        safeSetText("split-z-rep-incident", `${yIncident} · Tốn ${ramMb} MB RAM`);
         safeSetText("split-z-rep-diagnosis", yDiagnosis);
         safeSetText("split-z-rep-rec", `Cấp phát N=${st.cap} gây trễ hàng đợi +${st.zLatencyMs}ms mà không phát hiện thêm biến cố nào.`);
-        safeSetText("vod-verdict-text", `Tăng bộ đệm lên N=${st.cap} tiêu tốn gấp ${ramRatio}x RAM nhưng chất lượng giữ nguyên.`);
     } else if (droppedHighRiskCount > 0) {
         if (zThreatBadge) {
-            zThreatBadge.textContent = "SAI LỆCH (ÂM TÍNH GIẢ)";
+            zThreatBadge.textContent = "SAI LỆCH · ÂM TÍNH GIẢ";
             zThreatBadge.className = "badge badge-danger";
         }
-        safeSetText("split-z-rep-incident", `Bỏ sót ${droppedHighRiskCount} phân đoạn nguy hiểm (Điểm tối đa tụt còn ${survivingMaxScore.toFixed(1)}/10)`);
+        safeSetText("split-z-rep-incident", `Bỏ sót ${droppedHighRiskCount} phân đoạn nguy hiểm · Điểm tối đa tụt còn ${survivingMaxScore.toFixed(1)}/10`);
         safeSetText(
             "split-z-rep-diagnosis",
             st.policy === "block_fifo"
                 ? "Chính sách FIFO làm khung hình tĩnh cuối video ghi đè mất các khung hình xung đột đỉnh điểm trong RAM."
-                : `Độ trễ ${st.delay}ms và bộ đệm N=${st.cap} làm rơi ${st.zDropPct}% khung hình (~${st.zFps} FPS), gây đứt gãy khoảnh khắc va chạm.`
+                : `Độ trễ ${st.delay}ms và bộ đệm N=${st.cap} làm rơi ${st.zDropPct}% khung hình · ~${st.zFps} FPS, gây đứt gãy khoảnh khắc va chạm.`
         );
-        safeSetText("split-z-rep-rec", "Nhấn 'Chuẩn Khuyến Nghị (N=16 · 0ms)' ở thanh phía trên để khôi phục 100% biến cố.");
-        safeSetText("vod-verdict-text", `Cấu hình lệch chuẩn làm mất ${droppedHighRiskCount} phân đoạn quan trọng.`);
+        safeSetText("split-z-rep-rec", "Chọn kịch bản 'Chuẩn · 16 khung · 0ms' ở thanh phía trên để khôi phục 100% biến cố.");
     } else {
         if (zThreatBadge) {
-            zThreatBadge.textContent = `SUY GIẢM (+${st.zLatencyMs}ms)`;
+            zThreatBadge.textContent = `SUY GIẢM · +${st.zLatencyMs}ms`;
             zThreatBadge.className = "badge badge-warning";
         }
-        safeSetText("split-z-rep-incident", `${yIncident} (Trễ hàng đợi +${st.zLatencyMs}ms)`);
-        safeSetText("split-z-rep-diagnosis", `Tốc độ giảm còn ~${st.zFps} FPS (rơi ${st.zDropPct}% khung hình), làm giảm độ chính xác vận tốc.`);
-        safeSetText("split-z-rep-rec", "Khôi phục cấu hình chuẩn (N=16 · 0ms · Priority) để đạt 30.0 FPS.");
-        safeSetText("vod-verdict-text", `Tốc độ suy giảm còn ~${st.zFps} FPS, trễ +${st.zLatencyMs}ms.`);
+        safeSetText("split-z-rep-incident", `${yIncident} · Trễ hàng đợi +${st.zLatencyMs}ms`);
+        safeSetText("split-z-rep-diagnosis", `Tốc độ giảm còn ~${st.zFps} FPS · Rơi ${st.zDropPct}% khung hình, làm giảm độ chính xác vận tốc.`);
+        safeSetText("split-z-rep-rec", "Khôi phục cấu hình chuẩn N=16 · 0ms · Priority để đạt 30.0 FPS.");
     }
 }
 
