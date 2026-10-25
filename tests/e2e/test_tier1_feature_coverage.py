@@ -345,16 +345,16 @@ class TestAcademicUIUXAndRadixSlate:
             pytest.fail("M3 Implementation Defect: style.css does not define a Light Theme selector ('[data-theme=\"light\"]').")
 
     def test_t1_f11_academic_font_pairing_declaration(self):
-        """F11: Verify Plus Jakarta Sans (UI) and JetBrains Mono (Code/Telemetry) declaration."""
+        """F11: Verify Be Vietnam Pro / Plus Jakarta Sans (UI) and IBM Plex Mono / JetBrains Mono (Code/Telemetry) declaration."""
         html_file = TEMPLATES_DIR / "index.html"
         assert html_file.exists(), f"Template {html_file} must exist."
         html = html_file.read_text(encoding="utf-8")
 
-        assert "Plus+Jakarta+Sans" in html or "Plus Jakarta Sans" in html, (
-            "index.html must load Plus Jakarta Sans Google Font."
+        assert any(f in html for f in ["Be+Vietnam+Pro", "Be Vietnam Pro", "Plus+Jakarta+Sans", "Plus Jakarta Sans"]), (
+            "index.html must load Be Vietnam Pro or Plus Jakarta Sans Google Font."
         )
-        assert "JetBrains+Mono" in html or "JetBrains Mono" in html, (
-            "index.html must load JetBrains Mono Google Font."
+        assert any(f in html for f in ["IBM+Plex+Mono", "IBM Plex Mono", "JetBrains+Mono", "JetBrains Mono"]), (
+            "index.html must load IBM Plex Mono or JetBrains Mono Google Font."
         )
 
     def test_t1_f12_os_telemetry_dashboard_elements(self):

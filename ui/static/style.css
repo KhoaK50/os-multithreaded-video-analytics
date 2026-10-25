@@ -6879,20 +6879,23 @@ tr.active-segment-row {
 
 .pcol-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    min-height: 42px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 6px;
+    height: 66px;
     padding-bottom: 10px;
     border-bottom: 1px solid var(--border-subtle);
+    overflow: hidden;
 }
 
 .pcol-title-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow: hidden;
 }
 
 .pcol-name {
@@ -6900,6 +6903,9 @@ tr.active-segment-row {
     font-size: 13px;
     font-weight: 700;
     color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .pcol-config-lock {
@@ -6909,7 +6915,7 @@ tr.active-segment-row {
     background: var(--bg-surface-elevated);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    padding: 4px 10px;
+    padding: 3px 10px;
     white-space: nowrap;
 }
 
@@ -7307,6 +7313,19 @@ tr.active-segment-row {
     line-height: 1.45;
 }
 
+#tab-live .live-full-container.hidden {
+    display: block !important;
+    position: fixed !important;
+    left: -9999px !important;
+    top: 0 !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    z-index: -1 !important;
+}
+
 .split-log-card,
 .split-synthesis-card,
 .split-segments-card {
@@ -7314,6 +7333,26 @@ tr.active-segment-row {
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
+}
+
+.split-log-card > .card-header,
+.split-synthesis-card > .report-header,
+.split-segments-card > .segments-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-height: 48px;
+}
+
+.split-log-card .live-session-stats-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-height: 48px;
+    overflow-x: auto;
 }
 
 .split-synthesis-card {

@@ -4976,6 +4976,9 @@ function renderLiveParallelLoop() {
     if (liveTickCounter % 30 === 1) {
         updateLiveParallelReportsAndLogs();
     }
+    if (liveTickCounter % 90 === 1 && typeof fetchCameraLogs === "function") {
+        fetchCameraLogs();
+    }
 
     liveParallelAnimId = requestAnimationFrame(renderLiveParallelLoop);
 }

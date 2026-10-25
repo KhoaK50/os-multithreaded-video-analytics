@@ -475,18 +475,11 @@ class LiveCameraPipeline:
         - Tự phục hồi sau 60s cooldown (Preemptive Cooldown Reversion).
         - Cập nhật nhật ký hành vi thời gian thực và đồng bộ viễn trắc.
         """
-        # Chờ camera ổn định 1.2s sau khi bật
-        time.sleep(1.2)
+        # Chờ camera ổn định 0.6s sau khi bật
+        time.sleep(0.6)
 
         while self.running:
             t_start = time.time()
-
-            # 1. Kiểm tra xem có client web nào đang xem trực tiếp luồng camera không
-            with self.clients_lock:
-                clients = self.active_clients
-            if clients <= 0:
-                time.sleep(1.0)
-                continue
 
             frame = None
             with self.frame_lock:
@@ -494,16 +487,41 @@ class LiveCameraPipeline:
                     frame = self.latest_raw_frame.copy()
 
             if frame is not None and frame.size > 0:
-                # 2. Khử ảnh nhiễu/đen: Nếu webcam chưa mở cảm biến hoặc bị che tối (độ sáng < 18), bỏ qua
+                # Khử ảnh nhiễu/đen: Nếu webcam chưa mở cảm biến hoặc bị che tối (độ sáng < 12), bỏ qua
                 mean_brightness = float(np.mean(frame))
-                if mean_brightness < 18.0:
-                    time.sleep(1.0)
+                if mean_brightness < 12.0:
+                    time.sleep(0.6)
                     continue
 
-                # 3. Chỉ kích hoạt Gemini Cloud AI khi Edge AI thực sự phát hiện có người trong khung hình
                 with self.ai_lock:
                     has_person = len(self.latest_boxes) > 0 or len(self.latest_kpts) > 0
-                if not has_person:
+                    logs_empty = len(self.action_logs) == 0
+                    bio = dict(self.biomechanics)
+
+                # Nếu chưa có bản ghi nào khi vừa bật camera, tạo ngay 1 bản ghi khởi tạo tức thì (<0.5s) trước khi gọi Cloud AI
+                if logs_empty:
+                    try:
+                        self.action_counter += 1
+                        init_snap = f"snap_init_{self.action_counter:04d}_{int(t_start)}.jpg"
+                        cv2.imwrite(os.path.join(self.snapshots_dir, init_snap), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        heur_res = self._synthesize_heuristic_action(bio.get("posture", "Ngồi thẳng bình thường"), bio)
+                        init_entry = {
+                            "id": f"#{self.action_counter:03d}",
+                            "timestamp": time.strftime("%H:%M:%S"),
+                            "code": f"NORM-{self.action_counter:02d}",
+                            "action": heur_res.get("action", "Ngồi thẳng bình thường"),
+                            "description": heur_res.get("description", "Khởi tạo phiên giám sát công thái học thời gian thực."),
+                            "prediction_next_4s": heur_res.get("prediction_next_4s", "Duy trì tư thế ổn định trong 4s tới."),
+                            "snapshot_url": f"/api/snapshots/{init_snap}",
+                            "severity": heur_res.get("severity", "safe"),
+                            "model_tier": "tier_1"
+                        }
+                        with self.ai_lock:
+                            self.action_logs.insert(0, init_entry)
+                    except Exception:
+                        pass
+
+                if not has_person and not logs_empty:
                     time.sleep(1.0)
                     continue
 
@@ -566,10 +584,16 @@ class LiveCameraPipeline:
                         self.biomechanics["alert"] = f"Dự đoán 4s tới: {pred_name}"
                         self.biomechanics["is_danger"] = (severity_val == "danger")
 
-                    print(f"[+] Gemini Vision #{self.action_counter:03d} (Chu kỳ 4s - {tier_key}): '{action_name}' | '{desc_name[:50]}...' -> {snap_name}")
+                    try:
+                        print(f"[+] Gemini Vision #{self.action_counter:03d} ({tier_key}): {action_name} -> {snap_name}")
+                    except Exception:
+                        pass
 
                 except Exception as e_outer:
-                    print(f"[!] Loi chu ky Gemini AI: {e_outer}")
+                    try:
+                        print(f"[!] Loi chu ky Gemini AI: {e_outer}")
+                    except Exception:
+                        pass
 
             # Đảm bảo chu kỳ điều phối 4.2 giây (khống chế < 15 RPM)
             elapsed = time.time() - t_start
