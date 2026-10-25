@@ -398,39 +398,110 @@ class OSLabEngine:
     # =========================================================================
     # ĐÁNH GIÁ ĐỐI SÁNH 2 CHẾ ĐỘ & CHẠY THỰC NGHIỆM ĐO ĐẠC
     # =========================================================================
-    def get_dual_mode_evaluation(self, capacity: int = 16, consumer_delay_ms: int = 0) -> Dict[str, Any]:
+    def get_dual_mode_evaluation(
+        self,
+        capacity: int = 16,
+        consumer_delay_ms: int = 0,
+        policy: str = "drop_oldest"
+    ) -> Dict[str, Any]:
         """
-        Đánh giá đối sánh tác động kỹ thuật giữa 2 chế độ:
-        1. Live Camera (Giám sát trực tiếp 30 FPS).
-        2. Import Video (Xử lý hàng loạt file/URL).
+        Đánh giá đối sánh tác động kỹ thuật giữa 2 chế độ (Live Camera & Import Video)
+        đồng thời phân tích định luật Điểm Cân Bằng Lý Tưởng Y vs Nhánh Thực Nghiệm Z
+        trong hạn mức tài nguyên an toàn X = Y + Z <= 80%.
         """
         cap = max(2, min(64, int(capacity)))
         delay = max(0, min(200, int(consumer_delay_ms)))
+        pol = "block_fifo" if str(policy).lower() in ("block_fifo", "fifo", "block") else "drop_oldest"
+
+        # Tính toán ngân sách tài nguyên X = Y + Z <= 80% (dành 20% cố định cho Host OS)
+        reserve_pct = 20.0
+        branch_y_pct = 20.0
+        branch_z_pct = min(60.0, round(6.0 + (cap / 64.0) * 34.0 + (delay / 200.0) * 20.0, 1))
+        total_allocated_pct = round(branch_y_pct + branch_z_pct, 1)
+        ram_y_mb = 42.19
+        ram_z_mb = round((cap * 2700000) / (1024 * 1024), 2)
+        ram_ratio_vs_y = round(cap / 16.0, 2)
+
+        # Thông số thực tế của nhánh Z để truyền cho Before/After Curtain (Y cố định 30 FPS, 33ms)
+        if delay == 0:
+            z_fps = 30.0 if cap >= 8 else round(24.0 + (cap / 8.0) * 6.0, 1)
+            z_drop_pct = 0.0 if cap >= 8 else round((8 - cap) * 3.5, 1)
+            z_latency_ms = int(cap * 33.3 * 0.25) if cap <= 16 else int(33 + (cap - 16) * 14.5)
+            z_frame_lag_slots = 0 if cap <= 16 else min(36, int((cap - 16) * 0.65))
+            z_skip_stride = 1 if cap >= 8 else 2
+        else:
+            z_fps = round(1000.0 / (33.3 + delay), 1)
+            z_drop_pct = round((delay / (33.3 + delay)) * 100.0, 1)
+            if cap < 16:
+                z_drop_pct = min(95.0, round(z_drop_pct + (16 - cap) * 1.4, 1))
+            z_latency_ms = int(cap * 33.3 + delay * 1.5)
+            z_frame_lag_slots = min(44, max(2, int((cap / 64.0) * 28 + (delay / 200.0) * 18)))
+            z_skip_stride = max(2, min(10, int(round(30.0 / max(2.5, z_fps)))))
+
+        # Phân loại chế độ vận hành Y vs Z (Sweet Spot vs Under-provisioning vs Over-provisioning)
+        if cap == 16 and delay == 0 and pol == "drop_oldest":
+            regime = "OPTIMAL_SWEET_SPOT"
+            regime_title = "Điểm Cân Bằng Tối Ưu (Z ≡ Y · Sweet Spot)"
+            regime_class = "badge-safe"
+            regime_explanation = (
+                "Nhánh Z đang trùng khớp cấu hình Lý tưởng Y (N=16, 0ms, Drop-Oldest + Priority): "
+                "Đạt trần vật lý 30.0 FPS, độ trễ 33ms và bảo toàn 100% sự kiện với mức RAM tối ưu 42.19 MB."
+            )
+        elif cap > 16:
+            regime = "OVER_PROVISIONED_BLOAT"
+            regime_title = f"Cấp Phát Dư Thừa (Z > Y · RAM gấp {ram_ratio_vs_y}x)"
+            regime_class = "badge-warning" if delay <= 80 else "badge-danger"
+            regime_explanation = (
+                f"Nghịch lý Hệ điều hành: Dù cấp bộ đệm Z lớn gấp {ram_ratio_vs_y}x lần nhánh Y ({ram_z_mb} MB so với 42.19 MB), "
+                f"tốc độ đầu ra KHÔNG thể vượt trần 30.0 FPS của Y, nhưng lại gây lãng phí RAM và tạo trễ hàng đợi "
+                f"(Bufferbloat ~{z_latency_ms} ms) khi luồng xử lý bị ghìm."
+            )
+        else:
+            regime = "UNDER_PROVISIONED"
+            regime_title = "Cấp Phát Dưới Ngưỡng / Nghẽn Nhịp (Z < Y)"
+            regime_class = "badge-danger" if delay > 80 else "badge-warning"
+            regime_explanation = (
+                f"Do bộ đệm hẹp (N={cap}) hoặc trễ điều phối ({delay}ms, cơ chế {pol}), nhánh Z bị sụt giảm thông lượng "
+                f"xuống ~{z_fps} FPS (rơi {z_drop_pct}% khung hình), gây giật hình và bỏ sót cử động nhanh so với nhánh Y."
+            )
 
         # 1. LIVE CAMERA
-        if delay == 0:
-            live_speed = f"30.0 FPS · Độ trễ: ~{int(cap * 33.3 * 0.25)} ms (Thời gian thực)"
+        if delay == 0 and cap == 16 and pol == "drop_oldest":
+            live_speed = f"30.0 FPS · Độ trễ: ~{z_latency_ms} ms (Thời gian thực)"
             live_speed_class = "tag-safe"
             live_stab = "An toàn tuyệt đối (0% rủi ro sập luồng)"
             live_stab_class = "tag-safe"
             live_acc = "Bắt trọn xung lực gia tốc va chạm dE/dt (100% mẫu)"
             live_acc_class = "tag-safe"
             is_stall_risk = False
-        elif delay <= 80:
-            fps_est = round(1000.0 / (33.3 + delay), 1)
-            drop_est = round((delay / (33.3 + delay)) * 100, 1)
-            live_speed = f"Consumer: ~{fps_est} FPS · Trễ: ~{int(cap * 33.3)} ms"
+        elif delay == 0 and cap > 16:
+            live_speed = f"30.0 FPS · Trễ tiềm ẩn: ~{z_latency_ms} ms (Dư thừa {ram_ratio_vs_y}x RAM)"
             live_speed_class = "tag-warning"
-            live_stab = f"Cảnh báo nghẽn luồng (Rơi {drop_est}% khung hình) · Drop-Oldest xả đệm"
+            live_stab = f"Tốn {ram_z_mb} MB RAM (Không tăng thêm FPS so với mốc 42.19 MB của Y)"
             live_stab_class = "tag-warning"
-            live_acc = f"Suy giảm mẫu cử động ({drop_est}%) · Nguy cơ âm tính giả"
+            live_acc = "Đạt 100% mẫu nhưng nguy cơ trễ hiển thị khi tải đột biến (Bufferbloat)"
+            live_acc_class = "tag-safe" if pol == "drop_oldest" else "tag-warning"
+            is_stall_risk = False
+        elif delay == 0 and cap < 16:
+            live_speed = f"~{z_fps} FPS · Bộ đệm hẹp N={cap} ({ram_z_mb} MB)"
+            live_speed_class = "tag-warning"
+            live_stab = f"Dễ tràn cục bộ khi rung lắc camera (Rơi ~{z_drop_pct}% khung)"
+            live_stab_class = "tag-warning"
+            live_acc = "Mất các khung chuyển tiếp nhanh khi có xung đột đột ngột"
+            live_acc_class = "tag-warning"
+            is_stall_risk = False
+        elif delay <= 80:
+            live_speed = f"Consumer: ~{z_fps} FPS · Trễ: ~{z_latency_ms} ms"
+            live_speed_class = "tag-warning"
+            pol_label = "Drop-Oldest xả đệm" if pol == "drop_oldest" else "Block-FIFO dồn ứ"
+            live_stab = f"Cảnh báo nghẽn luồng (Rơi {z_drop_pct}% khung hình) · {pol_label}"
+            live_stab_class = "tag-warning"
+            live_acc = f"Suy giảm mẫu cử động ({z_drop_pct}%) · Nguy cơ âm tính giả"
             live_acc_class = "tag-warning"
             is_stall_risk = False
         else:
-            fps_est = round(1000.0 / (33.3 + delay), 1)
-            drop_est = round((delay / (33.3 + delay)) * 100, 1)
-            latency_sec = round((cap * 33.3) / 1000.0, 1)
-            live_speed = f"Consumer: ~{fps_est} FPS · Trễ nghiêm trọng +{latency_sec}s"
+            latency_sec = round(z_latency_ms / 1000.0, 2)
+            live_speed = f"Consumer: ~{z_fps} FPS · Trễ nghiêm trọng +{latency_sec}s"
             live_speed_class = "tag-danger"
             live_stab = "CẢNH BÁO NGUY CƠ ĐÌNH TRỆ (STALL) · Đệm chạm trần cận trên"
             live_stab_class = "tag-danger"
@@ -439,42 +510,80 @@ class OSLabEngine:
             is_stall_risk = True
 
         # 2. IMPORT VIDEO
-        if delay == 0:
+        if delay == 0 and cap == 16 and pol == "drop_oldest":
             vid_speed = "Quét 1.8x – 2.5x thời gian thực (~55 – 75 FPS trên RTX 5060)"
             vid_speed_class = "tag-safe"
             vid_stab = f"Khóa trần RAM ≤ {HARD_RAM_CEILING_MB}MB · Chống tràn bộ nhớ OOM 100%"
             vid_stab_class = "tag-safe"
             vid_acc = "Bảo lưu 100% các khung hình đỉnh điểm (Peak Keyframes) gửi Gemini"
             vid_acc_class = "tag-safe"
+        elif delay == 0 and cap > 16:
+            vid_speed = f"Quét ~1.8x – 2.4x (Không nhanh hơn mốc N=16 dù tốn {ram_z_mb} MB)"
+            vid_speed_class = "tag-warning"
+            vid_stab = f"Chiếm dụng RAM gấp {ram_ratio_vs_y}x lần cấu hình chuẩn Y"
+            vid_stab_class = "tag-warning"
+            vid_acc = "Bảo toàn khung hình đỉnh điểm" if pol == "drop_oldest" else "Nguy cơ trượt khung đỉnh điểm do FIFO"
+            vid_acc_class = "tag-safe" if pol == "drop_oldest" else "tag-warning"
         elif delay <= 80:
             vid_speed = "Quét chậm: ~1.0x – 1.2x thời gian thực (Bị nghẽn nhịp suy luận)"
             vid_speed_class = "tag-warning"
             vid_stab = f"Giữ ổn định ở trần RAM ≤ {HARD_RAM_CEILING_MB}MB (Không OOM)"
             vid_stab_class = "tag-safe"
-            vid_acc = "Khung hình then chốt được gom đệm an toàn"
-            vid_acc_class = "tag-safe"
+            vid_acc = "Khung hình then chốt được gom đệm an toàn" if pol == "drop_oldest" else "Bị ghi đè khung hình quan trọng đầu video (FIFO)"
+            vid_acc_class = "tag-safe" if pol == "drop_oldest" else "tag-danger"
         else:
             vid_speed = "Quét rất chậm: 0.3x – 0.5x thời gian thực (Dồn ứ hàng đợi)"
             vid_speed_class = "tag-danger"
             vid_stab = f"Cận trên an toàn: Tự động ngắt tràn (Circuit Breaker ≤ {HARD_RAM_CEILING_MB}MB)"
             vid_stab_class = "tag-warning"
-            vid_acc = "Dữ liệu được lưu đệm giới hạn, có thể kéo dài thời gian hoàn thành"
-            vid_acc_class = "tag-warning"
+            vid_acc = "Bỏ sót phân đoạn xung đột ngắn (< 1.5s) do rơi khung hàng loạt"
+            vid_acc_class = "tag-danger"
 
-        overall_badge = "TRẠNG THÁI: TỐI ƯU CÂN BẰNG" if delay == 0 and cap == 16 else (
-            "CẢNH BÁO: NGUY CƠ ĐÌNH TRỆ LUỒNG (SIMULATED STALL)" if is_stall_risk else "TRẠNG THÁI: SUY GIẢM HIỆU NĂNG"
+        overall_badge = "TRẠNG THÁI: TỐI ƯU CÂN BẰNG (Z ≡ Y)" if (delay == 0 and cap == 16 and pol == "drop_oldest") else (
+            "CẢNH BÁO: NGUY CƠ ĐÌNH TRỆ LUỒNG (SIMULATED STALL)" if is_stall_risk else (
+                f"CẢNH BÁO: CẤP PHÁT DƯ THỪA ({ram_ratio_vs_y}x RAM)" if (cap > 16 and delay == 0) else "TRẠNG THÁI: SUY GIẢM HIỆU NĂNG (Z < Y)"
+            )
         )
-        overall_badge_class = "badge-safe" if delay == 0 and cap == 16 else (
+        overall_badge_class = "badge-safe" if (delay == 0 and cap == 16 and pol == "drop_oldest") else (
             "badge-danger" if is_stall_risk else "badge-warning"
         )
 
         return {
             "capacity": cap,
             "consumer_delay_ms": delay,
+            "policy": pol,
             "overall_badge": overall_badge,
             "overall_badge_class": overall_badge_class,
             "is_stall_risk": is_stall_risk,
             "ram_ceiling_mb": HARD_RAM_CEILING_MB,
+            "budget_partition": {
+                "host_reserve_pct": reserve_pct,
+                "branch_y_pct": branch_y_pct,
+                "branch_z_pct": branch_z_pct,
+                "total_allocated_pct": total_allocated_pct,
+                "max_allowed_pct": 80.0,
+                "ram_y_mb": ram_y_mb,
+                "ram_z_mb": ram_z_mb,
+                "ram_ratio_vs_y": ram_ratio_vs_y,
+                "regime": regime,
+                "regime_title": regime_title,
+                "regime_class": regime_class,
+                "regime_explanation": regime_explanation,
+            },
+            "ab_curtain_metrics": {
+                "y_fps": 30.0,
+                "y_latency_ms": 33,
+                "y_drop_pct": 0.0,
+                "y_ram_mb": ram_y_mb,
+                "z_fps": z_fps,
+                "z_latency_ms": z_latency_ms,
+                "z_drop_pct": z_drop_pct,
+                "z_ram_mb": ram_z_mb,
+                "z_frame_lag_slots": z_frame_lag_slots,
+                "z_skip_stride": z_skip_stride,
+                "policy": pol,
+                "is_stall": is_stall_risk,
+            },
             "live_camera": {
                 "speed": live_speed,
                 "speed_class": live_speed_class,

@@ -228,3 +228,71 @@ class TestOSLabAPIEndpoints:
         stall_data = stall_resp.json()
         assert stall_data["is_simulated_stall"] is True
         assert stall_data["ram_ceiling_mb"] == 50.0
+
+
+    def test_budget_partition_and_sweet_spot_law(self):
+        """
+        Kiểm chứng Định luật Điểm Cân Bằng Lý Tưởng Y vs Nhánh Thực Nghiệm Z
+        và Hạn mức Ngân sách Tài nguyên X = Y + Z <= 80% (dự trữ >= 20% cho Hệ điều hành).
+        """
+        engine = OSLabEngine()
+
+        # 1. Điểm Cân Bằng Tối Ưu (Z == Y: N=16, D=0ms, drop_oldest)
+        sweet = engine.get_dual_mode_evaluation(capacity=16, consumer_delay_ms=0, policy="drop_oldest")
+        bp_sweet = sweet["budget_partition"]
+        ab_sweet = sweet["ab_curtain_metrics"]
+        assert bp_sweet["regime"] == "OPTIMAL_SWEET_SPOT"
+        assert bp_sweet["host_reserve_pct"] == 20.0
+        assert bp_sweet["total_allocated_pct"] <= 80.0
+        assert bp_sweet["ram_ratio_vs_y"] == 1.0
+        assert ab_sweet["z_fps"] == 30.0
+        assert ab_sweet["z_fps"] <= ab_sweet["y_fps"]
+
+        # 2. Cấp phát dưới ngưỡng (Z < Y: N=4, D=60ms) -> Suy giảm FPS và rơi khung hình
+        under = engine.get_dual_mode_evaluation(capacity=4, consumer_delay_ms=60, policy="drop_oldest")
+        bp_under = under["budget_partition"]
+        ab_under = under["ab_curtain_metrics"]
+        assert bp_under["regime"] == "UNDER_PROVISIONED"
+        assert bp_under["total_allocated_pct"] <= 80.0
+        assert ab_under["z_fps"] < ab_under["y_fps"]
+        assert ab_under["z_drop_pct"] > 0.0
+
+        # 3. Cấp phát dư thừa quá ngưỡng (Z > Y: N=64, D=0ms) -> RAM gấp 4.0x nhưng FPS không vượt trần 30.0 của Y
+        over = engine.get_dual_mode_evaluation(capacity=64, consumer_delay_ms=0, policy="drop_oldest")
+        bp_over = over["budget_partition"]
+        ab_over = over["ab_curtain_metrics"]
+        assert bp_over["regime"] == "OVER_PROVISIONED_BLOAT"
+        assert bp_over["ram_ratio_vs_y"] == 4.0
+        assert bp_over["total_allocated_pct"] <= 80.0
+        assert ab_over["z_fps"] <= ab_over["y_fps"]
+        assert ab_over["z_latency_ms"] > ab_over["y_latency_ms"]
+
+    def test_before_after_curtain_and_dual_track_dom(self):
+        """Kiểm chứng giao diện Before/After Curtain (Y vs Z) và Dual-Track Timeline trên HTML."""
+        resp = self.client.get("/")
+        assert resp.status_code == 200
+        html = resp.text
+
+        # Các thành phần Before/After Curtain & Budget Partitioner bắt buộc có mặt
+        required_ids = [
+            'id="live-ab-overlay"',
+            'id="live-ab-after-canvas"',
+            'id="live-ab-curtain-line"',
+            'id="btn-toggle-live-ab"',
+            'id="os-budget-partition-box"',
+            'id="budget-seg-y"',
+            'id="budget-seg-z"',
+            'id="budget-seg-reserve"',
+            'id="os-lab-policy-select"',
+            'id="timeline-heatmap-bar-z"',
+            'id="video-os-diff-card"',
+            'id="video-ab-overlay"',
+            'id="video-ab-after-canvas"',
+            'id="video-ab-curtain-line"',
+        ]
+        for marker in required_ids:
+            assert marker in html, f"Thiếu thành phần giao diện bắt buộc: {marker}"
+
+        # Đảm bảo không còn modal rời rạc hoặc trích dẫn sách giáo khoa trên UI
+        assert 'id="os-experiment-modal"' not in html
+        assert "Silberschatz" not in html

@@ -2143,6 +2143,10 @@ function renderHeatmap(heatmapData, totalDuration) {
             <span>${formatTime(totalDuration)}</span>
         `;
     }
+
+    if (typeof renderHeatmapZTrack === "function") {
+        renderHeatmapZTrack(heatmapData, totalDuration);
+    }
 }
 
 function updateHeatmapPlayhead(currentTime) {
@@ -3363,41 +3367,210 @@ function closeTelemetryPanel() {
     }
 }
 
-function onOSLabSliderInput() {
-    const capSlider = document.getElementById("os-lab-cap-slider");
-    const delaySlider = document.getElementById("os-lab-delay-slider");
-    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
-    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+// Trạng thái đồng bộ của Nhánh Thực Nghiệm Z (Dùng chung cho cả Live Camera và Import Video)
+let osBranchZState = {
+    cap: 16,
+    delay: 0,
+    policy: "drop_oldest",
+    zFps: 30.0,
+    zDropPct: 0.0,
+    zLatencyMs: 33,
+    zLagSlots: 0,
+    zSkipStride: 1,
+    isStall: false
+};
+
+function syncAllOSLabControls(capVal, delayVal, policyVal) {
+    const c1 = document.getElementById("os-lab-cap-slider");
+    const d1 = document.getElementById("os-lab-delay-slider");
+    const p1 = document.getElementById("os-lab-policy-select");
+    if (c1 && parseInt(c1.value, 10) !== capVal) c1.value = capVal;
+    if (d1 && parseInt(d1.value, 10) !== delayVal) d1.value = delayVal;
+    if (p1 && p1.value !== policyVal) p1.value = policyVal;
+
+    const c2 = document.getElementById("vid-z-cap-slider");
+    const d2 = document.getElementById("vid-z-delay-slider");
+    const p2 = document.getElementById("vid-z-policy-select");
+    if (c2 && parseInt(c2.value, 10) !== capVal) c2.value = capVal;
+    if (d2 && parseInt(d2.value, 10) !== delayVal) d2.value = delayVal;
+    if (p2 && p2.value !== policyVal) p2.value = policyVal;
 
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     safeSetText("os-lab-cap-display", `N = ${capVal} (RAM: ${ramMb} MB)`);
     safeSetText("os-lab-delay-display", `${delayVal} ms`);
+    safeSetText("os-lab-policy-display", policyVal === "drop_oldest" ? "Drop-Oldest + Priority" : "Block-Producer + FIFO");
 
-    updateDualModeEvaluation(capVal, delayVal);
+    safeSetText("vid-z-cap-val", `N = ${capVal}`);
+    safeSetText("vid-z-delay-val", `${delayVal} ms`);
 }
 
-function updateDualModeEvaluation(capVal, delayVal) {
-    // 1. LIVE CAMERA IMPACT
-    let liveSpeedText, liveStabText, liveAccText;
-    let overallBadge = "TRẠNG THÁI: TỐI ƯU CÂN BẰNG";
-    let overallBadgeClass = "badge-safe";
+function onOSLabSliderInput() {
+    const capSlider = document.getElementById("os-lab-cap-slider");
+    const delaySlider = document.getElementById("os-lab-delay-slider");
+    const policySelect = document.getElementById("os-lab-policy-select");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+    const policyVal = policySelect ? policySelect.value : "drop_oldest";
+
+    syncAllOSLabControls(capVal, delayVal, policyVal);
+    updateDualModeEvaluation(capVal, delayVal, policyVal);
+}
+
+function onOSLabPolicyChange() {
+    onOSLabSliderInput();
+    commitOSLabConfig(false);
+}
+
+function onVideoZControlInput() {
+    const capSlider = document.getElementById("vid-z-cap-slider");
+    const delaySlider = document.getElementById("vid-z-delay-slider");
+    const policySelect = document.getElementById("vid-z-policy-select");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+    const policyVal = policySelect ? policySelect.value : "drop_oldest";
+
+    syncAllOSLabControls(capVal, delayVal, policyVal);
+    updateDualModeEvaluation(capVal, delayVal, policyVal);
+    commitOSLabConfig(false);
+}
+
+function applyVideoZUnderProvisionPreset() {
+    syncAllOSLabControls(4, 75, "block_fifo");
+    updateDualModeEvaluation(4, 75, "block_fifo");
+    commitOSLabConfig(false);
+    showToast("Đã áp dụng kịch bản Nhánh Z thiếu hụt bộ đệm (N=4, Trễ=75ms, FIFO) để đối chứng trên Timeline.", "warning");
+}
+
+function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
+    const pol = policyVal || (document.getElementById("os-lab-policy-select") ? document.getElementById("os-lab-policy-select").value : "drop_oldest");
+    const ramY = 42.19;
+    const ramZ = Number(((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2));
+    const ramRatio = Number((capVal / 16.0).toFixed(2));
+
+    // Tính toán hạn mức ngân sách X = Y + Z <= 80% (dành >= 20% cho Hệ điều hành máy chủ)
+    const branchYPct = 20.0;
+    const branchZPct = Math.min(60.0, Number((6.0 + (capVal / 64.0) * 34.0 + (delayVal / 200.0) * 20.0).toFixed(1)));
+    const reservePct = Number((100.0 - branchYPct - branchZPct).toFixed(1));
+
+    // Tính toán thông số thực tế của nhánh Z cho thanh kéo Before/After
+    let zFps = 30.0;
+    let zDropPct = 0.0;
+    let zLatencyMs = 33;
+    let zLagSlots = 0;
+    let zSkipStride = 1;
 
     if (delayVal === 0) {
-        liveSpeedText = `30.0 FPS · Độ trễ: ~${Math.round(capVal * 33.3 * 0.25)} ms (Thời gian thực)`;
+        zFps = capVal >= 8 ? 30.0 : Number((24.0 + (capVal / 8.0) * 6.0).toFixed(1));
+        zDropPct = capVal >= 8 ? 0.0 : Number(((8 - capVal) * 3.5).toFixed(1));
+        zLatencyMs = capVal <= 16 ? Math.round(capVal * 33.3 * 0.25) : Math.round(33 + (capVal - 16) * 14.5);
+        zLagSlots = capVal <= 16 ? 0 : Math.min(36, Math.round((capVal - 16) * 0.65));
+        zSkipStride = capVal >= 8 ? 1 : 2;
+    } else {
+        zFps = Number((1000.0 / (33.3 + delayVal)).toFixed(1));
+        zDropPct = Number(((delayVal / (33.3 + delayVal)) * 100.0).toFixed(1));
+        if (capVal < 16) {
+            zDropPct = Math.min(95.0, Number((zDropPct + (16 - capVal) * 1.4).toFixed(1)));
+        }
+        zLatencyMs = Math.round(capVal * 33.3 + delayVal * 1.5);
+        zLagSlots = Math.min(44, Math.max(2, Math.round((capVal / 64.0) * 28 + (delayVal / 200.0) * 18)));
+        zSkipStride = Math.max(2, Math.min(10, Math.round(30.0 / Math.max(2.5, zFps))));
+    }
+
+    const isStall = delayVal > 80;
+    osBranchZState = {
+        cap: capVal,
+        delay: delayVal,
+        policy: pol,
+        zFps,
+        zDropPct,
+        zLatencyMs,
+        zLagSlots,
+        zSkipStride,
+        isStall
+    };
+
+    // Cập nhật thanh phân bổ ngân sách X = Y + Z <= 80%
+    const segY = document.getElementById("budget-seg-y");
+    const segZ = document.getElementById("budget-seg-z");
+    const segRes = document.getElementById("budget-seg-reserve");
+    if (segY) segY.style.width = `${branchYPct}%`;
+    if (segZ) {
+        segZ.style.width = `${branchZPct}%`;
+        segZ.classList.toggle("seg-z-warn", (capVal !== 16 || delayVal > 0 || pol !== "drop_oldest") && !isStall);
+        segZ.classList.toggle("seg-z-danger", isStall);
+    }
+    if (segRes) segRes.style.width = `${reservePct}%`;
+
+    safeSetText("budget-label-y", `Nhánh Chuẩn Y: ${branchYPct.toFixed(1)}% (${ramY} MB)`);
+    safeSetText("budget-label-z", `Nhánh Thực Nghiệm Z: ${branchZPct.toFixed(1)}% (${ramZ} MB)`);
+    safeSetText("budget-label-reserve", `Dự Trữ Hệ Điều Hành & Khung An Toàn: ${reservePct.toFixed(1)}% (Khóa cứng ≥ 20%)`);
+
+    // Phân loại Điểm Cân Bằng Tối Ưu Y vs Thiếu Hụt (Z < Y) vs Dư Thừa (Z > Y)
+    const sweetBadge = document.getElementById("os-sweet-spot-badge");
+    let sweetTitle = "Điểm Cân Bằng Tối Ưu (Z ≡ Y · Sweet Spot)";
+    let sweetClass = "badge-safe";
+    let sweetVerdict = "Nhánh Z đang trùng khớp cấu hình Lý tưởng Y (N=16, 0ms, Drop-Oldest + Priority): Đạt trần vật lý 30.0 FPS, độ trễ 33ms và bảo toàn 100% sự kiện với mức RAM tối ưu 42.19 MB.";
+
+    if (capVal === 16 && delayVal === 0 && pol === "drop_oldest") {
+        // Sweet Spot
+    } else if (capVal > 16) {
+        sweetTitle = `Cấp Phát Dư Thừa (Z > Y · RAM gấp ${ramRatio}x)`;
+        sweetClass = isStall ? "badge-danger" : "badge-warning";
+        sweetVerdict = `Nghịch lý Hệ điều hành: Dù cấp bộ đệm Z lớn gấp ${ramRatio}x lần nhánh Y (${ramZ} MB so với 42.19 MB), tốc độ đầu ra KHÔNG thể vượt trần 30.0 FPS của Y, nhưng lại gây lãng phí RAM và tạo trễ hàng đợi (Bufferbloat ~${zLatencyMs} ms).`;
+    } else {
+        sweetTitle = "Cấp Phát Dưới Ngưỡng / Nghẽn Nhịp (Z < Y)";
+        sweetClass = isStall ? "badge-danger" : "badge-warning";
+        sweetVerdict = `Do bộ đệm hẹp (N=${capVal}) hoặc trễ điều phối (${delayVal}ms, cơ chế ${pol === "drop_oldest" ? "Drop-Oldest" : "Block-FIFO"}), nhánh Z bị sụt giảm thông lượng xuống ~${zFps} FPS (rơi ${zDropPct}% khung hình), gây giật hình và bỏ sót cử động nhanh so với nhánh Y.`;
+    }
+
+    if (sweetBadge) {
+        sweetBadge.textContent = sweetTitle;
+        sweetBadge.className = `badge ${sweetClass} mono`;
+    }
+    safeSetText("os-sweet-spot-verdict", sweetVerdict);
+
+    // Cập nhật HUD của Thanh Kéo Before/After trên cả 2 Tab
+    safeSetText("live-ab-y-metrics", "N=16 · 0ms · 30.0 FPS · Trễ 33ms");
+    safeSetText(
+        "live-ab-z-metrics",
+        `N=${capVal} · ${delayVal}ms · ${zFps} FPS · Trễ ~${zLatencyMs}ms${zDropPct > 0 ? ` · Rơi ${zDropPct}%` : (capVal > 16 ? ` · RAM ${ramRatio}x` : "")}`
+    );
+    safeSetText("video-ab-y-metrics", "30.0 FPS · 100% Keyframes · 0ms Trễ");
+    safeSetText(
+        "video-ab-z-metrics",
+        `N=${capVal} · ${delayVal}ms · ${pol === "drop_oldest" ? "Priority" : "FIFO"} · ${zDropPct > 0 ? `Rơi ${zDropPct}%` : (capVal > 16 ? `Bufferbloat +${zLatencyMs}ms` : "Đồng bộ 100%")}`
+    );
+
+    // 1. LIVE CAMERA IMPACT
+    let liveSpeedText, liveStabText, liveAccText;
+    let overallBadge = "TRẠNG THÁI: TỐI ƯU CÂN BẰNG (Z ≡ Y)";
+    let overallBadgeClass = "badge-safe";
+
+    if (delayVal === 0 && capVal === 16 && pol === "drop_oldest") {
+        liveSpeedText = `30.0 FPS · Độ trễ: ~${zLatencyMs} ms (Thời gian thực)`;
         liveStabText = "An toàn tuyệt đối (0% rủi ro sập luồng)";
         liveAccText = "Bắt trọn xung lực gia tốc va chạm dE/dt (100% mẫu)";
+    } else if (delayVal === 0 && capVal > 16) {
+        liveSpeedText = `30.0 FPS · Trễ tiềm ẩn: ~${zLatencyMs} ms (Dư thừa ${ramRatio}x RAM)`;
+        liveStabText = `Tốn ${ramZ} MB RAM (Không tăng thêm FPS so với mốc 42.19 MB của Y)`;
+        liveAccText = "Đạt 100% mẫu nhưng nguy cơ trễ hiển thị khi tải đột biến (Bufferbloat)";
+        overallBadge = `CẢNH BÁO: CẤP PHÁT DƯ THỪA (${ramRatio}x RAM)`;
+        overallBadgeClass = "badge-warning";
+    } else if (delayVal === 0 && capVal < 16) {
+        liveSpeedText = `~${zFps} FPS · Bộ đệm hẹp N=${capVal} (${ramZ} MB)`;
+        liveStabText = `Dễ tràn cục bộ khi rung lắc camera (Rơi ~${zDropPct}% khung)`;
+        liveAccText = "Mất các khung chuyển tiếp nhanh khi có xung đột đột ngột";
+        overallBadge = "TRẠNG THÁI: THIẾU HỤT BỘ ĐỆM (Z < Y)";
+        overallBadgeClass = "badge-warning";
     } else if (delayVal <= 80) {
-        const fpsEst = (1000.0 / (33.3 + delayVal)).toFixed(1);
-        const dropEst = Math.round((delayVal / (33.3 + delayVal)) * 1000) / 10;
-        liveSpeedText = `Consumer: ~${fpsEst} FPS · Trễ: ~${Math.round(capVal * 33.3)} ms`;
-        liveStabText = `Cảnh báo nghẽn luồng (Rơi ${dropEst}% khung) · Drop-Oldest xả đệm`;
-        liveAccText = `Suy giảm mẫu cử động (${dropEst}%) · Nguy cơ âm tính giả`;
-        overallBadge = "TRẠNG THÁI: SUY GIẢM HIỆU NĂNG";
+        liveSpeedText = `Consumer: ~${zFps} FPS · Trễ: ~${zLatencyMs} ms`;
+        liveStabText = `Cảnh báo nghẽn luồng (Rơi ${zDropPct}% khung) · ${pol === "drop_oldest" ? "Drop-Oldest xả đệm" : "Block-FIFO dồn ứ"}`;
+        liveAccText = `Suy giảm mẫu cử động (${zDropPct}%) · Nguy cơ âm tính giả`;
+        overallBadge = "TRẠNG THÁI: SUY GIẢM HIỆU NĂNG (Z < Y)";
         overallBadgeClass = "badge-warning";
     } else {
-        const fpsEst = (1000.0 / (33.3 + delayVal)).toFixed(1);
-        const latencySec = ((capVal * 33.3) / 1000.0).toFixed(1);
-        liveSpeedText = `Consumer: ~${fpsEst} FPS · Trễ nghiêm trọng +${latencySec}s`;
+        const latencySec = (zLatencyMs / 1000.0).toFixed(2);
+        liveSpeedText = `Consumer: ~${zFps} FPS · Trễ nghiêm trọng +${latencySec}s`;
         liveStabText = "CẢNH BÁO NGUY CƠ ĐÌNH TRỆ (STALL) · Đệm chạm trần cận trên";
         liveAccText = "Mất mát dữ liệu nghiêm trọng · Nguy cơ bỏ sót sự kiện cao";
         overallBadge = "CẢNH BÁO: NGUY CƠ ĐÌNH TRỆ LUỒNG (SIMULATED STALL)";
@@ -3406,18 +3579,22 @@ function updateDualModeEvaluation(capVal, delayVal) {
 
     // 2. IMPORT VIDEO IMPACT
     let vidSpeedText, vidStabText, vidAccText;
-    if (delayVal === 0) {
+    if (delayVal === 0 && capVal === 16 && pol === "drop_oldest") {
         vidSpeedText = "Quét 1.8x – 2.5x thời gian thực (~55 – 75 FPS trên RTX 5060)";
         vidStabText = "Khóa trần RAM ≤ 50MB · Chống tràn bộ nhớ OOM 100%";
         vidAccText = "Bảo lưu 100% các khung hình đỉnh điểm (Peak Keyframes) gửi Gemini";
+    } else if (delayVal === 0 && capVal > 16) {
+        vidSpeedText = `Quét ~1.8x – 2.4x (Không nhanh hơn mốc N=16 dù tốn ${ramZ} MB)`;
+        vidStabText = `Chiếm dụng RAM gấp ${ramRatio}x lần cấu hình chuẩn Y`;
+        vidAccText = pol === "drop_oldest" ? "Bảo toàn khung hình đỉnh điểm" : "Nguy cơ trượt khung đỉnh điểm do FIFO";
     } else if (delayVal <= 80) {
         vidSpeedText = "Quét chậm: ~1.0x – 1.2x thời gian thực (Bị nghẽn nhịp suy luận)";
         vidStabText = "Giữ ổn định ở trần RAM ≤ 50MB (Không OOM)";
-        vidAccText = "Khung hình then chốt được gom đệm an toàn";
+        vidAccText = pol === "drop_oldest" ? "Khung hình then chốt được gom đệm an toàn" : "Bị ghi đè khung hình quan trọng đầu video (FIFO)";
     } else {
         vidSpeedText = "Quét rất chậm: 0.3x – 0.5x thời gian thực (Dồn ứ hàng đợi)";
         vidStabText = "Cận trên an toàn: Tự động ngắt tràn (Circuit Breaker ≤ 50MB)";
-        vidAccText = "Dữ liệu được lưu đệm giới hạn, có thể kéo dài thời gian hoàn thành";
+        vidAccText = "Bỏ sót phân đoạn xung đột ngắn (< 1.5s) do rơi khung hàng loạt";
     }
 
     safeSetText("os-eval-live-speed", liveSpeedText);
@@ -3438,16 +3615,17 @@ function updateDualModeEvaluation(capVal, delayVal) {
     if (stallBanner) {
         stallBanner.classList.toggle("hidden", delayVal < 100 || capVal < 40);
     }
+
+    // Đồng bộ lại Rãnh 2 (Nhánh Z) trên Timeline của Tab Import Video
+    if (typeof renderHeatmapZTrack === "function") {
+        renderHeatmapZTrack(currentHeatmapData, currentResultDuration);
+    }
 }
 
 let stallRecoveryTimer = null;
 function simulateControlledStall() {
-    const capSlider = document.getElementById("os-lab-cap-slider");
-    const delaySlider = document.getElementById("os-lab-delay-slider");
-    if (capSlider) capSlider.value = 64;
-    if (delaySlider) delaySlider.value = 200;
-
-    onOSLabSliderInput();
+    syncAllOSLabControls(64, 200, "block_fifo");
+    updateDualModeEvaluation(64, 200, "block_fifo");
     commitOSLabConfig(true);
 
     const banner = document.getElementById("os-stall-alert-banner");
@@ -3477,17 +3655,13 @@ function resetToHardwareOptimal() {
         clearInterval(stallRecoveryTimer);
         stallRecoveryTimer = null;
     }
-    const capSlider = document.getElementById("os-lab-cap-slider");
-    const delaySlider = document.getElementById("os-lab-delay-slider");
-    if (capSlider) capSlider.value = 16;
-    if (delaySlider) delaySlider.value = 0;
-
+    syncAllOSLabControls(16, 0, "drop_oldest");
     const banner = document.getElementById("os-stall-alert-banner");
     if (banner) banner.classList.add("hidden");
 
-    onOSLabSliderInput();
+    updateDualModeEvaluation(16, 0, "drop_oldest");
     commitOSLabConfig(false);
-    showToast("Đã khôi phục thông số khuyến nghị chuẩn máy: N=16, Độ trễ=0ms (RTX 5060).", "info");
+    showToast("Đã khôi phục thông số khuyến nghị chuẩn máy: N=16, Độ trễ=0ms, Priority (RTX 5060).", "info");
 }
 
 async function runOSLiveBenchmark() {
@@ -4457,6 +4631,377 @@ function updateLabMemoryDOM(data) {
 }
 
 // ==============================================================================
+// BEFORE / AFTER VERTICAL CURTAIN ENGINE (LIVE CAMERA & IMPORT VIDEO · Y vs Z)
+// ==============================================================================
+let isLiveABActive = false;
+let liveABAnimFrameId = null;
+let liveRingBuffer = [];
+const MAX_RING_BUFFER_SLOTS = 48;
+let liveTickCounter = 0;
+
+let isVideoABMode = false;
+let videoABAnimFrameId = null;
+let videoRingBuffer = [];
+let videoTickCounter = 0;
+
+function initCurtainDrag(overlayId, lineId) {
+    const overlay = document.getElementById(overlayId);
+    const line = document.getElementById(lineId);
+    if (!overlay || !line || line.dataset.boundDrag === "true") return;
+    line.dataset.boundDrag = "true";
+
+    let dragging = false;
+
+    function updatePosition(clientX) {
+        const rect = overlay.getBoundingClientRect();
+        if (!rect || rect.width <= 0) return;
+        const relX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+        const pct = Math.max(4, Math.min(96, (relX / rect.width) * 100));
+        overlay.style.setProperty("--curtain-pos", `${pct.toFixed(1)}%`);
+    }
+
+    line.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        dragging = true;
+        line.classList.add("dragging");
+    });
+
+    window.addEventListener("mousemove", (e) => {
+        if (!dragging) return;
+        updatePosition(e.clientX);
+    });
+
+    window.addEventListener("mouseup", () => {
+        if (dragging) {
+            dragging = false;
+            line.classList.remove("dragging");
+        }
+    });
+
+    line.addEventListener("touchstart", (e) => {
+        if (e.touches && e.touches.length > 0) {
+            dragging = true;
+            line.classList.add("dragging");
+        }
+    }, { passive: true });
+
+    window.addEventListener("touchmove", (e) => {
+        if (!dragging || !e.touches || e.touches.length === 0) return;
+        updatePosition(e.touches[0].clientX);
+    }, { passive: true });
+
+    window.addEventListener("touchend", () => {
+        if (dragging) {
+            dragging = false;
+            line.classList.remove("dragging");
+        }
+    });
+}
+
+function pushFrameToRingBuffer(ring, sourceEl, width = 1280, height = 720) {
+    const offCanvas = ring.length >= MAX_RING_BUFFER_SLOTS ? ring.shift() : document.createElement("canvas");
+    if (offCanvas.width !== width) offCanvas.width = width;
+    if (offCanvas.height !== height) offCanvas.height = height;
+    const offCtx = offCanvas.getContext("2d");
+    try {
+        offCtx.drawImage(sourceEl, 0, 0, width, height);
+        ring.push(offCanvas);
+    } catch (e) {
+        // Ignore cross-origin or unready image draw errors
+    }
+}
+
+function drawZDiagnosticWatermark(ctx, w, h, st) {
+    ctx.save();
+    if (st.isStall) {
+        ctx.fillStyle = "rgba(15, 23, 42, 0.55)";
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(4, 4, w - 8, h - 8);
+
+        ctx.fillStyle = "rgba(239, 68, 68, 0.92)";
+        ctx.fillRect(w - 430, h - 68, 410, 48);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "700 15px 'JetBrains Mono', monospace";
+        ctx.textAlign = "right";
+        ctx.fillText("CIRCUIT BREAKER: KHÓA TRẦN RAM ≤ 50MB", w - 34, h - 44);
+        ctx.font = "500 12px 'JetBrains Mono', monospace";
+        ctx.fillText(`Đình trệ luồng giả lập · Rơi ${st.zDropPct}% khung`, w - 34, h - 26);
+    } else if (st.cap > 16) {
+        const ratio = (st.cap / 16.0).toFixed(1);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+        ctx.fillRect(w - 390, h - 54, 372, 38);
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(w - 390, h - 54, 372, 38);
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "700 13px 'JetBrains Mono', monospace";
+        ctx.textAlign = "right";
+        ctx.fillText(`BUFFERBLOAT TRỄ +${st.zLatencyMs}ms · RAM GẤP ${ratio}x Y`, w - 28, h - 30);
+    } else if (st.delay > 0 || st.cap < 16 || st.policy !== "drop_oldest") {
+        ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+        ctx.fillRect(w - 390, h - 54, 372, 38);
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(w - 390, h - 54, 372, 38);
+        ctx.fillStyle = "#fcd34d";
+        ctx.font = "700 13px 'JetBrains Mono', monospace";
+        ctx.textAlign = "right";
+        ctx.fillText(`NHÁNH Z SUY GIẢM: ~${st.zFps} FPS (RƠI ${st.zDropPct}%)`, w - 28, h - 30);
+    }
+    ctx.restore();
+}
+
+function renderLiveABLoop() {
+    if (!isLiveABActive) return;
+    liveTickCounter += 1;
+
+    const liveImg = document.getElementById("live-stream-img");
+    const canvas = document.getElementById("live-ab-after-canvas");
+    if (canvas) {
+        const ctx = canvas.getContext("2d");
+        const w = canvas.width || 1280;
+        const h = canvas.height || 720;
+        const st = osBranchZState;
+
+        const hasLiveFrame = liveImg && liveImg.complete && liveImg.naturalWidth > 10;
+        if (hasLiveFrame) {
+            pushFrameToRingBuffer(liveRingBuffer, liveImg, w, h);
+        }
+
+        // Chỉ cập nhật khung hình trên nhánh Z theo chu kỳ zSkipStride (mô phỏng rơi khung / giật hình thực tế)
+        const shouldRefreshZ = !st.isStall && (liveTickCounter % Math.max(1, st.zSkipStride) === 0);
+        if (shouldRefreshZ || liveTickCounter <= 2) {
+            if (liveRingBuffer.length > 0) {
+                const lagIdx = Math.max(0, liveRingBuffer.length - 1 - st.zLagSlots);
+                const chosenFrame = liveRingBuffer[lagIdx] || liveRingBuffer[liveRingBuffer.length - 1];
+                ctx.clearRect(0, 0, w, h);
+                ctx.drawImage(chosenFrame, 0, 0, w, h);
+            } else {
+                // Vẽ lưới mô phỏng trực quan khi camera đang tắt để người dùng vẫn kéo thử thanh Before/After được
+                ctx.fillStyle = "#0f172a";
+                ctx.fillRect(0, 0, w, h);
+                const pulseX = ((liveTickCounter * 6) % (w - 160)) + 80;
+                ctx.strokeStyle = "rgba(59, 130, 246, 0.35)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(pulseX, h / 2, 48, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            drawZDiagnosticWatermark(ctx, w, h, st);
+        } else if (st.isStall) {
+            drawZDiagnosticWatermark(ctx, w, h, st);
+        }
+    }
+
+    liveABAnimFrameId = requestAnimationFrame(renderLiveABLoop);
+}
+
+function toggleLiveABComparison() {
+    const overlay = document.getElementById("live-ab-overlay");
+    const btn = document.getElementById("btn-toggle-live-ab");
+    const badge = document.getElementById("live-ab-status-badge");
+    if (!overlay) return;
+
+    initCurtainDrag("live-ab-overlay", "live-ab-curtain-line");
+    isLiveABActive = overlay.classList.toggle("hidden") === false;
+
+    if (btn) btn.classList.toggle("active-toggle", isLiveABActive);
+    if (badge) {
+        badge.textContent = isLiveABActive ? "BẬT" : "TẮT";
+        badge.className = isLiveABActive ? "badge badge-safe mono" : "badge badge-neutral mono";
+    }
+
+    if (isLiveABActive) {
+        liveRingBuffer = [];
+        liveTickCounter = 0;
+        if (liveABAnimFrameId) cancelAnimationFrame(liveABAnimFrameId);
+        liveABAnimFrameId = requestAnimationFrame(renderLiveABLoop);
+        showToast("Đã bật Thanh Kéo Đối Chứng Before/After (Trái: Lý tưởng Y ┃ Phải: Thực nghiệm Z).", "info");
+    } else if (liveABAnimFrameId) {
+        cancelAnimationFrame(liveABAnimFrameId);
+        liveABAnimFrameId = null;
+    }
+}
+
+function renderVideoABLoop() {
+    if (!isVideoABMode) return;
+    videoTickCounter += 1;
+
+    const annotVid = document.getElementById("result-annotated-video");
+    const canvas = document.getElementById("video-ab-after-canvas");
+    if (annotVid && canvas && annotVid.readyState >= 2) {
+        const ctx = canvas.getContext("2d");
+        const w = canvas.width || 1280;
+        const h = canvas.height || 720;
+        const st = osBranchZState;
+
+        if (!annotVid.paused) {
+            pushFrameToRingBuffer(videoRingBuffer, annotVid, w, h);
+        } else if (videoRingBuffer.length === 0) {
+            pushFrameToRingBuffer(videoRingBuffer, annotVid, w, h);
+        }
+
+        const shouldRefreshZ = !st.isStall && (videoTickCounter % Math.max(1, st.zSkipStride) === 0);
+        if (shouldRefreshZ || annotVid.paused || videoTickCounter <= 2) {
+            if (videoRingBuffer.length > 0) {
+                const lagIdx = Math.max(0, videoRingBuffer.length - 1 - st.zLagSlots);
+                const chosen = videoRingBuffer[lagIdx] || videoRingBuffer[videoRingBuffer.length - 1];
+                ctx.clearRect(0, 0, w, h);
+                ctx.drawImage(chosen, 0, 0, w, h);
+            } else {
+                ctx.drawImage(annotVid, 0, 0, w, h);
+            }
+            drawZDiagnosticWatermark(ctx, w, h, st);
+        }
+    }
+
+    videoABAnimFrameId = requestAnimationFrame(renderVideoABLoop);
+}
+
+function switchResultVideoViewMode(mode = "side") {
+    const grid = document.getElementById("video-side-by-side-grid");
+    const overlay = document.getElementById("video-ab-overlay");
+    const btnSide = document.getElementById("btn-vid-mode-side");
+    const btnAb = document.getElementById("btn-vid-mode-ab");
+    const label = document.getElementById("annotated-player-label");
+
+    isVideoABMode = (mode === "ab");
+    if (grid) grid.classList.toggle("ab-single-mode", isVideoABMode);
+    if (overlay) overlay.classList.toggle("hidden", !isVideoABMode);
+
+    if (btnSide) {
+        btnSide.className = isVideoABMode ? "btn btn-xs btn-outline" : "btn btn-xs btn-primary";
+    }
+    if (btnAb) {
+        btnAb.className = isVideoABMode ? "btn btn-xs btn-primary" : "btn btn-xs btn-outline";
+    }
+    if (label) {
+        label.textContent = isVideoABMode
+            ? "ĐỐI CHỨNG TRỰC TIẾP BEFORE/AFTER: TRÁI (CHUẨN LÝ TƯỞNG Y) ┃ PHẢI (THỰC NGHIỆM HĐH Z)"
+            : "VIDEO DÁN NHÃN ĐỘNG HỌC & HÀNH VI (CHUẨN LÝ TƯỞNG Y)";
+    }
+
+    if (isVideoABMode) {
+        initCurtainDrag("video-ab-overlay", "video-ab-curtain-line");
+        videoRingBuffer = [];
+        videoTickCounter = 0;
+        if (videoABAnimFrameId) cancelAnimationFrame(videoABAnimFrameId);
+        videoABAnimFrameId = requestAnimationFrame(renderVideoABLoop);
+    } else if (videoABAnimFrameId) {
+        cancelAnimationFrame(videoABAnimFrameId);
+        videoABAnimFrameId = null;
+    }
+}
+
+// ==============================================================================
+// DUAL-TRACK TIMELINE HEATMAP DIFF (RÃNH 1: LÝ TƯỞNG Y vs RÃNH 2: THỰC NGHIỆM Z)
+// ==============================================================================
+function renderHeatmapZTrack(heatmapData, totalDuration) {
+    const zBar = document.getElementById("timeline-heatmap-bar-z");
+    if (!zBar) return;
+
+    zBar.innerHTML = "";
+    const st = osBranchZState;
+    const polName = st.policy === "drop_oldest" ? "Priority" : "FIFO";
+    safeSetText("track-z-badge-title", `RÃNH 2 · THỰC NGHIỆM HĐH (Z: N=${st.cap} · ${st.delay}ms · ${polName})`);
+
+    if (!heatmapData || heatmapData.length === 0) {
+        zBar.innerHTML = `<div class="heatmap-cell safe" style="flex:1" title="00:00 - Nhánh Z đồng bộ"></div>`;
+        return;
+    }
+
+    let totalRiskSlots = 0;
+    let droppedRiskSlots = 0;
+
+    heatmapData.forEach((slot, idx) => {
+        const cell = document.createElement("div");
+        const level = slot.level || "safe";
+        const isRisk = (level === "danger" || level === "warning" || parseFloat(slot.score || 0) >= 4.0);
+        if (isRisk) totalRiskSlots += 1;
+
+        let isDropped = false;
+        let isDelayed = false;
+
+        // Quy tắc hệ quả HĐH trên Rãnh 2 (Nhánh Z):
+        // 1. Nếu Z == Y (N=16, 0ms, drop_oldest): Bảo toàn 100%
+        // 2. Nếu Z dùng FIFO (block_fifo): các biến cố ở 65% đầu video bị khung bình thường phía sau đẩy văng khỏi RAM
+        if (st.policy === "block_fifo" && isRisk && idx < Math.floor(heatmapData.length * 0.68)) {
+            isDropped = true;
+        }
+        // 3. Nếu bộ đệm hẹp (N < 16) hoặc có trễ Consumer (delay > 0): rơi khung định kỳ theo tỉ lệ nghẽn
+        if (!isDropped && (st.cap < 16 || st.delay > 0)) {
+            const dropModulo = st.delay >= 80 ? 2 : (st.delay >= 30 || st.cap <= 6 ? 3 : 4);
+            if ((idx + 1) % dropModulo === 0) {
+                isDropped = true;
+            }
+        }
+        // 4. Nếu cấp phát dư thừa (N > 16): không làm tăng độ chính xác hơn Y nhưng gây trễ hàng đợi (Bufferbloat)
+        if (!isDropped && st.cap > 16) {
+            isDelayed = true;
+        }
+
+        if (isRisk && isDropped) droppedRiskSlots += 1;
+
+        let extraClass = "";
+        let statusNote = "Bảo toàn 100% như nhánh Y";
+        if (isDropped) {
+            extraClass = "heatmap-segment seg-z-dropped";
+            statusNote = st.policy === "block_fifo"
+                ? "BỊ TRÔI KHỎI RAM (Do chính sách FIFO đẩy khung cũ ra ngoài)"
+                : `BỊ RỚT KHUNG HÌNH (Do nghẽn Consumer ${st.delay}ms / Buffer N=${st.cap})`;
+        } else if (isDelayed) {
+            extraClass = "heatmap-segment seg-z-delayed";
+            statusNote = `BỊ TRỄ HÀNG ĐỢI BUFFERBLOAT (+${st.zLatencyMs}ms · Tốn ${(st.cap / 16).toFixed(1)}x RAM)`;
+        }
+
+        cell.className = `heatmap-cell ${level} ${extraClass}`.trim();
+        cell.dataset.time = slot.time;
+        cell.dataset.idx = idx;
+        cell.title = `[Nhánh Z · ${slot.time_str}] Điểm: ${slot.score} — ${statusNote}`;
+        cell.onclick = () => {
+            seekBothPlayers(slot.time, false, cell, `Nhánh Z [${slot.time_str}]`);
+        };
+        zBar.appendChild(cell);
+    });
+
+    const retentionPct = totalRiskSlots > 0
+        ? Math.max(0, Math.round(((totalRiskSlots - droppedRiskSlots) / totalRiskSlots) * 100))
+        : (st.delay > 0 || st.cap < 16 ? Math.max(15, Math.round(100 - st.zDropPct)) : 100);
+
+    const ramZ = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
+    const ramRatio = (st.cap / 16.0).toFixed(2);
+
+    safeSetText("track-y-summary", `Bảo toàn 100% biến cố (${totalRiskSlots}/${totalRiskSlots} ô cảnh báo · 42.19 MB RAM)`);
+    if (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest") {
+        safeSetText("track-z-summary", "Đồng bộ 100% với nhánh chuẩn Y (Điểm cân bằng tối ưu)");
+        safeSetText("vod-retention-val", "100% (Không bỏ sót biến cố nào)");
+        safeSetText("vod-ram-diff-val", "42.19 MB vs 42.19 MB (1.0x · Cân bằng tối ưu)");
+        safeSetText(
+            "vod-verdict-text",
+            "Nhánh Z vận hành tại Điểm Cân Bằng Tối Ưu (Sweet Spot), giữ nguyên toàn bộ các khung hình đỉnh điểm cho hội chẩn AI."
+        );
+    } else if (st.cap > 16 && st.delay === 0 && st.policy === "drop_oldest") {
+        safeSetText("track-z-summary", `Khớp 100% biến cố nhưng tốn gấp ${ramRatio}x RAM & trễ +${st.zLatencyMs}ms`);
+        safeSetText("vod-retention-val", "100% (Không vượt hơn Y dù tốn thêm RAM)");
+        safeSetText("vod-ram-diff-val", `${ramZ} MB vs 42.19 MB (Gấp ${ramRatio}x RAM · Dư thừa)`);
+        safeSetText(
+            "vod-verdict-text",
+            `Chứng minh Định luật Điểm Cân Bằng Y: Tăng Buffer lên N=${st.cap} không giúp phát hiện thêm sự kiện nào so với N=16, nhưng làm tiêu hao gấp ${ramRatio}x bộ nhớ.`
+        );
+    } else {
+        safeSetText("track-z-summary", `Giữ được ${retentionPct}% biến cố (Bị rớt/trôi ${droppedRiskSlots} phân đoạn quan trọng)`);
+        safeSetText("vod-retention-val", `${retentionPct}% (Bỏ sót ${100 - retentionPct}% sự kiện so với Y)`);
+        safeSetText("vod-ram-diff-val", `${ramZ} MB vs 42.19 MB (${ramRatio}x RAM · Trễ ~${st.zLatencyMs}ms)`);
+        safeSetText(
+            "vod-verdict-text",
+            `Cấu hình Z (N=${st.cap}, Trễ=${st.delay}ms, ${polName}) làm đánh mất ${droppedRiskSlots} phân đoạn biến cố trên Rãnh 2 (hiển thị sọc đỏ), dẫn đến nguy cơ hội chẩn âm tính giả.`
+        );
+    }
+}
+
+// ==============================================================================
 // GLOBAL WINDOW BINDINGS
 // ==============================================================================
 window.switchTab = switchTab;
@@ -4526,3 +5071,11 @@ window.updateDualModeEvaluation = updateDualModeEvaluation;
 window.simulateControlledStall = simulateControlledStall;
 window.resetToHardwareOptimal = resetToHardwareOptimal;
 window.runOSLiveBenchmark = runOSLiveBenchmark;
+
+window.onOSLabPolicyChange = onOSLabPolicyChange;
+window.onVideoZControlInput = onVideoZControlInput;
+window.applyVideoZUnderProvisionPreset = applyVideoZUnderProvisionPreset;
+window.toggleLiveABComparison = toggleLiveABComparison;
+window.switchResultVideoViewMode = switchResultVideoViewMode;
+window.renderHeatmapZTrack = renderHeatmapZTrack;
+window.initCurtainDrag = initCurtainDrag;

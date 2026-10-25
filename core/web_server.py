@@ -1621,15 +1621,22 @@ class OSBenchmarkPayload(BaseModel):
 
 
 @app.get("/api/os_lab/dual_evaluation")
-def get_dual_mode_eval(capacity: int = 16, consumer_delay_ms: int = 0):
+def get_dual_mode_eval(capacity: int = 16, consumer_delay_ms: int = 0, policy: str = "drop_oldest"):
     """Lấy ma trận đánh giá đối sánh 2 chế độ: Live Camera vs Import Video."""
-    return {"status": "ok", **OS_LAB.get_dual_mode_evaluation(capacity, consumer_delay_ms)}
+    return {"status": "ok", **OS_LAB.get_dual_mode_evaluation(capacity, consumer_delay_ms, policy)}
 
 
 @app.post("/api/os_lab/dual_evaluation")
 def post_dual_mode_eval(req: OSBufferScenarioPayload):
     """Lấy ma trận đánh giá đối sánh theo tham số người dùng chọn."""
-    return {"status": "ok", **OS_LAB.get_dual_mode_evaluation(req.capacity or 16, req.consumer_delay_ms or 0)}
+    return {
+        "status": "ok",
+        **OS_LAB.get_dual_mode_evaluation(
+            req.capacity if req.capacity is not None else 16,
+            req.consumer_delay_ms if req.consumer_delay_ms is not None else 0,
+            req.policy or "drop_oldest"
+        )
+    }
 
 
 @app.post("/api/os_lab/benchmark")
