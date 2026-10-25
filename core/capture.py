@@ -309,11 +309,10 @@ class VideoCaptureProducer(threading.Thread):
             logger.error(f"Không thể mở nguồn video: {self.video_source}")
             return
 
-        if isinstance(self.video_source, int):
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-            cap.set(cv2.CAP_PROP_FPS, 30)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        if isinstance(self.video_source, int):
+            cap.set(cv2.CAP_PROP_FPS, 30)
 
         self._is_running = True
         self._last_fps_calc_time = time.time()

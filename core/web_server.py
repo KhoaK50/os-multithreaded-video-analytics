@@ -358,11 +358,11 @@ class LiveCameraPipeline:
                     dummy = np.zeros((480, 640, 3), dtype=np.uint8)
                     self.yolo_model(dummy, device=device, verbose=False)
 
-                # Mở Camera an toàn với cơ chế dò đa backend trên Windows ở độ phân giải tối đa (Full HD 1920x1080)
+                # Mở Camera an toàn với cơ chế dò đa backend trên Windows ở độ phân giải HD 1280x720 chuẩn phần cứng
                 self.cap = None
                 self.camera_device_available = False
-                cam_w = getattr(CONFIG, "CAMERA_WIDTH", 1920)
-                cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 1080)
+                cam_w = getattr(CONFIG, "CAMERA_WIDTH", 1280)
+                cam_h = getattr(CONFIG, "CAMERA_HEIGHT", 720)
 
                 if isinstance(self.video_source, int):
                     backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if sys.platform == "win32" else [cv2.CAP_ANY]
@@ -371,22 +371,22 @@ class LiveCameraPipeline:
                         try:
                             cap_test = cv2.VideoCapture(self.video_source, backend)
                             if cap_test is not None and cap_test.isOpened():
-                                # Kích hoạt codec phần cứng MJPG trước để mở khóa băng thông 1080p/720p 30 FPS trên USB/UVC Webcam
-                                cap_test.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                                cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, cam_w)
+                                cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_h)
                                 cap_test.set(cv2.CAP_PROP_FPS, 30)
-                                for req_w, req_h in [(cam_w, cam_h), (1920, 1080), (1280, 720)]:
-                                    cap_test.set(cv2.CAP_PROP_FRAME_WIDTH, req_w)
-                                    cap_test.set(cv2.CAP_PROP_FRAME_HEIGHT, req_h)
-                                    actual_w = int(cap_test.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-                                    actual_h = int(cap_test.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-                                    if actual_w >= 1280 and actual_h >= 720:
-                                        break
-                                cap_test.set(cv2.CAP_PROP_AUTOFOCUS, 1)
-                                ret, test_frame = cap_test.read()
-                                if ret and test_frame is not None and test_frame.size > 0:
+                                # Đọc bỏ vài khung khởi động đầu tiên để cảm biến ổn định phơi sáng (tránh khung đen 0x00)
+                                valid_frame = None
+                                for _ in range(6):
+                                    ret, test_frame = cap_test.read()
+                                    if ret and test_frame is not None and test_frame.size > 0:
+                                        if float(np.std(test_frame)) > 1.8 and float(np.mean(test_frame)) > 2.5:
+                                            valid_frame = test_frame
+                                            break
+                                    time.sleep(0.03)
+                                if valid_frame is not None:
                                     self.cap = cap_test
                                     self.camera_device_available = True
-                                    fh, fw = test_frame.shape[:2]
+                                    fh, fw = valid_frame.shape[:2]
                                     print(f"[+] Mo webcam thanh cong qua backend {backend_name} (index {self.video_source}) tai do phan giai {fw}x{fh}!")
                                     break
                                 else:
@@ -627,9 +627,11 @@ class LiveCameraPipeline:
                 time.sleep(0.01)
                 continue
 
-            # Kiểm tra và bỏ qua khung xám lỗi UVC driver Windows (std < 1.8 và mean ~128)
+            # Kiểm tra và bỏ qua khung đen khởi động (mean < 2.5) hoặc khung xám lỗi UVC driver Windows (std < 1.8 và mean ~128)
             if frame.shape[0] > 10 and frame.shape[1] > 10:
-                if float(np.std(frame)) < 1.8 and 110 < float(np.mean(frame)) < 145:
+                f_std = float(np.std(frame))
+                f_mean = float(np.mean(frame))
+                if f_mean < 2.5 or (f_std < 1.8 and 110 < f_mean < 145):
                     time.sleep(0.03)
                     continue
 

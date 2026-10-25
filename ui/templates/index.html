@@ -54,7 +54,7 @@
                     <div class="card-header">
                         <div class="card-title">
                             <span class="indicator-pulse"></span>
-                            <span>Luồng Camera Thời Gian Thực · 1920×1080 Full HD</span>
+                            <span>Luồng Camera Thời Gian Thực · 1280×720 HD</span>
                         </div>
                         <div class="header-status-badge">
                             <span class="badge badge-neutral mono" style="display: inline-flex; align-items: center; gap: 6px;">
@@ -68,7 +68,7 @@
                     <div class="stream-viewport-container">
                         <img id="live-stream-img" src="" alt="OS Video Analytics Stream" />
                         <video id="client-webcam-video" playsinline autoplay muted style="display:none;"></video>
-                        <canvas id="client-webcam-canvas" width="1920" height="1080" style="display:none;"></canvas>
+                        <canvas id="client-webcam-canvas" width="1280" height="720" style="display:none;"></canvas>
 
                         <div id="cam-offline-overlay" class="cam-offline">
                             <div class="offline-box">
@@ -418,7 +418,7 @@
                         <!-- 1. Khung Hình Camera Luồng Chuẩn (16:9) -->
                         <div class="pcol-video-card">
                             <div class="pcol-viewport">
-                                <canvas id="live-split-y-canvas" width="1920" height="1080"></canvas>
+                                <canvas id="live-split-y-canvas" width="1280" height="720"></canvas>
                                 <div id="live-split-y-offline" class="split-cam-offline hidden">
                                     <span class="offline-icon"><svg class="ui-icon empty-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
                                     <strong>Camera đang tạm dừng</strong>
@@ -497,7 +497,7 @@
                         <!-- 1. Khung Hình Camera Luồng Tùy Chỉnh (16:9) -->
                         <div class="pcol-video-card">
                             <div class="pcol-viewport">
-                                <canvas id="live-split-z-canvas" width="1920" height="1080"></canvas>
+                                <canvas id="live-split-z-canvas" width="1280" height="720"></canvas>
                                 <div id="live-split-z-offline" class="split-cam-offline hidden">
                                     <span class="offline-icon"><svg class="ui-icon empty-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
                                     <strong>Camera đang tạm dừng</strong>
