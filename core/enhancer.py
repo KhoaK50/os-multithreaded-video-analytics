@@ -69,9 +69,10 @@ class CameraEnhancer:
 
     def _apply_temporal_denoise(self, frame: np.ndarray) -> np.ndarray:
         """
-        Khử nhiễu 3D theo thời gian thích ứng chuyển động (Motion-Adaptive Temporal EMA Filter):
-        - Trung bình hóa nhiễu hạt ngẫu nhiên giữa các khung hình liên tiếp ở vùng tĩnh (khuôn mặt, tường, bàn).
-        - Tự động nhả bộ đệm = 1.0 tại vùng có chuyển động thực để triệt tiêu 100% bóng ma (ghosting).
+        Khử nhiễu hạt nhẹ theo thời gian không để lại vệt bóng mờ (Zero-Ghosting Motion-Gated Filter):
+        - Chỉ làm mịn các dao động hạt vi mô (< 3.5 mức xám) ở vùng hoàn toàn tĩnh với hệ số giữ mới cao (alpha >= 0.58).
+        - Bất kỳ chuyển động nhỏ nào (>= 9.0 mức xám trên bất kỳ kênh màu nào) đều mở khóa alpha = 1.0 tức thì,
+          kết hợp giãn nở biên chuyển động để triệt tiêu 100% vệt nám/bóng ma theo sau khi di chuyển.
         """
         frame_f = frame.astype(np.float32)
         if float(np.mean(frame_f)) < 1.0:
@@ -80,15 +81,15 @@ class CameraEnhancer:
             self._temporal_acc = frame_f.copy()
             return frame
 
-        # Tính độ lệch chuyển động trung bình giữa khung hiện tại và bộ tích lũy thời gian
-        diff = np.mean(np.abs(frame_f - self._temporal_acc), axis=2)
-        # Làm mịn mặt nạ chuyển động 3x3 để nhiễu hạt đơn lẻ không bị nhầm là chuyển động
-        diff_smooth = cv2.blur(diff, (3, 3))
+        # Lấy độ lệch lớn nhất trên cả 3 kênh B, G, R để bắt nhạy cả chuyển động tóc/bóng tối trên nền tối
+        diff = np.max(np.abs(frame_f - self._temporal_acc), axis=2)
+        # Giãn nở nhẹ vùng biên chuyển động (3x3 max filter) để xóa sạch viền bóng mờ quanh đầu và tay khi di chuyển
+        diff_dilated = cv2.dilate(diff, np.ones((3, 3), dtype=np.uint8))
 
-        # Ngưỡng dưới (<= 5.5): vùng tĩnh bị nhiễu cảm biến -> giữ 78% lịch sử (alpha = 0.22)
-        # Ngưỡng trên (>= 24.0): vùng chuyển động thực -> lấy 100% khung mới (alpha = 1.0)
-        alpha = np.clip((diff_smooth - 5.5) / (24.0 - 5.5), 0.0, 1.0)
-        alpha = 0.22 + 0.78 * (alpha * alpha)
+        # Ngưỡng dưới (<= 3.0): nhiễu hạt tĩnh vi mô -> lấy 58% khung mới + 42% lịch sử (không bao giờ lưu ảnh lâu)
+        # Ngưỡng trên (>= 9.0): có chuyển động -> lấy 100% khung mới tức thì (alpha = 1.0, không có vết nám đuổi theo)
+        motion_ratio = np.clip((diff_dilated - 3.0) / (9.0 - 3.0), 0.0, 1.0)
+        alpha = 0.58 + 0.42 * motion_ratio
         alpha_3c = alpha[:, :, np.newaxis]
 
         self._temporal_acc = self._temporal_acc * (1.0 - alpha_3c) + frame_f * alpha_3c
@@ -96,9 +97,9 @@ class CameraEnhancer:
 
     def enhance(self, frame: np.ndarray) -> np.ndarray:
         """
-        Xử lý nâng cao chất lượng khung hình BGR theo chuỗi ISP 3 tầng:
+        Xử lý nâng cao chất lượng khung hình BGR theo chuỗi ISP 3 tầng cân bằng:
         1. Lật gương ngang (Mirror)
-        2. Khử nhiễu 3D Temporal + 2D Edge-Preserving Chroma/Luma Denoise
+        2. Khử nhiễu vừa phải (Zero-Ghosting Temporal + 1-Pass Edge-Preserving YCrCb Denoise)
         3. Cân bằng chống chói đèn trần (Soft-Knee Highlight Compression)
         """
         if frame is None or not isinstance(frame, np.ndarray) or frame.size == 0:
@@ -112,20 +113,16 @@ class CameraEnhancer:
         if self.mirror:
             frame = cv2.flip(frame, 1)
 
-        # 2. Khử nhiễu đa tầng (3D Temporal EMA + YCrCb Chroma/Luma Bilateral Denoise)
+        # 2. Khử nhiễu vừa đủ: triệt hạt màu nhưng giữ chi tiết tự nhiên và không gây vệt mờ khi cử động
         if self.denoise:
-            # Bước 2a: Khử nhiễu hạt nhấp nháy theo thời gian (3D Temporal Filter)
+            # Bước 2a: Lọc hạt nhấp nháy vi mô với cổng cắt chuyển động tức thì
             frame = self._apply_temporal_denoise(frame)
 
-            # Bước 2b: Khử nhiễu không gian tách kênh màu (YCrCb)
+            # Bước 2b: Lọc không gian 1 lớp nhẹ trên kênh YCrCb
             ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
-            y_chan = ycrcb[:, :, 0]
-            # Lọc biên kép trên kênh độ chói Y: làm phẳng hạt nhiễu trên da và tường nhưng giữ sắc nét mắt/tóc/viền áo
-            y_pass1 = cv2.bilateralFilter(y_chan, d=5, sigmaColor=24, sigmaSpace=24)
-            ycrcb[:, :, 0] = cv2.bilateralFilter(y_pass1, d=5, sigmaColor=16, sigmaSpace=16)
-            # Khử sạch đốm nhiễu màu (Chroma Blotches đỏ/xanh/vàng) đặc trưng của cảm biến CMOS thiếu sáng
-            ycrcb[:, :, 1] = cv2.GaussianBlur(ycrcb[:, :, 1], (7, 7), 2.0)
-            ycrcb[:, :, 2] = cv2.GaussianBlur(ycrcb[:, :, 2], (7, 7), 2.0)
+            ycrcb[:, :, 0] = cv2.bilateralFilter(ycrcb[:, :, 0], d=5, sigmaColor=18, sigmaSpace=18)
+            ycrcb[:, :, 1] = cv2.GaussianBlur(ycrcb[:, :, 1], (5, 5), 1.4)
+            ycrcb[:, :, 2] = cv2.GaussianBlur(ycrcb[:, :, 2], (5, 5), 1.4)
             frame = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
         else:
             self._temporal_acc = None
