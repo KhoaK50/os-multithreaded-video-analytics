@@ -268,37 +268,50 @@ class TestOSLabAPIEndpoints:
         assert ab_over["z_latency_ms"] > ab_over["y_latency_ms"]
 
     def test_full_page_parallel_split_and_preflight_dom(self):
-        """Kiểm chứng giao diện Chiếu Song Song Toàn Trang 50/50 (Y || Z) và Bảng Thiết lập Chuẩn hóa Nhánh Z trên HTML."""
+        """Kiểm chứng giao diện So Sánh Song Song 50/50 đồng nhất bố cục, thanh chỉnh tài nguyên trực tiếp và xóa bỏ người que."""
         resp = self.client.get("/")
         assert resp.status_code == 200
         html = resp.text
 
-        # Các thành phần Full-Page 50/50 Parallel Split (Y || Z) & Pre-Flight Setup bắt buộc có mặt
-        required_ids = [
+        required_markers = [
             'id="live-parallel-workspace"',
             'id="live-split-y-canvas"',
             'id="live-split-z-canvas"',
             'id="btn-launch-live-parallel"',
+            'id="btn-launch-video-parallel"',
             'id="os-budget-partition-box"',
             'id="budget-seg-y"',
             'id="budget-seg-z"',
             'id="budget-seg-reserve"',
+            'id="os-lab-cap-slider"',
+            'id="os-lab-delay-slider"',
             'id="os-lab-policy-select"',
-            'id="trimmer-os-setup-box"',
-            'id="chk-auto-parallel-split"',
-            'id="timeline-heatmap-bar-z"',
+            'id="vid-z-cap-slider"',
+            'id="vid-z-delay-slider"',
+            'id="vid-z-policy-select"',
             'id="video-os-diff-card"',
             'id="video-parallel-workspace"',
             'id="split-vid-y-player"',
             'id="split-vid-z-canvas"',
+            'id="live-y-log-list"',
+            'id="live-z-log-list"',
             'id="split-y-segments-list"',
             'id="split-z-segments-list"',
+            'So Sánh Song Song',
+            'LUỒNG CHUẨN KHUYẾN NGHỊ',
+            'LUỒNG TÙY CHỈNH TÀI NGUYÊN',
         ]
-        for marker in required_ids:
+        for marker in required_markers:
             assert marker in html, f"Thiếu thành phần giao diện bắt buộc: {marker}"
 
-        # Đảm bảo đã gỡ bỏ hoàn toàn thanh kéo rèm Before/After cũ và không còn trích dẫn sách giáo khoa
+        # Đảm bảo đã gỡ bỏ hoàn toàn ký hiệu nội bộ (Y || Z, X = Y + Z), thanh kéo cũ và người que (drawSyntheticLivePreview)
+        assert "Y ‖ Z" not in html
+        assert "X = Y + Z" not in html
         assert 'id="live-ab-overlay"' not in html
         assert 'id="video-ab-overlay"' not in html
         assert 'id="os-experiment-modal"' not in html
         assert "Silberschatz" not in html
+
+        js_resp = self.client.get("/static/app.js")
+        assert js_resp.status_code == 200
+        assert "drawSyntheticLivePreview" not in js_resp.text

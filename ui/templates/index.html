@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=2.5.0">
+    <link rel="stylesheet" href="/static/style.css?v=2.6.0">
 </head>
 <body>
     <!-- HEADER BAR -->
@@ -101,8 +101,8 @@
                             <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-telemetry" onclick="toggleInlineTelemetryPanel()" title="Ẩn hoặc hiện Bảng Điều Khiển Thông Số Vận Hành Hệ Điều Hành">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> <span>Thông Số Vận Hành</span> <span class="badge badge-safe mono" id="btn-telemetry-status" style="font-size: 10px; padding: 1px 5px; margin-left: 3px;">HIỂN THỊ</span>
                             </button>
-                            <button class="btn btn-sm btn-outline" id="btn-launch-live-parallel-top" onclick="enterLiveParallelSplit()" title="Chia đôi toàn trang chạy song song Trạng thái Lý tưởng (Y) và Trạng thái Đã điều chỉnh (Z) sau khi đã thiết lập thông số Z">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg> <span>Chiếu Song Song Toàn Trang (Y ‖ Z)</span>
+                            <button class="btn btn-sm btn-primary" id="btn-launch-live-parallel" onclick="enterLiveParallelSplit()" title="Chia đôi màn hình 50/50 để so sánh trực tiếp Luồng Chuẩn Khuyến Nghị và Luồng Tùy Chỉnh Tài Nguyên">
+                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg> <span>So Sánh Song Song</span>
                             </button>
                         </div>
                         <div class="control-group-right">
@@ -272,211 +272,7 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- KHỐI 3: PHÒNG THÍ NGHIỆM TƯƠNG TÁC ĐIỀU TIẾT LUỒNG & CHỐNG DEADLOCK -->
-                    <div class="os-lab-interactive-box">
-                        <div class="os-lab-header">
-                            <div class="os-lab-title-group">
-                                <div class="os-lab-title">
-                                    <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-                                    <span>ĐIỀU TIẾT LƯU LƯỢNG HỆ ĐIỀU HÀNH</span>
-                                </div>
-                            </div>
-                            <div class="os-lab-preset-bar">
-                                <button class="btn btn-xs btn-outline active-preset" id="btn-pre-balanced" onclick="applyOSLabPreset(16, 0, true)">Cân Bằng Chuẩn · N=16, 0ms</button>
-                                <button class="btn btn-xs btn-outline" id="btn-pre-congestion" onclick="applyOSLabPreset(6, 85, true)">Nghẽn Consumer · N=6, 85ms</button>
-                                <button class="btn btn-xs btn-outline" id="btn-pre-min" onclick="applyOSLabPreset(4, 45, true)">Bộ Đệm Tối Thiểu · N=4, 45ms</button>
-                                <button class="btn btn-xs btn-primary" onclick="triggerOSLabStressBurst()">Phát Xung 75 Frames</button>
-                                <button class="btn btn-xs btn-outline" id="btn-reset-hw-opt" onclick="resetToHardwareOptimal()" title="Khôi phục trạng thái chuẩn tối ưu cho máy RTX 5060">Khôi Phục Khuyến Nghị RTX 5060</button>
-                                <button class="btn btn-xs btn-outline btn-stall-demo" id="btn-sim-stall" onclick="simulateControlledStall()" title="Giả lập trạng thái quá tải cận kề sập (Khóa an toàn ở cận trên RAM 50MB)">Giả Lập Nguy Cơ Sập</button>
-                            </div>
-                        </div>
-
-                        <!-- Hạn mức phân bổ tài nguyên X = Y + Z <= 80% & Định luật Điểm Cân Bằng Lý Tưởng Y -->
-                        <div class="os-budget-partition-box" id="os-budget-partition-box">
-                            <div class="os-budget-header">
-                                <div class="os-budget-title-wrap">
-                                    <span class="os-budget-title">PHÂN BỔ HẠN MỨC TÀI NGUYÊN SONG SONG (X = Y + Z ≤ 80% · DỰ TRỮ HĐH 20%)</span>
-                                    <span class="os-budget-sub">Nhánh Y ghim cố định ở Điểm Cân Bằng Tối Ưu (Trần vật lý 30 FPS). Nhánh Z cho phép tinh chỉnh cả 2 phía (Thiếu hụt &lt; Y hoặc Dư thừa &gt; Y).</span>
-                                </div>
-                                <span class="badge badge-safe mono" id="os-sweet-spot-badge">Điểm Cân Bằng Tối Ưu (Z ≡ Y · Sweet Spot)</span>
-                            </div>
-                            <div class="budget-meter-track" title="Tổng hạn mức X = Y + Z luôn khóa ≤ 80% để bảo vệ 20% tài nguyên cho Hệ điều hành máy chủ">
-                                <div class="budget-seg seg-y" id="budget-seg-y" style="width: 20%;">
-                                    <span class="mono" id="budget-label-y">Nhánh Chuẩn Y: 20.0% (42.19 MB)</span>
-                                </div>
-                                <div class="budget-seg seg-z" id="budget-seg-z" style="width: 14.5%;">
-                                    <span class="mono" id="budget-label-z">Nhánh Thực Nghiệm Z: 14.5% (42.19 MB)</span>
-                                </div>
-                                <div class="budget-seg seg-reserve" id="budget-seg-reserve" style="width: 65.5%;">
-                                    <span class="mono" id="budget-label-reserve">Dự Trữ Hệ Điều Hành &amp; Khung An Toàn: 65.5% (Khóa cứng ≥ 20%)</span>
-                                </div>
-                            </div>
-                            <div class="os-sweet-spot-verdict" id="os-sweet-spot-verdict">
-                                Nhánh Z đang trùng khớp cấu hình Lý tưởng Y (N=16, 0ms, Drop-Oldest + Priority): Đạt trần vật lý 30.0 FPS, độ trễ 33ms và bảo toàn 100% sự kiện với mức RAM tối ưu 42.19 MB.
-                            </div>
-                        </div>
-
-                        <div class="os-lab-sliders-grid os-lab-sliders-3col">
-                            <div class="os-lab-control-card">
-                                <div class="os-lab-control-top">
-                                    <div class="os-lab-label-group">
-                                        <span class="os-lab-control-label">Dung lượng Buffer N (Nhánh Z)</span>
-                                        <span class="badge badge-safe mono hw-opt-badge">Chuẩn Y: N = 16</span>
-                                    </div>
-                                    <strong class="os-lab-control-val mono" id="os-lab-cap-display">N = 16 (RAM: 42.19 MB)</strong>
-                                </div>
-                                <input type="range" id="os-lab-cap-slider" class="os-lab-slider" min="2" max="64" step="2" value="16" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(false)" />
-                                <div class="os-lab-scale mono">
-                                    <span>N = 2 (Thiếu)</span>
-                                    <span class="scale-rec">N = 16 (Sweet Spot Y)</span>
-                                    <span>N = 32</span>
-                                    <span>N = 64 (Dư 4x RAM)</span>
-                                </div>
-                            </div>
-
-                            <div class="os-lab-control-card">
-                                <div class="os-lab-control-top">
-                                    <div class="os-lab-label-group">
-                                        <span class="os-lab-control-label">Độ trễ Consumer (Nhánh Z)</span>
-                                        <span class="badge badge-safe mono hw-opt-badge">Chuẩn Y: 0 ms</span>
-                                    </div>
-                                    <strong class="os-lab-control-val mono" id="os-lab-delay-display">0 ms</strong>
-                                </div>
-                                <input type="range" id="os-lab-delay-slider" class="os-lab-slider" min="0" max="200" step="5" value="0" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(true)" />
-                                <div class="os-lab-scale mono">
-                                    <span class="scale-rec">0 ms (Chuẩn Y)</span>
-                                    <span>50 ms</span>
-                                    <span>100 ms</span>
-                                    <span>200 ms (Nghẽn)</span>
-                                </div>
-                            </div>
-
-                            <div class="os-lab-control-card">
-                                <div class="os-lab-control-top">
-                                    <div class="os-lab-label-group">
-                                        <span class="os-lab-control-label">Cơ Chế Hàng Đợi &amp; Trục Xuất</span>
-                                        <span class="badge badge-safe mono hw-opt-badge">Chuẩn Y: Priority</span>
-                                    </div>
-                                    <strong class="os-lab-control-val mono" id="os-lab-policy-display">Drop-Oldest + Priority</strong>
-                                </div>
-                                <select id="os-lab-policy-select" class="os-lab-select mono" onchange="onOSLabPolicyChange()">
-                                    <option value="drop_oldest" selected>Drop-Oldest + Priority Keyframe (Khuyến nghị Y)</option>
-                                    <option value="block_fifo">Block-Producer + FIFO (Dễ nghẽn &amp; trôi khung đỉnh điểm)</option>
-                                </select>
-                                <div class="os-lab-scale mono">
-                                    <span class="scale-rec">Bảo vệ khung nguy cơ cao</span>
-                                    <span>Vào trước ra trước (FIFO)</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="os-dual-eval-container">
-                            <div class="os-dual-eval-header">
-                                <span class="os-dual-title">ĐÁNH GIÁ TÁC ĐỘNG ĐỐI SÁNH 2 CHẾ ĐỘ VẬN HÀNH</span>
-                                <span class="badge badge-safe mono" id="os-dual-overall-badge">TRẠNG THÁI: TỐI ƯU CÂN BẰNG</span>
-                            </div>
-                            
-                            <div class="os-dual-eval-grid">
-                                <!-- Card 1: Live Camera Stream -->
-                                <div class="os-eval-card" id="os-eval-card-live">
-                                    <div class="os-eval-card-title">
-                                        <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                                        <span>CHẾ ĐỘ 1: LIVE CAMERA (GIÁM SÁT TRỰC TIẾP)</span>
-                                    </div>
-                                    <div class="os-eval-metrics">
-                                        <div class="os-eval-row">
-                                            <span class="os-eval-label">Tốc độ &amp; Độ trễ:</span>
-                                            <strong class="mono" id="os-eval-live-speed">30.0 FPS · Độ trễ: ~33 ms (Thời gian thực)</strong>
-                                        </div>
-                                        <div class="os-eval-row">
-                                            <span class="os-eval-label">Hiệu suất &amp; Rủi ro sập:</span>
-                                            <strong class="mono" id="os-eval-live-stab">An toàn tuyệt đối (0% rủi ro sập luồng)</strong>
-                                        </div>
-                                        <div class="os-eval-row">
-                                            <span class="os-eval-label">Độ chính xác phân tích:</span>
-                                            <strong class="mono" id="os-eval-live-acc">Bắt trọn xung lực gia tốc va chạm dE/dt (100% mẫu)</strong>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Card 2: Import Video File / Link -->
-                                <div class="os-eval-card" id="os-eval-card-video">
-                                    <div class="os-eval-card-title">
-                                        <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                                        <span>CHẾ ĐỘ 2: IMPORT VIDEO (FILE CLIP / LINK MẠNG)</span>
-                                    </div>
-                                    <div class="os-eval-metrics">
-                                        <div class="os-eval-row">
-                                            <span class="os-eval-label">Tốc độ trích xuất &amp; quét:</span>
-                                            <strong class="mono" id="os-eval-vid-speed">Quét 1.8x – 2.5x thời gian thực (~55 – 75 FPS trên RTX 5060)</strong>
-                                        </div>
-                                        <div class="os-eval-row">
-                                            <span class="os-eval-label">Tải GPU &amp; Rủi ro tràn RAM:</span>
-                                            <strong class="mono" id="os-eval-vid-stab">Khóa trần RAM ≤ 50MB · Chống tràn bộ nhớ OOM 100%</strong>
-                                        </div>
-                                        <div class="os-eval-row">
-                                            <span class="os-eval-label">Độ chính xác hội chẩn:</span>
-                                            <strong class="mono" id="os-eval-vid-acc">Bảo lưu 100% các khung hình đỉnh điểm (Peak Keyframes) gửi Gemini</strong>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Crash / Stall Alert Banner (shown during stall demo) -->
-                            <div class="os-stall-alert-banner hidden" id="os-stall-alert-banner">
-                                <div class="os-stall-alert-top">
-                                    <span class="badge badge-danger mono">CẢNH BÁO GIẢ LẬP: NGUY CƠ ĐÌNH TRỆ LUỒNG (SIMULATED STALL)</span>
-                                    <span class="os-stall-countdown mono" id="os-stall-countdown">Tự phục hồi an toàn sau: 5.0s</span>
-                                </div>
-                                <p class="os-stall-desc" id="os-stall-desc">
-                                    Hệ thống đã đạt cận trên giới hạn an toàn: Hàng đợi kịch trần (64/64), độ trễ vượt 2,500ms. Cơ chế Circuit Breaker tự động khóa tài nguyên ở trần 50MB RAM, kích hoạt xả đệm khẩn cấp để ngăn chặn 100% việc sập ứng dụng thật.
-                                </p>
-                            </div>
-
-                            <!-- Benchmark & Full-Page Parallel Launch Action Bar -->
-                            <div class="os-bench-action-bar">
-                                <button class="btn btn-sm btn-primary" id="btn-launch-live-parallel" onclick="enterLiveParallelSplit()">
-                                    <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-                                    <span>Bắt Đầu Chiếu Song Song Toàn Trang (Y ‖ Z)</span>
-                                </button>
-                                <button class="btn btn-sm btn-outline" id="btn-run-os-bench" onclick="runOSLiveBenchmark()">
-                                    <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                    <span>Đo Đạc Nhanh 50 Khung Hình</span>
-                                </button>
-                                <span class="os-bench-tip">Thiết lập tài nguyên cho Nhánh Z ở trên, sau đó bấm "Bắt Đầu Chiếu Song Song Toàn Trang" để ẩn bảng thiết lập và đối chứng trực diện Video Render &amp; Báo Cáo AI (0 tốn thêm Quota Free Plan).</span>
-                            </div>
-
-                            <div class="os-bench-results hidden" id="os-bench-results">
-                                <div class="os-bench-res-grid">
-                                    <div class="os-bench-stat">
-                                        <span class="ob-label">Tốc độ Producer thực:</span>
-                                        <strong class="ob-val mono" id="ob-res-prod-fps">--</strong>
-                                    </div>
-                                    <div class="os-bench-stat">
-                                        <span class="ob-label">Tốc độ Consumer thực:</span>
-                                        <strong class="ob-val mono" id="ob-res-cons-fps">--</strong>
-                                    </div>
-                                    <div class="os-bench-stat">
-                                        <span class="ob-label">Số khung rơi thực tế:</span>
-                                        <strong class="ob-val mono" id="ob-res-drop-count">--</strong>
-                                    </div>
-                                    <div class="os-bench-stat">
-                                        <span class="ob-label">Độ trễ đo thực tế:</span>
-                                        <strong class="ob-val mono" id="ob-res-latency">--</strong>
-                                    </div>
-                                    <div class="os-bench-stat">
-                                        <span class="ob-label">Giới hạn RAM phần cứng:</span>
-                                        <strong class="ob-val mono" id="ob-res-ram">--</strong>
-                                    </div>
-                                </div>
-                                <div class="os-bench-conclusion">
-                                    <span class="ob-label">Kết luận thực nghiệm:</span>
-                                    <span class="ob-verdict-text" id="ob-res-verdict">--</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-</div>
+                </div>
 
                 <!-- BẢNG NHẬT KÝ NHẬN DIỆN TƯ THẾ CÔNG THÁI HỌC VÀ HÀNH VI -->
                 <div class="app-card behavior-log-card">
@@ -553,40 +349,50 @@
             </div>
 
             <!-- ===================================================================== -->
-            <!-- BƯỚC 2 (TAB 1): KHÔNG GIAN CHIẾU SONG SONG TOÀN TRANG (Y ‖ Z)         -->
-            <!-- Ẩn toàn bộ bảng thiết lập, chia đôi 50/50 từ trên xuống dưới          -->
+            <!-- CHẾ ĐỘ SO SÁNH SONG SONG 50/50 (TAB 1: CAMERA TRỰC TIẾP)              -->
+            <!-- Cột Trái: Luồng Chuẩn Khuyến Nghị | Cột Phải: Luồng Tùy Chỉnh Tại Chỗ -->
             <!-- ===================================================================== -->
             <div id="live-parallel-workspace" class="parallel-split-workspace hidden">
                 <div class="parallel-top-bar">
                     <div class="ptb-left">
                         <span class="indicator-pulse"></span>
-                        <strong class="ptb-title">CHẾ ĐỘ ĐỐI CHỨNG SONG SONG TOÀN TRANG (CAMERA TRỰC TIẾP): LÝ TƯỞNG (Y) ┃ ĐÃ ĐIỀU CHỈNH (Z)</strong>
-                        <span class="badge badge-safe mono">0 Token Phát Sinh · Bảo Toàn 100% Free Plan</span>
+                        <strong class="ptb-title">CHẾ ĐỘ SO SÁNH SONG SONG (CAMERA TRỰC TIẾP): LUỒNG CHUẨN KHUYẾN NGHỊ &amp; LUỒNG TÙY CHỈNH TÀI NGUYÊN</strong>
+                        <span class="badge badge-safe mono">Tái Sử Dụng Luồng Suy Luận · Không Phát Sinh Thêm Token</span>
                     </div>
                     <div class="ptb-right">
-                        <button class="btn btn-xs btn-outline" onclick="toggleCamera()">Bật / Tắt Camera</button>
+                        <button class="btn btn-xs btn-outline" onclick="captureManualSnapshot()">Chụp Snapshot</button>
+                        <button class="btn btn-xs btn-outline" id="btn-split-toggle-cam" onclick="toggleCamera()">Bật / Tắt Camera</button>
                         <button class="btn btn-xs btn-primary" id="btn-exit-live-parallel" onclick="exitLiveParallelSplit()">
-                            <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/></svg>
-                            <span>Chỉnh Lại Tài Nguyên Z / Thoát Chiếu Song Song</span>
+                            <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            <span>Thoát So Sánh Song Song</span>
                         </button>
                     </div>
                 </div>
 
                 <div class="parallel-columns-grid">
-                    <!-- CỘT TRÁI (50%): TRẠNG THÁI CHUẨN LÝ TƯỞNG (Y) -->
+                    <!-- CỘT TRÁI (50%): LUỒNG CHUẨN KHUYẾN NGHỊ (TỐI ƯU PHẦN CỨNG) -->
                     <div class="parallel-col parallel-col-y">
                         <div class="pcol-header pcol-header-y">
                             <div class="pcol-title-row">
-                                <span class="badge badge-safe mono">NHÁNH TRÁI · LÝ TƯỞNG (Y)</span>
-                                <strong class="pcol-name">Cấu Hình Khuyến Nghị Chuẩn Máy RTX 5060</strong>
+                                <span class="badge badge-safe mono">LUỒNG CHUẨN MẶC ĐỊNH</span>
+                                <strong class="pcol-name">Cấu Hình Khuyến Nghị Tối Ưu Phần Cứng (RTX 5060)</strong>
                             </div>
-                            <span class="pcol-config-lock mono">N = 16 frames (42.19 MB RAM) · Độ trễ = 0 ms · Drop-Oldest + Priority</span>
+                            <div class="pcol-fixed-spec-box">
+                                <span class="pcol-config-lock mono">Bộ đệm: 16 khung hình (42.19 MB RAM) · Độ trễ xử lý: 0 ms · Ưu tiên giữ khung hình quan trọng</span>
+                                <p class="pcol-fixed-note">Luồng bên trái giữ cố định ở thông số tối ưu nhất của máy làm mốc chuẩn đối chiếu tốc độ khung hình và độ chính xác nhận diện AI.</p>
+                            </div>
                         </div>
 
-                        <!-- 1. Khung Hình Video Render Nhánh Y (16:9) -->
+                        <!-- 1. Khung Hình Camera Luồng Chuẩn (16:9) -->
                         <div class="pcol-video-card">
                             <div class="pcol-viewport">
                                 <canvas id="live-split-y-canvas" width="1280" height="720"></canvas>
+                                <div id="live-split-y-offline" class="split-cam-offline hidden">
+                                    <span class="offline-icon"><svg class="ui-icon empty-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
+                                    <strong>Camera đang tạm dừng</strong>
+                                    <span>Nhấn "Bật / Tắt Camera" để phát luồng hình ảnh thời gian thực trên cả 2 cột</span>
+                                    <button class="btn btn-xs btn-primary" onclick="toggleCamera('start')">Bật Camera Ngay</button>
+                                </div>
                             </div>
                             <div class="pcol-telemetry-strip mono">
                                 <span>Tốc độ: <strong class="tag-safe" id="live-split-y-fps">30.0 FPS</strong></span>
@@ -596,47 +402,142 @@
                             </div>
                         </div>
 
-                        <!-- 2. Bản Báo Cáo Hội Chẩn & Nhật Ký AI Nhánh Y -->
-                        <div class="pcol-ai-report-card">
-                            <div class="pcol-section-title">
-                                <span>BÁO CÁO HỘI CHẨN &amp; NHẬN DIỆN AI — NHÁNH LÝ TƯỞNG (Y)</span>
-                                <span class="badge badge-safe mono" id="live-y-rep-threat">AN TOÀN (100% MẪU)</span>
-                            </div>
-                            <div class="pcol-ai-summary-grid">
-                                <div class="pcol-ai-field">
-                                    <span class="paf-label">Tư thế &amp; Hành vi hiện tại:</span>
-                                    <strong class="paf-val" id="live-y-rep-posture">Đang thu nhận luồng chuẩn 30.0 FPS...</strong>
-                                </div>
-                                <div class="pcol-ai-field">
-                                    <span class="paf-label">Điểm công thái học:</span>
-                                    <strong class="paf-val mono" id="live-y-rep-ergo">94 / 100 (Tối ưu)</strong>
-                                </div>
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Dự đoán xu hướng 4s tiếp theo &amp; Đánh giá:</span>
-                                    <p class="paf-desc" id="live-y-rep-pred">Bắt trọn 100% xung lực cử động và giữ nguyên mọi khung hình quan trọng trong bộ nhớ đệm.</p>
+                        <!-- 2. Bảng Nhật Ký Nhận Diện Tư Thế Công Thái Học & Hành Vi (Y hệt giao diện khi không split) -->
+                        <div class="app-card behavior-log-card split-log-card">
+                            <div class="card-header">
+                                <div class="card-title-group">
+                                    <div class="card-title">
+                                        <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                        <span>NHẬT KÝ NHẬN DIỆN TƯ THẾ &amp; HÀNH VI (LUỒNG CHUẨN)</span>
+                                        <span class="badge badge-safe mono" id="live-y-rep-threat">CHUẨN XÁC 100%</span>
+                                    </div>
+                                    <span class="card-subtitle" id="live-y-rep-pred">Bắt trọn 100% xung lực cử động và giữ nguyên mọi khung hình quan trọng trong bộ nhớ đệm.</span>
                                 </div>
                             </div>
-                            <div class="pcol-log-box">
-                                <div class="pcol-log-header mono">NHẬT KÝ SỰ KIỆN AI GHI NHẬN TRÊN NHÁNH Y</div>
-                                <div class="pcol-log-list" id="live-y-log-list"></div>
+
+                            <div class="live-session-stats-bar">
+                                <div class="session-stat-pill pill-safe">
+                                    <span class="stat-dot dot-safe"></span>
+                                    <span class="stat-label">An Toàn:</span>
+                                    <strong class="mono" id="live-y-safe-count">0</strong>
+                                </div>
+                                <div class="session-stat-pill pill-warn">
+                                    <span class="stat-dot dot-warn"></span>
+                                    <span class="stat-label">Cần Chú Ý:</span>
+                                    <strong class="mono" id="live-y-warn-count">0</strong>
+                                </div>
+                                <div class="session-stat-pill pill-danger">
+                                    <span class="stat-dot dot-danger"></span>
+                                    <span class="stat-label">Nguy Hiểm:</span>
+                                    <strong class="mono" id="live-y-danger-count">0</strong>
+                                </div>
+                                <div class="session-stat-pill pill-ergo">
+                                    <span class="stat-label">Công Thái Học:</span>
+                                    <strong class="mono" id="live-y-rep-ergo">94 / 100</strong>
+                                </div>
+                            </div>
+
+                            <div class="log-table-wrapper split-table-wrapper">
+                                <table class="behavior-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 74px;">STT / MÃ</th>
+                                            <th style="width: 82px;">THỜI GIAN</th>
+                                            <th style="width: 115px;">TẦNG MÔ HÌNH</th>
+                                            <th style="width: 145px;">TƯ THẾ CÔNG THÁI HỌC</th>
+                                            <th>MÔ TẢ NGỮ CẢNH</th>
+                                            <th style="width: 165px;">DỰ ĐOÁN 4S TỚI</th>
+                                            <th style="width: 100px; text-align: center;">BẰNG CHỨNG ẢNH</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="live-y-log-list"></tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
 
-                    <!-- CỘT PHẢI (50%): TRẠNG THÁI ĐÃ ĐIỀU CHỈNH TÀI NGUYÊN (Z) -->
+                    <!-- CỘT PHẢI (50%): LUỒNG TÙY CHỈNH TÀI NGUYÊN (CHỈNH TRỰC TIẾP TẠI CHỖ) -->
                     <div class="parallel-col parallel-col-z">
                         <div class="pcol-header pcol-header-z">
                             <div class="pcol-title-row">
-                                <span class="badge badge-warning mono" id="live-split-z-badge">NHÁNH PHẢI · ĐÃ ĐIỀU CHỈNH (Z)</span>
-                                <strong class="pcol-name" id="live-split-z-title">Trạng Thái Thực Nghiệm Tài Nguyên HĐH</strong>
+                                <span class="badge badge-warning mono" id="live-split-z-badge">LUỒNG TÙY CHỈNH TÀI NGUYÊN</span>
+                                <strong class="pcol-name" id="live-split-z-title">Chỉnh Thông Số Trực Tiếp &amp; Quan Sát Hệ Quả Tức Thì</strong>
                             </div>
-                            <span class="pcol-config-lock mono" id="live-split-z-config-text">N = 16 frames (42.19 MB RAM) · Độ trễ = 0 ms · Drop-Oldest + Priority</span>
+                            <span class="pcol-config-lock mono" id="live-split-z-config-text">Bộ đệm: 16 khung (42.19 MB RAM) · Độ trễ: 0 ms · Ưu tiên giữ khung quan trọng</span>
+
+                            <!-- BẢNG CHỈNH THÔNG SỐ TÀI NGUYÊN NGAY TẠI CỘT PHẢI -->
+                            <div class="split-inline-tuner">
+                                <div class="sit-presets-row">
+                                    <span class="sit-preset-label">Kịch bản thử nhanh:</span>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Chuẩn Khuyến Nghị (16 khung · 0ms)</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(4, 45, 'block_fifo')">Thiếu Bộ Đệm &amp; Trôi Dữ Liệu (4 khung · 45ms · FIFO)</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(6, 85, 'block_fifo')">Nghẽn Luồng Nặng (6 khung · 85ms · FIFO)</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 35, 'block_fifo')">Dư Thừa Bộ Nhớ (64 khung · 35ms)</button>
+                                    <button type="button" class="btn btn-xs btn-outline btn-stall-demo" onclick="simulateControlledStall()">Giả Lập Quá Tải Cận Biên</button>
+                                </div>
+
+                                <div class="sit-controls-grid">
+                                    <div class="sit-control-box">
+                                        <div class="sit-ctrl-head">
+                                            <span>Dung lượng Bộ đệm:</span>
+                                            <strong class="mono" id="os-lab-cap-display">16 khung (42.19 MB)</strong>
+                                        </div>
+                                        <input type="range" id="os-lab-cap-slider" class="os-lab-slider" min="2" max="64" step="2" value="16" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(false)" />
+                                    </div>
+
+                                    <div class="sit-control-box">
+                                        <div class="sit-ctrl-head">
+                                            <span>Độ trễ Luồng xử lý:</span>
+                                            <strong class="mono" id="os-lab-delay-display">0 ms</strong>
+                                        </div>
+                                        <input type="range" id="os-lab-delay-slider" class="os-lab-slider" min="0" max="200" step="5" value="0" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(true)" />
+                                    </div>
+
+                                    <div class="sit-control-box">
+                                        <div class="sit-ctrl-head">
+                                            <span>Cơ chế Quản lý Bộ nhớ:</span>
+                                            <strong class="mono" id="os-lab-policy-display">Ưu tiên Keyframe</strong>
+                                        </div>
+                                        <select id="os-lab-policy-select" class="os-lab-select mono" onchange="onOSLabPolicyChange()">
+                                            <option value="drop_oldest" selected>Ưu tiên giữ khung quan trọng (Drop-Oldest)</option>
+                                            <option value="block_fifo">Vào trước ra trước — Dễ trôi dữ liệu (FIFO)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="os-budget-partition-box split-budget-compact" id="os-budget-partition-box">
+                                    <div class="os-budget-header">
+                                        <span class="os-budget-title">PHÂN BỔ HẠN MỨC TÀI NGUYÊN HỆ THỐNG (KHÓA AN TOÀN ≤ 80% · DỰ TRỮ HỆ ĐIỀU HÀNH ≥ 20%)</span>
+                                        <span class="badge badge-safe mono" id="os-sweet-spot-badge">Điểm Cân Bằng Tối Ưu</span>
+                                    </div>
+                                    <div class="budget-meter-track">
+                                        <div class="budget-seg seg-y" id="budget-seg-y" style="width: 20%;">
+                                            <span class="mono" id="budget-label-y">Luồng Chuẩn: 20.0% (42.19 MB)</span>
+                                        </div>
+                                        <div class="budget-seg seg-z" id="budget-seg-z" style="width: 14.5%;">
+                                            <span class="mono" id="budget-label-z">Luồng Tùy Chỉnh: 14.5% (42.19 MB)</span>
+                                        </div>
+                                        <div class="budget-seg seg-reserve" id="budget-seg-reserve" style="width: 65.5%;">
+                                            <span class="mono" id="budget-label-reserve">Dự Trữ Hệ Điều Hành: 65.5%</span>
+                                        </div>
+                                    </div>
+                                    <div class="os-sweet-spot-verdict" id="os-sweet-spot-verdict">
+                                        Luồng tùy chỉnh đang trùng khớp cấu hình chuẩn khuyến nghị (16 khung, 0ms, Ưu tiên khung quan trọng): Đạt tốc độ 30.0 FPS và độ chính xác 100%.
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- 1. Khung Hình Video Render Nhánh Z (16:9) -->
+                        <!-- 1. Khung Hình Camera Luồng Tùy Chỉnh (16:9) -->
                         <div class="pcol-video-card">
                             <div class="pcol-viewport">
                                 <canvas id="live-split-z-canvas" width="1280" height="720"></canvas>
+                                <div id="live-split-z-offline" class="split-cam-offline hidden">
+                                    <span class="offline-icon"><svg class="ui-icon empty-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
+                                    <strong>Camera đang tạm dừng</strong>
+                                    <span>Nhấn "Bật / Tắt Camera" để phát luồng hình ảnh thời gian thực trên cả 2 cột</span>
+                                    <button class="btn btn-xs btn-primary" onclick="toggleCamera('start')">Bật Camera Ngay</button>
+                                </div>
                             </div>
                             <div class="pcol-telemetry-strip mono">
                                 <span>Tốc độ: <strong id="live-split-z-fps">30.0 FPS</strong></span>
@@ -646,29 +547,56 @@
                             </div>
                         </div>
 
-                        <!-- 2. Bản Báo Cáo Hội Chẩn & Nhật Ký AI Nhánh Z -->
-                        <div class="pcol-ai-report-card">
-                            <div class="pcol-section-title">
-                                <span>BÁO CÁO HỘI CHẨN &amp; NHẬN DIỆN AI — NHÁNH ĐÃ CHỈNH (Z)</span>
-                                <span class="badge badge-safe mono" id="live-z-rep-threat">ĐỒNG BỘ 100% VỚI Y</span>
-                            </div>
-                            <div class="pcol-ai-summary-grid">
-                                <div class="pcol-ai-field">
-                                    <span class="paf-label">Tư thế &amp; Hành vi ghi nhận trên Z:</span>
-                                    <strong class="paf-val" id="live-z-rep-posture">Đồng bộ với nhánh chuẩn Y</strong>
-                                </div>
-                                <div class="pcol-ai-field">
-                                    <span class="paf-label">Độ bảo toàn dữ liệu cho AI:</span>
-                                    <strong class="paf-val mono" id="live-z-rep-ergo">100% mẫu động học</strong>
-                                </div>
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Hệ quả Hệ điều hành lên Báo cáo AI của Z:</span>
-                                    <p class="paf-desc" id="live-z-rep-pred">Nhánh Z đang ở Điểm Cân Bằng Tối Ưu (Sweet Spot). Hãy bấm "Chỉnh Lại Tài Nguyên Z" để thử nghiệm kịch bản thiếu hụt hoặc dư thừa tài nguyên.</p>
+                        <!-- 2. Bảng Nhật Ký Nhận Diện Tư Thế Công Thái Học & Hành Vi Luồng Tùy Chỉnh (Y hệt cấu trúc Cột Trái) -->
+                        <div class="app-card behavior-log-card split-log-card">
+                            <div class="card-header">
+                                <div class="card-title-group">
+                                    <div class="card-title">
+                                        <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                        <span>NHẬT KÝ NHẬN DIỆN TƯ THẾ &amp; HÀNH VI (LUỒNG TÙY CHỈNH)</span>
+                                        <span class="badge badge-safe mono" id="live-z-rep-threat">ĐỒNG BỘ 100%</span>
+                                    </div>
+                                    <span class="card-subtitle" id="live-z-rep-pred">Khi chỉnh thông số tài nguyên sai lệch, luồng bên phải sẽ bị rớt mẫu động học khiến kết quả chấm điểm và nhận diện hành vi của AI bị sai lệch theo.</span>
                                 </div>
                             </div>
-                            <div class="pcol-log-box">
-                                <div class="pcol-log-header mono">NHẬT KÝ SỰ KIỆN AI SAU KHI QUA HÀNG ĐỢI NHÁNH Z</div>
-                                <div class="pcol-log-list" id="live-z-log-list"></div>
+
+                            <div class="live-session-stats-bar">
+                                <div class="session-stat-pill pill-safe">
+                                    <span class="stat-dot dot-safe"></span>
+                                    <span class="stat-label">An Toàn:</span>
+                                    <strong class="mono" id="live-z-safe-count">0</strong>
+                                </div>
+                                <div class="session-stat-pill pill-warn">
+                                    <span class="stat-dot dot-warn"></span>
+                                    <span class="stat-label">Cần Chú Ý:</span>
+                                    <strong class="mono" id="live-z-warn-count">0</strong>
+                                </div>
+                                <div class="session-stat-pill pill-danger">
+                                    <span class="stat-dot dot-danger"></span>
+                                    <span class="stat-label">Nguy Hiểm:</span>
+                                    <strong class="mono" id="live-z-danger-count">0</strong>
+                                </div>
+                                <div class="session-stat-pill pill-ergo">
+                                    <span class="stat-label">Công Thái Học:</span>
+                                    <strong class="mono" id="live-z-rep-ergo">94 / 100</strong>
+                                </div>
+                            </div>
+
+                            <div class="log-table-wrapper split-table-wrapper">
+                                <table class="behavior-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 74px;">STT / MÃ</th>
+                                            <th style="width: 82px;">THỜI GIAN</th>
+                                            <th style="width: 115px;">TẦNG MÔ HÌNH</th>
+                                            <th style="width: 145px;">TƯ THẾ CÔNG THÁI HỌC</th>
+                                            <th>MÔ TẢ NGỮ CẢNH</th>
+                                            <th style="width: 165px;">DỰ ĐOÁN 4S TỚI</th>
+                                            <th style="width: 100px; text-align: center;">BẰNG CHỨNG ẢNH</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="live-z-log-list"></tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -853,65 +781,10 @@
                     </label>
                 </div>
 
-                <!-- Standardized Pre-Flight OS Resource Setup for Parallel Split (Y || Z) -->
-                <div class="preflight-os-setup-card" id="trimmer-os-setup-box">
-                    <div class="preflight-os-header">
-                        <div class="preflight-os-title-wrap">
-                            <span class="os-lab-badge">BƯỚC CHUẨN HÓA TÀI NGUYÊN NHÁNH Z</span>
-                            <strong>Thiết lập cấu hình Hệ điều hành cho Nhánh Điều chỉnh (Z) trước khi Chiếu Song Song (Y ‖ Z)</strong>
-                        </div>
-                        <span class="preflight-quota-pill mono">0 Extra Gemini API Calls · Tái sử dụng Keyframe 100%</span>
-                    </div>
-                    <p class="preflight-os-desc">
-                        Nhánh <strong>Lý tưởng (Y)</strong> được cố định làm chuẩn đối chiếu (<code>N=16 · D=0ms · Drop-Oldest + Priority Keyframe</code>). Hãy chọn kịch bản tài nguyên cho Nhánh <strong>Điều chỉnh (Z)</strong> bên dưới. Khi vào chế độ Chiếu Song Song 50/50 toàn trang, bảng thiết lập này sẽ ẩn hoàn toàn để chỉ hiển thị Video Render và Báo cáo AI của hai nhánh.
-                    </p>
-                    <div class="preflight-preset-row">
-                        <span class="preset-label">Kịch bản Nhánh Z:</span>
-                        <button type="button" class="btn btn-xs btn-outline preflight-z-btn active" id="pf-btn-starvation" onclick="selectPreflightZPreset('starvation', 4, 25, 'block_fifo')">Bão hòa Đệm &amp; Trôi Keyframe (N=4 · 25ms · FIFO)</button>
-                        <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-bufferbloat" onclick="selectPreflightZPreset('bufferbloat', 64, 30, 'block_fifo')">Phình Bộ Đệm Bufferbloat (N=64 · 30ms · FIFO)</button>
-                        <button type="button" class="btn btn-xs btn-outline btn-danger-soft preflight-z-btn" id="pf-btn-stall" onclick="selectPreflightZPreset('stall', 4, 90, 'block_fifo')">Cận biên Treo Luồng (N=4 · 90ms · Circuit Breaker)</button>
-                        <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-optimal" onclick="selectPreflightZPreset('optimal', 16, 0, 'drop_oldest')">Đồng bộ Lý tưởng (N=16 · 0ms · Priority)</button>
-                    </div>
-                    <div class="preflight-custom-grid">
-                        <div class="preflight-field">
-                            <label for="pf-z-buf">Dung lượng hàng đợi <code>N_Z</code> (Frames)</label>
-                            <select id="pf-z-buf" class="os-lab-select mono" onchange="syncPreflightZInputs()">
-                                <option value="2">N = 2 (Cực hẹp — Nghẽn tức thời)</option>
-                                <option value="4" selected>N = 4 (Hẹp — Dễ mất Keyframe)</option>
-                                <option value="8">N = 8 (Trung bình thấp)</option>
-                                <option value="16">N = 16 (Chuẩn Lý tưởng Y)</option>
-                                <option value="32">N = 32 (Đệm lớn)</option>
-                                <option value="64">N = 64 (Phình bộ đệm Bufferbloat)</option>
-                            </select>
-                        </div>
-                        <div class="preflight-field">
-                            <label for="pf-z-delay">Độ trễ Consumer <code>D_Z</code> (ms/frame)</label>
-                            <select id="pf-z-delay" class="os-lab-select mono" onchange="syncPreflightZInputs()">
-                                <option value="0">0 ms (Tốc độ thực 30 FPS)</option>
-                                <option value="15">15 ms (Tải GPU trung bình ~22 FPS)</option>
-                                <option value="25" selected>25 ms (Nghẽn cổ chai ~17 FPS)</option>
-                                <option value="45">45 ms (Quá tải nặng ~12 FPS)</option>
-                                <option value="90">90 ms (Cận biên Treo Luồng — Circuit Breaker)</option>
-                            </select>
-                        </div>
-                        <div class="preflight-field">
-                            <label for="pf-z-policy">Chính sách Cấp phát RAM &amp; Keyframe</label>
-                            <select id="pf-z-policy" class="os-lab-select" onchange="syncPreflightZInputs()">
-                                <option value="block_fifo" selected>Block-Producer + FIFO (Dễ trôi Keyframe đỉnh xung đột)</option>
-                                <option value="drop_oldest">Drop-Oldest + Priority Keyframe (Bảo toàn Keyframe quan trọng)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <label class="preflight-auto-split-toggle" for="chk-auto-parallel-split">
-                        <input type="checkbox" id="chk-auto-parallel-split" checked>
-                        <span><strong>Tự động chuyển sang Chế độ Chiếu Song Song Toàn Trang (Y ‖ Z)</strong> ngay sau khi phân tích hoàn tất (ẩn toàn bộ bảng thiết lập, chỉ hiển thị song song Video Render và Báo cáo AI của Y và Z).</span>
-                    </label>
-                </div>
-
                 <!-- Action Button -->
                 <div class="action-launch-row">
                     <button class="btn btn-lg btn-success" id="btn-start-process" onclick="launchProcessing()">
-                        <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span>XÁC NHẬN ĐOẠN ĐÃ CHỌN &amp; KHỞI ĐỘNG PHÂN TÍCH SONG SONG (Y ‖ Z)</span>
+                        <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span>XÁC NHẬN ĐOẠN ĐÃ CHỌN &amp; KHỞI ĐỘNG PHÂN TÍCH</span>
                     </button>
                 </div>
             </div>
@@ -977,83 +850,32 @@
                         <span class="step-num">3</span>
                         <span>KẾT QUẢ KẾT XUẤT: VIDEO GẮN NHÃN SKELETON &amp; BÁO CÁO ĐA LUỒNG HỆ ĐIỀU HÀNH</span>
                     </div>
-                    <div class="export-actions">
+                    <div class="export-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-outline" id="btn-launch-video-parallel" onclick="enterVideoParallelSplit()" title="Chia đôi màn hình 50/50 để tùy chỉnh thông số Hệ điều hành trực tiếp và so sánh kết quả AI">
+                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+                            <span>So Sánh Song Song</span>
+                        </button>
                         <a id="btn-download-mp4" class="btn btn-primary" href="#" download>
                             <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> <span>Tải Video MP4 Đã Dán Nhãn</span>
                         </a>
                     </div>
                 </div>
 
-                <!-- Interactive Timeline Heatmap Bar & Dual-Track OS Comparison (Y vs Z) -->
+                <!-- Interactive Timeline Heatmap Bar -->
                 <div class="results-heatmap-wrapper">
                     <div class="heatmap-header">
                         <div class="heatmap-title">
-                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> <span>ĐỐI CHỨNG DÒNG THỜI GIAN 2 NHÁNH: LÝ TƯỞNG (Y) vs THỰC NGHIỆM HỆ ĐIỀU HÀNH (Z)</span>
-                            <span class="heatmap-sub">Bấm vào phân đoạn bất kỳ để tua nhanh · Điều chỉnh tham số HĐH của nhánh Z bên dưới để quan sát hiện tượng rơi khung hoặc trôi sự kiện</span>
+                            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> <span>BẢN ĐỒ NHIỆT DÒNG THỜI GIAN &amp; MỨC ĐỘ RỦI RO</span>
+                            <span class="heatmap-sub">Bấm vào phân đoạn bất kỳ để tua nhanh đến thời điểm xảy ra biến cố</span>
                         </div>
                         <div class="heatmap-legend">
                             <span class="legend-item"><span class="legend-dot dot-safe"></span> An toàn</span>
                             <span class="legend-item"><span class="legend-dot dot-warn"></span> Cảnh báo</span>
                             <span class="legend-item"><span class="legend-dot dot-danger"></span> Nguy cơ cao</span>
-                            <span class="legend-item"><span class="legend-dot dot-dropped"></span> Bị rớt / Trôi khỏi RAM (Nhánh Z)</span>
                         </div>
-                    </div>
-
-                    <div class="dual-track-label-row">
-                        <span class="track-badge track-badge-y mono">RÃNH 1 · CHUẨN LÝ TƯỞNG (Y: N=16 · 0ms · Priority Keyframe)</span>
-                        <span class="track-stat mono" id="track-y-summary">Bảo toàn 100% phân đoạn biến cố</span>
                     </div>
                     <div class="heatmap-bar" id="timeline-heatmap-bar"></div>
-
-                    <div class="dual-track-label-row" style="margin-top: 10px;">
-                        <span class="track-badge track-badge-z mono" id="track-z-badge-title">RÃNH 2 · THỰC NGHIỆM HĐH (Z: N=16 · 0ms · Priority)</span>
-                        <span class="track-stat mono" id="track-z-summary">Đồng bộ 100% với nhánh chuẩn Y</span>
-                    </div>
-                    <div class="heatmap-bar heatmap-bar-z" id="timeline-heatmap-bar-z"></div>
                     <div class="heatmap-time-axis" id="heatmap-time-axis"></div>
-
-                    <!-- BƯỚC 1 (TAB 2): KHUNG CHUẨN HÓA THIẾT LẬP TÀI NGUYÊN NHÁNH Z TRƯỚC KHI CHIẾU SONG SONG -->
-                    <div class="video-os-z-controls-bar" id="video-os-setup-box">
-                        <div class="voz-control-item">
-                            <label class="mono" for="vid-z-cap-slider">Dung lượng Buffer Z (<strong id="vid-z-cap-val">N = 16</strong>):</label>
-                            <input type="range" id="vid-z-cap-slider" class="os-lab-slider" min="2" max="64" step="2" value="16" oninput="onVideoZControlInput()" />
-                        </div>
-                        <div class="voz-control-item">
-                            <label class="mono" for="vid-z-delay-slider">Độ trễ Consumer Z (<strong id="vid-z-delay-val">0 ms</strong>):</label>
-                            <input type="range" id="vid-z-delay-slider" class="os-lab-slider" min="0" max="200" step="5" value="0" oninput="onVideoZControlInput()" />
-                        </div>
-                        <div class="voz-control-item">
-                            <label class="mono" for="vid-z-policy-select">Chính sách Trục xuất RAM Z:</label>
-                            <select id="vid-z-policy-select" class="os-lab-select mono" onchange="onVideoZControlInput()">
-                                <option value="drop_oldest" selected>Drop-Oldest + Priority (Chuẩn Y)</option>
-                                <option value="block_fifo">Block-Producer + FIFO (Dễ trôi khung)</option>
-                            </select>
-                        </div>
-                        <div class="voz-actions">
-                            <button class="btn btn-xs btn-outline" onclick="applyVideoZUnderProvisionPreset()" title="Thiết lập Nhánh Z thiếu hụt bộ đệm (N=4, 75ms, FIFO) để thấy rõ sự kiện bị bỏ sót">Cấu Hình Z Nghẽn / Trôi Khung</button>
-                            <button class="btn btn-xs btn-outline" onclick="resetToHardwareOptimal()">Khôi Phục Chuẩn Y</button>
-                            <button class="btn btn-sm btn-primary" id="btn-launch-video-parallel" onclick="enterVideoParallelSplit()">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-                                <span>Bắt Đầu Chiếu Song Song Toàn Trang (Y ‖ Z)</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Thẻ tổng hợp sai biệt đầu ra giữa Nhánh Y và Nhánh Z -->
-                    <div class="video-os-diff-card" id="video-os-diff-card">
-                        <div class="vod-item">
-                            <span class="vod-label">Độ khớp biến cố (Z so với Y):</span>
-                            <strong class="mono tag-safe" id="vod-retention-val">100% (Không bỏ sót biến cố nào)</strong>
-                        </div>
-                        <div class="vod-item">
-                            <span class="vod-label">Hiệu ứng bộ đệm &amp; RAM (Z vs Y):</span>
-                            <strong class="mono" id="vod-ram-diff-val">42.19 MB vs 42.19 MB (1.0x · Cân bằng tối ưu)</strong>
-                        </div>
-                        <div class="vod-item">
-                            <span class="vod-label">Chẩn đoán hệ quả HĐH:</span>
-                            <span id="vod-verdict-text">Nhánh Z vận hành tại Điểm Cân Bằng Tối Ưu (Sweet Spot), giữ nguyên toàn bộ các khung hình đỉnh điểm cho hội chẩn AI.</span>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Segment Focus & Loop Banner -->
@@ -1076,7 +898,7 @@
                         <video id="result-orig-video" controls></video>
                     </div>
                     <div class="player-box" id="annotated-player-box">
-                        <div class="player-label app-text" id="annotated-player-label">VIDEO DÁN NHÃN ĐỘNG HỌC &amp; HÀNH VI (CHUẨN LÝ TƯỞNG Y)</div>
+                        <div class="player-label app-text" id="annotated-player-label">VIDEO DÁN NHÃN ĐỘNG HỌC &amp; HÀNH VI</div>
                         <video id="result-annotated-video" controls></video>
                     </div>
                 </div>
@@ -1352,39 +1174,41 @@
             </div>
 
             <!-- ===================================================================== -->
-            <!-- BƯỚC 2 (TAB 2): KHÔNG GIAN CHIẾU SONG SONG TOÀN TRANG (Y ‖ Z)         -->
-            <!-- Ẩn toàn bộ bảng thiết lập, chia đôi 50/50 từ trên xuống dưới          -->
-            <!-- Chỉ hiển thị Video Render và Bản Báo Cáo AI của 2 nhánh Y và Z        -->
+            <!-- CHẾ ĐỘ SO SÁNH SONG SONG 50/50 (TAB 2: PHÂN TÍCH VIDEO)               -->
+            <!-- Cột Trái: Luồng Chuẩn Khuyến Nghị | Cột Phải: Luồng Tùy Chỉnh Tại Chỗ -->
             <!-- ===================================================================== -->
             <div id="video-parallel-workspace" class="parallel-split-workspace hidden">
                 <div class="parallel-top-bar">
                     <div class="ptb-left">
                         <span class="indicator-pulse"></span>
-                        <strong class="ptb-title">CHẾ ĐỘ ĐỐI CHỨNG SONG SONG TOÀN TRANG (PHÂN TÍCH VIDEO): LÝ TƯỞNG (Y) ┃ ĐÃ ĐIỀU CHỈNH (Z)</strong>
-                        <span class="badge badge-safe mono">0 Token Phát Sinh · Tái Sử Dụng Suy Luận Qua Bộ Lọc HĐH</span>
+                        <strong class="ptb-title">CHẾ ĐỘ SO SÁNH SONG SONG (PHÂN TÍCH VIDEO): LUỒNG CHUẨN KHUYẾN NGHỊ &amp; LUỒNG TÙY CHỈNH TÀI NGUYÊN</strong>
+                        <span class="badge badge-safe mono">Tái Sử Dụng Suy Luận · Không Phát Sinh Thêm Token</span>
                     </div>
                     <div class="ptb-right">
                         <button class="btn btn-xs btn-outline" onclick="toggleSplitVideoPlayback()">Phát / Tạm Dừng Cả 2 Bên</button>
                         <button class="btn btn-xs btn-outline" onclick="restartSplitVideoPlayback()">Phát Lại Từ Đầu</button>
                         <button class="btn btn-xs btn-primary" id="btn-exit-video-parallel" onclick="exitVideoParallelSplit()">
-                            <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/></svg>
-                            <span>Chỉnh Lại Tài Nguyên Z / Thoát Chiếu Song Song</span>
+                            <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            <span>Thoát So Sánh Song Song</span>
                         </button>
                     </div>
                 </div>
 
                 <div class="parallel-columns-grid">
-                    <!-- CỘT TRÁI (50%): TRẠNG THÁI CHUẨN LÝ TƯỞNG (Y) -->
+                    <!-- CỘT TRÁI (50%): LUỒNG CHUẨN KHUYẾN NGHỊ (TỐI ƯU PHẦN CỨNG) -->
                     <div class="parallel-col parallel-col-y">
                         <div class="pcol-header pcol-header-y">
                             <div class="pcol-title-row">
-                                <span class="badge badge-safe mono">NHÁNH TRÁI · LÝ TƯỞNG (Y)</span>
-                                <strong class="pcol-name">Kết Xuất &amp; Hội Chẩn AI Chuẩn Máy RTX 5060</strong>
+                                <span class="badge badge-safe mono">LUỒNG CHUẨN MẶC ĐỊNH</span>
+                                <strong class="pcol-name">Kết Xuất &amp; Hội Chẩn AI Chuẩn Tối Ưu Phần Cứng (RTX 5060)</strong>
                             </div>
-                            <span class="pcol-config-lock mono">N = 16 frames (42.19 MB RAM) · Độ trễ = 0 ms · Priority Keyframe</span>
+                            <div class="pcol-fixed-spec-box">
+                                <span class="pcol-config-lock mono">Bộ đệm: 16 khung hình (42.19 MB RAM) · Độ trễ xử lý: 0 ms · Ưu tiên giữ khung hình đỉnh điểm</span>
+                                <p class="pcol-fixed-note">Luồng bên trái giữ cố định ở thông số tối ưu nhất của máy để bảo toàn 100% khung hình va chạm/biến cố gửi cho AI phân tích.</p>
+                            </div>
                         </div>
 
-                        <!-- 1. Video Render Chuẩn Lý Tưởng Y -->
+                        <!-- 1. Video Render Luồng Chuẩn -->
                         <div class="pcol-video-card">
                             <div class="pcol-viewport">
                                 <video id="split-vid-y-player" controls playsinline></video>
@@ -1395,87 +1219,178 @@
                                 <span>RAM Đệm: <strong>42.19 MB</strong></span>
                             </div>
                             <div class="pcol-mini-timeline-wrap">
-                                <span class="pmt-label mono">Dòng thời gian biến cố Nhánh Y (Bảo toàn 100%):</span>
+                                <span class="pmt-label mono">Bản đồ nhiệt dòng thời gian (Luồng Chuẩn — Bảo toàn 100% sự kiện):</span>
                                 <div class="heatmap-bar" id="split-vid-y-heatmap"></div>
                             </div>
                         </div>
 
-                        <!-- 2. Bản Báo Cáo Hội Chẩn AI Nhánh Y -->
-                        <div class="pcol-ai-report-card">
-                            <div class="pcol-section-title">
-                                <span>BẢN BÁO CÁO HỘI CHẨN AI TOÀN CẢNH — NHÁNH LÝ TƯỞNG (Y)</span>
+                        <!-- 2. Báo Cáo Tổng Hợp AI Luồng Chuẩn (Y hệt giao diện khi không split) -->
+                        <div class="gemini-synthesis-card split-synthesis-card">
+                            <div class="report-header">
+                                <span class="ai-sparkle"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg></span>
+                                <span class="report-title">TỔNG HỢP ĐÁNH GIÁ AN TOÀN &amp; HÀNH VI (LUỒNG CHUẨN)</span>
                                 <span class="badge badge-safe mono" id="split-y-rep-threat">AN TOÀN</span>
                             </div>
-                            <div class="pcol-ai-summary-grid">
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Sự cố &amp; Diễn biến chủ đạo (Y):</span>
-                                    <strong class="paf-val" id="split-y-rep-incident">Đang đồng bộ dữ liệu báo cáo...</strong>
+                            <div class="report-grid">
+                                <div class="report-item full-width">
+                                    <span class="item-label">DIỄN BIẾN CHỦ ĐẠO:</span>
+                                    <span id="split-y-rep-incident" class="rep-val">Đang đồng bộ dữ liệu báo cáo...</span>
                                 </div>
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Nhận định chi tiết từ Mô hình Thị giác Đa phương thức (Y):</span>
-                                    <p class="paf-desc" id="split-y-rep-diagnosis">--</p>
+                                <div class="report-item full-width">
+                                    <span class="item-label">NHẬN ĐỊNH CHI TIẾT:</span>
+                                    <p id="split-y-rep-diagnosis" class="rep-text">--</p>
                                 </div>
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Khuyến nghị xử lý (Y):</span>
-                                    <p class="paf-desc" id="split-y-rep-rec">--</p>
+                                <div class="report-item full-width">
+                                    <span class="item-label">KHUYẾN NGHỊ GIÁM SÁT:</span>
+                                    <p id="split-y-rep-rec" class="rep-action">--</p>
                                 </div>
                             </div>
-                            <div class="pcol-log-box">
-                                <div class="pcol-log-header mono">CHI TIẾT PHÂN ĐOẠN HÀNH VI GHI NHẬN TRÊN NHÁNH Y</div>
-                                <div class="pcol-log-list" id="split-y-segments-list"></div>
+                        </div>
+
+                        <!-- 3. Bảng Danh Sách Phân Đoạn Hành Vi Theo Dòng Thời Gian (Y hệt giao diện khi không split) -->
+                        <div class="app-subcard timeline-segments-subcard split-segments-card">
+                            <div class="segments-header">
+                                <div class="subcard-title"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> DANH SÁCH PHÂN ĐOẠN HÀNH VI (LUỒNG CHUẨN)</div>
+                            </div>
+                            <div class="table-responsive split-table-wrapper">
+                                <table class="app-table timeline-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 110px;">PHÂN ĐOẠN</th>
+                                            <th>BỐI CẢNH &amp; HÀNH VI TỪNG ĐỐI TƯỢNG</th>
+                                            <th style="width: 155px;">MỨC ĐỘ &amp; CHỈ SỐ</th>
+                                            <th style="width: 95px; text-align: center;">BẰNG CHỨNG</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="split-y-segments-list"></tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
 
-                    <!-- CỘT PHẢI (50%): TRẠNG THÁI ĐÃ ĐIỀU CHỈNH TÀI NGUYÊN (Z) -->
+                    <!-- CỘT PHẢI (50%): LUỒNG TÙY CHỈNH TÀI NGUYÊN (CHỈNH TRỰC TIẾP TẠI CHỖ) -->
                     <div class="parallel-col parallel-col-z">
                         <div class="pcol-header pcol-header-z">
                             <div class="pcol-title-row">
-                                <span class="badge badge-warning mono" id="split-vid-z-badge">NHÁNH PHẢI · ĐÃ ĐIỀU CHỈNH (Z)</span>
-                                <strong class="pcol-name" id="split-vid-z-title">Kết Xuất &amp; Hội Chẩn AI Dưới Tác Động Tài Nguyên Z</strong>
+                                <span class="badge badge-warning mono" id="split-vid-z-badge">LUỒNG TÙY CHỈNH TÀI NGUYÊN</span>
+                                <strong class="pcol-name" id="split-vid-z-title">Chỉnh Thông Số Trực Tiếp &amp; Đối Chứng Kết Quả AI Tức Thì</strong>
                             </div>
-                            <span class="pcol-config-lock mono" id="split-vid-z-config-text">N = 16 frames (42.19 MB RAM) · Độ trễ = 0 ms · Priority Keyframe</span>
+                            <span class="pcol-config-lock mono" id="split-vid-z-config-text">Bộ đệm: 16 khung (42.19 MB RAM) · Độ trễ: 0 ms · Ưu tiên giữ khung quan trọng</span>
+
+                            <!-- BẢNG CHỈNH THÔNG SỐ TÀI NGUYÊN NGAY TẠI CỘT PHẢI -->
+                            <div class="split-inline-tuner" id="video-os-setup-box">
+                                <div class="sit-presets-row">
+                                    <span class="sit-preset-label">Kịch bản thử nhanh:</span>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Chuẩn Khuyến Nghị (16 khung · 0ms)</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(4, 45, 'block_fifo')">Thiếu Bộ Đệm &amp; Trôi Sự Kiện (4 khung · 45ms · FIFO)</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(6, 85, 'block_fifo')">Nghẽn Luồng Nặng (6 khung · 85ms · FIFO)</button>
+                                    <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 35, 'block_fifo')">Dư Thừa Bộ Nhớ (64 khung · 35ms)</button>
+                                    <button type="button" class="btn btn-xs btn-outline btn-stall-demo" onclick="simulateControlledStall()">Giả Lập Quá Tải Cận Biên</button>
+                                </div>
+
+                                <div class="sit-controls-grid">
+                                    <div class="sit-control-box">
+                                        <div class="sit-ctrl-head">
+                                            <span>Dung lượng Bộ đệm:</span>
+                                            <strong class="mono" id="vid-z-cap-val">16 khung</strong>
+                                        </div>
+                                        <input type="range" id="vid-z-cap-slider" class="os-lab-slider" min="2" max="64" step="2" value="16" oninput="onVideoZControlInput()" />
+                                    </div>
+
+                                    <div class="sit-control-box">
+                                        <div class="sit-ctrl-head">
+                                            <span>Độ trễ Luồng xử lý:</span>
+                                            <strong class="mono" id="vid-z-delay-val">0 ms</strong>
+                                        </div>
+                                        <input type="range" id="vid-z-delay-slider" class="os-lab-slider" min="0" max="200" step="5" value="0" oninput="onVideoZControlInput()" />
+                                    </div>
+
+                                    <div class="sit-control-box">
+                                        <div class="sit-ctrl-head">
+                                            <span>Cơ chế Quản lý Bộ nhớ:</span>
+                                            <strong class="mono">Chính sách RAM</strong>
+                                        </div>
+                                        <select id="vid-z-policy-select" class="os-lab-select mono" onchange="onVideoZControlInput()">
+                                            <option value="drop_oldest" selected>Ưu tiên giữ khung quan trọng (Drop-Oldest)</option>
+                                            <option value="block_fifo">Vào trước ra trước — Dễ trôi dữ liệu (FIFO)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="video-os-diff-card split-diff-compact" id="video-os-diff-card">
+                                    <div class="vod-item">
+                                        <span class="vod-label">Độ bảo toàn sự kiện:</span>
+                                        <strong class="mono tag-safe" id="vod-retention-val">100% (Không bỏ sót biến cố nào)</strong>
+                                    </div>
+                                    <div class="vod-item">
+                                        <span class="vod-label">Tương quan Bộ nhớ RAM:</span>
+                                        <strong class="mono" id="vod-ram-diff-val">42.19 MB vs 42.19 MB (Cân bằng tối ưu)</strong>
+                                    </div>
+                                    <div class="vod-item">
+                                        <span class="vod-label">Hệ quả nhận diện AI:</span>
+                                        <span id="vod-verdict-text">Luồng tùy chỉnh đang giữ nguyên toàn bộ các khung hình đỉnh điểm cho hội chẩn AI.</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- 1. Video Render Nhánh Z -->
+                        <!-- 1. Video Render Luồng Tùy Chỉnh -->
                         <div class="pcol-video-card">
                             <div class="pcol-viewport">
                                 <canvas id="split-vid-z-canvas" width="1280" height="720"></canvas>
                             </div>
                             <div class="pcol-telemetry-strip mono">
-                                <span>Tốc độ Render Z: <strong id="split-vid-z-fps">30.0 FPS</strong></span>
+                                <span>Tốc độ Render: <strong id="split-vid-z-fps">30.0 FPS</strong></span>
                                 <span>Khung Rơi / Trôi: <strong id="split-vid-z-drop">0.0%</strong></span>
-                                <span>RAM Đệm Z: <strong id="split-vid-z-ram">42.19 MB</strong></span>
+                                <span>RAM Đệm: <strong id="split-vid-z-ram">42.19 MB</strong></span>
                             </div>
                             <div class="pcol-mini-timeline-wrap">
-                                <span class="pmt-label mono" id="split-vid-z-tl-label">Dòng thời gian biến cố Nhánh Z (Sau khi đi qua bộ đệm Z):</span>
+                                <span class="pmt-label mono" id="split-vid-z-tl-label">Bản đồ nhiệt dòng thời gian (Luồng Tùy Chỉnh — Đánh dấu đỏ các đoạn bị rớt/trôi):</span>
                                 <div class="heatmap-bar heatmap-bar-z" id="split-vid-z-heatmap"></div>
+                                <div class="hidden" id="timeline-heatmap-bar-z"></div>
                             </div>
                         </div>
 
-                        <!-- 2. Bản Báo Cáo Hội Chẩn AI Nhánh Z -->
-                        <div class="pcol-ai-report-card">
-                            <div class="pcol-section-title">
-                                <span>BẢN BÁO CÁO HỘI CHẨN AI TOÀN CẢNH — NHÁNH ĐÃ CHỈNH (Z)</span>
-                                <span class="badge badge-safe mono" id="split-z-rep-threat">ĐỒNG BỘ VỚI Y</span>
+                        <!-- 2. Báo Cáo Tổng Hợp AI Luồng Tùy Chỉnh (Y hệt giao diện Cột Trái) -->
+                        <div class="gemini-synthesis-card split-synthesis-card">
+                            <div class="report-header">
+                                <span class="ai-sparkle"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg></span>
+                                <span class="report-title">TỔNG HỢP ĐÁNH GIÁ AN TOÀN &amp; HÀNH VI (LUỒNG TÙY CHỈNH)</span>
+                                <span class="badge badge-safe mono" id="split-z-rep-threat">ĐỒNG BỘ 100%</span>
                             </div>
-                            <div class="pcol-ai-summary-grid">
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Sự cố &amp; Diễn biến ghi nhận được trên Nhánh Z:</span>
-                                    <strong class="paf-val" id="split-z-rep-incident">--</strong>
+                            <div class="report-grid">
+                                <div class="report-item full-width">
+                                    <span class="item-label">DIỄN BIẾN CHỦ ĐẠO GHI NHẬN ĐƯỢC:</span>
+                                    <span id="split-z-rep-incident" class="rep-val">--</span>
                                 </div>
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Nhận định chi tiết của AI khi nhận dữ liệu từ Bộ đệm Nhánh Z:</span>
-                                    <p class="paf-desc" id="split-z-rep-diagnosis">--</p>
+                                <div class="report-item full-width">
+                                    <span class="item-label">NHẬN ĐỊNH CHI TIẾT KHI QUA CẤU HÌNH TÀI NGUYÊN NÀY:</span>
+                                    <p id="split-z-rep-diagnosis" class="rep-text">--</p>
                                 </div>
-                                <div class="pcol-ai-field full-span">
-                                    <span class="paf-label">Chẩn đoán hệ quả Hệ điều hành &amp; Khuyến nghị (Z vs Y):</span>
-                                    <p class="paf-desc" id="split-z-rep-rec">--</p>
+                                <div class="report-item full-width">
+                                    <span class="item-label">HỆ QUẢ HỆ ĐIỀU HÀNH &amp; KHUYẾN NGHỊ:</span>
+                                    <p id="split-z-rep-rec" class="rep-action">--</p>
                                 </div>
                             </div>
-                            <div class="pcol-log-box">
-                                <div class="pcol-log-header mono">CHI TIẾT PHÂN ĐOẠN HÀNH VI CÒN LẠI TRONG BỘ NHỚ NHÁNH Z</div>
-                                <div class="pcol-log-list" id="split-z-segments-list"></div>
+                        </div>
+
+                        <!-- 3. Bảng Danh Sách Phân Đoạn Hành Vi Theo Dòng Thời Gian Luồng Tùy Chỉnh (Y hệt cấu trúc Cột Trái) -->
+                        <div class="app-subcard timeline-segments-subcard split-segments-card">
+                            <div class="segments-header">
+                                <div class="subcard-title"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> DANH SÁCH PHÂN ĐOẠN HÀNH VI (LUỒNG TÙY CHỈNH)</div>
+                            </div>
+                            <div class="table-responsive split-table-wrapper">
+                                <table class="app-table timeline-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 110px;">PHÂN ĐOẠN</th>
+                                            <th>BỐI CẢNH &amp; HÀNH VI TỪNG ĐỐI TƯỢNG</th>
+                                            <th style="width: 155px;">MỨC ĐỘ &amp; CHỈ SỐ</th>
+                                            <th style="width: 95px; text-align: center;">BẰNG CHỨNG</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="split-z-segments-list"></tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -1807,6 +1722,6 @@
     <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="custom-toast-container" class="custom-toast-container" aria-live="polite"></div>
 
-    <script src="/static/app.js?v=2.5.0"></script>
+    <script src="/static/app.js?v=2.6.0"></script>
 </body>
 </html>
