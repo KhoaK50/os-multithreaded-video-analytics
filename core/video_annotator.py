@@ -4499,7 +4499,7 @@ class VideoAnnotatorEngine:
         max_streak_frames = max(max_sitting_streaks.values()) if max_sitting_streaks else 0
         yolo_sitting_sec = round(max_streak_frames / input_fps, 1)
         if call_gemini and gem_max_seat_streak_sec > 0:
-            continuous_sitting_sec = round(max(yolo_sitting_sec, min(gem_max_seat_streak_sec, total_frames / max(1.0, input_fps))), 1)
+            continuous_sitting_sec = round(max(yolo_sitting_sec, min(gem_max_seat_streak_sec, target_total_frames / max(1.0, input_fps))), 1)
         else:
             continuous_sitting_sec = yolo_sitting_sec
 

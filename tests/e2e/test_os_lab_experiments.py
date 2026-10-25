@@ -267,32 +267,38 @@ class TestOSLabAPIEndpoints:
         assert ab_over["z_fps"] <= ab_over["y_fps"]
         assert ab_over["z_latency_ms"] > ab_over["y_latency_ms"]
 
-    def test_before_after_curtain_and_dual_track_dom(self):
-        """Kiểm chứng giao diện Before/After Curtain (Y vs Z) và Dual-Track Timeline trên HTML."""
+    def test_full_page_parallel_split_and_preflight_dom(self):
+        """Kiểm chứng giao diện Chiếu Song Song Toàn Trang 50/50 (Y || Z) và Bảng Thiết lập Chuẩn hóa Nhánh Z trên HTML."""
         resp = self.client.get("/")
         assert resp.status_code == 200
         html = resp.text
 
-        # Các thành phần Before/After Curtain & Budget Partitioner bắt buộc có mặt
+        # Các thành phần Full-Page 50/50 Parallel Split (Y || Z) & Pre-Flight Setup bắt buộc có mặt
         required_ids = [
-            'id="live-ab-overlay"',
-            'id="live-ab-after-canvas"',
-            'id="live-ab-curtain-line"',
-            'id="btn-toggle-live-ab"',
+            'id="live-parallel-workspace"',
+            'id="live-split-y-canvas"',
+            'id="live-split-z-canvas"',
+            'id="btn-launch-live-parallel"',
             'id="os-budget-partition-box"',
             'id="budget-seg-y"',
             'id="budget-seg-z"',
             'id="budget-seg-reserve"',
             'id="os-lab-policy-select"',
+            'id="trimmer-os-setup-box"',
+            'id="chk-auto-parallel-split"',
             'id="timeline-heatmap-bar-z"',
             'id="video-os-diff-card"',
-            'id="video-ab-overlay"',
-            'id="video-ab-after-canvas"',
-            'id="video-ab-curtain-line"',
+            'id="video-parallel-workspace"',
+            'id="split-vid-y-player"',
+            'id="split-vid-z-canvas"',
+            'id="split-y-segments-list"',
+            'id="split-z-segments-list"',
         ]
         for marker in required_ids:
             assert marker in html, f"Thiếu thành phần giao diện bắt buộc: {marker}"
 
-        # Đảm bảo không còn modal rời rạc hoặc trích dẫn sách giáo khoa trên UI
+        # Đảm bảo đã gỡ bỏ hoàn toàn thanh kéo rèm Before/After cũ và không còn trích dẫn sách giáo khoa
+        assert 'id="live-ab-overlay"' not in html
+        assert 'id="video-ab-overlay"' not in html
         assert 'id="os-experiment-modal"' not in html
         assert "Silberschatz" not in html

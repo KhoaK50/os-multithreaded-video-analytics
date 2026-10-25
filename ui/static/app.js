@@ -1949,6 +1949,17 @@ function renderResults(result) {
 
     // Render Multi-dimensional Behavior & Risk Analytics Dashboard
     renderBehaviorAnalytics(result.behavior_analytics, currentResultDuration);
+
+    // Đồng bộ cấu hình Pre-Flight Nhánh Z và tự động chuyển sang Chế độ Chiếu Song Song Toàn Trang (Y || Z) nếu được bật
+    if (typeof syncPreflightZInputs === "function") {
+        syncPreflightZInputs(false);
+    }
+    const chkAutoSplit = document.getElementById("chk-auto-parallel-split");
+    if (chkAutoSplit && chkAutoSplit.checked && typeof enterVideoParallelSplit === "function") {
+        setTimeout(() => {
+            enterVideoParallelSplit();
+        }, 120);
+    }
 }
 
 // ==============================================================================
@@ -3395,6 +3406,22 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
     if (d2 && parseInt(d2.value, 10) !== delayVal) d2.value = delayVal;
     if (p2 && p2.value !== policyVal) p2.value = policyVal;
 
+    const pfBuf = document.getElementById("pf-z-buf");
+    const pfDelay = document.getElementById("pf-z-delay");
+    const pfPolicy = document.getElementById("pf-z-policy");
+    if (pfBuf && String(pfBuf.value) !== String(capVal)) {
+        // Pick closest or exact option
+        const opts = Array.from(pfBuf.options).map(o => parseInt(o.value, 10));
+        if (opts.includes(capVal)) pfBuf.value = String(capVal);
+    }
+    if (pfDelay && String(pfDelay.value) !== String(delayVal)) {
+        const opts = Array.from(pfDelay.options).map(o => parseInt(o.value, 10));
+        if (opts.includes(delayVal)) pfDelay.value = String(delayVal);
+    }
+    if (pfPolicy && pfPolicy.value !== policyVal) {
+        pfPolicy.value = policyVal;
+    }
+
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     safeSetText("os-lab-cap-display", `N = ${capVal} (RAM: ${ramMb} MB)`);
     safeSetText("os-lab-delay-display", `${delayVal} ms`);
@@ -3402,6 +3429,38 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
 
     safeSetText("vid-z-cap-val", `N = ${capVal}`);
     safeSetText("vid-z-delay-val", `${delayVal} ms`);
+}
+
+function selectPreflightZPreset(presetKey, capVal, delayVal, policyVal) {
+    document.querySelectorAll(".preflight-z-btn").forEach(btn => btn.classList.remove("active"));
+    const activeBtn = document.getElementById(`pf-btn-${presetKey}`);
+    if (activeBtn) activeBtn.classList.add("active");
+
+    const pfBuf = document.getElementById("pf-z-buf");
+    const pfDelay = document.getElementById("pf-z-delay");
+    const pfPolicy = document.getElementById("pf-z-policy");
+    if (pfBuf) pfBuf.value = String(capVal);
+    if (pfDelay) pfDelay.value = String(delayVal);
+    if (pfPolicy) pfPolicy.value = policyVal;
+
+    syncAllOSLabControls(capVal, delayVal, policyVal);
+    updateDualModeEvaluation(capVal, delayVal, policyVal);
+    commitOSLabConfig(false);
+}
+
+function syncPreflightZInputs(showNotification = false) {
+    const pfBuf = document.getElementById("pf-z-buf");
+    const pfDelay = document.getElementById("pf-z-delay");
+    const pfPolicy = document.getElementById("pf-z-policy");
+    if (!pfBuf || !pfDelay || !pfPolicy) return;
+
+    const capVal = parseInt(pfBuf.value, 10) || 4;
+    const delayVal = parseInt(pfDelay.value, 10) || 25;
+    const policyVal = pfPolicy.value || "block_fifo";
+
+    syncAllOSLabControls(capVal, delayVal, policyVal);
+    updateDualModeEvaluation(capVal, delayVal, policyVal);
+    commitOSLabConfig(showNotification);
 }
 
 function onOSLabSliderInput() {
@@ -4631,72 +4690,18 @@ function updateLabMemoryDOM(data) {
 }
 
 // ==============================================================================
-// BEFORE / AFTER VERTICAL CURTAIN ENGINE (LIVE CAMERA & IMPORT VIDEO · Y vs Z)
+// FULL-PAGE 50/50 PARALLEL SPLIT-SCREEN ENGINE (Y || Z · ZERO EXTRA GEMINI QUOTA)
 // ==============================================================================
-let isLiveABActive = false;
-let liveABAnimFrameId = null;
+let isLiveParallelActive = false;
+let liveParallelAnimId = null;
 let liveRingBuffer = [];
 const MAX_RING_BUFFER_SLOTS = 48;
 let liveTickCounter = 0;
 
-let isVideoABMode = false;
-let videoABAnimFrameId = null;
+let isVideoParallelActive = false;
+let videoParallelAnimId = null;
 let videoRingBuffer = [];
 let videoTickCounter = 0;
-
-function initCurtainDrag(overlayId, lineId) {
-    const overlay = document.getElementById(overlayId);
-    const line = document.getElementById(lineId);
-    if (!overlay || !line || line.dataset.boundDrag === "true") return;
-    line.dataset.boundDrag = "true";
-
-    let dragging = false;
-
-    function updatePosition(clientX) {
-        const rect = overlay.getBoundingClientRect();
-        if (!rect || rect.width <= 0) return;
-        const relX = Math.max(0, Math.min(rect.width, clientX - rect.left));
-        const pct = Math.max(4, Math.min(96, (relX / rect.width) * 100));
-        overlay.style.setProperty("--curtain-pos", `${pct.toFixed(1)}%`);
-    }
-
-    line.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        dragging = true;
-        line.classList.add("dragging");
-    });
-
-    window.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
-        updatePosition(e.clientX);
-    });
-
-    window.addEventListener("mouseup", () => {
-        if (dragging) {
-            dragging = false;
-            line.classList.remove("dragging");
-        }
-    });
-
-    line.addEventListener("touchstart", (e) => {
-        if (e.touches && e.touches.length > 0) {
-            dragging = true;
-            line.classList.add("dragging");
-        }
-    }, { passive: true });
-
-    window.addEventListener("touchmove", (e) => {
-        if (!dragging || !e.touches || e.touches.length === 0) return;
-        updatePosition(e.touches[0].clientX);
-    }, { passive: true });
-
-    window.addEventListener("touchend", () => {
-        if (dragging) {
-            dragging = false;
-            line.classList.remove("dragging");
-        }
-    });
-}
 
 function pushFrameToRingBuffer(ring, sourceEl, width = 1280, height = 720) {
     const offCanvas = ring.length >= MAX_RING_BUFFER_SLOTS ? ring.shift() : document.createElement("canvas");
@@ -4707,44 +4712,44 @@ function pushFrameToRingBuffer(ring, sourceEl, width = 1280, height = 720) {
         offCtx.drawImage(sourceEl, 0, 0, width, height);
         ring.push(offCanvas);
     } catch (e) {
-        // Ignore cross-origin or unready image draw errors
+        // Ignore unready frame draw
     }
 }
 
 function drawZDiagnosticWatermark(ctx, w, h, st) {
     ctx.save();
     if (st.isStall) {
-        ctx.fillStyle = "rgba(15, 23, 42, 0.55)";
+        ctx.fillStyle = "rgba(15, 23, 42, 0.58)";
         ctx.fillRect(0, 0, w, h);
         ctx.strokeStyle = "#ef4444";
         ctx.lineWidth = 4;
         ctx.strokeRect(4, 4, w - 8, h - 8);
 
         ctx.fillStyle = "rgba(239, 68, 68, 0.92)";
-        ctx.fillRect(w - 430, h - 68, 410, 48);
+        ctx.fillRect(w - 440, h - 68, 420, 48);
         ctx.fillStyle = "#ffffff";
         ctx.font = "700 15px 'JetBrains Mono', monospace";
         ctx.textAlign = "right";
-        ctx.fillText("CIRCUIT BREAKER: KHÓA TRẦN RAM ≤ 50MB", w - 34, h - 44);
+        ctx.fillText("CIRCUIT BREAKER: KHÓA TRẦN RAM ≤ 50MB", w - 30, h - 44);
         ctx.font = "500 12px 'JetBrains Mono', monospace";
-        ctx.fillText(`Đình trệ luồng giả lập · Rơi ${st.zDropPct}% khung`, w - 34, h - 26);
+        ctx.fillText(`Đình trệ luồng giả lập · Rơi ${st.zDropPct}% khung hình`, w - 30, h - 26);
     } else if (st.cap > 16) {
         const ratio = (st.cap / 16.0).toFixed(1);
-        ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
-        ctx.fillRect(w - 390, h - 54, 372, 38);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.80)";
+        ctx.fillRect(w - 400, h - 54, 382, 38);
         ctx.strokeStyle = "#f59e0b";
         ctx.lineWidth = 1.5;
-        ctx.strokeRect(w - 390, h - 54, 372, 38);
+        ctx.strokeRect(w - 400, h - 54, 382, 38);
         ctx.fillStyle = "#fbbf24";
         ctx.font = "700 13px 'JetBrains Mono', monospace";
         ctx.textAlign = "right";
         ctx.fillText(`BUFFERBLOAT TRỄ +${st.zLatencyMs}ms · RAM GẤP ${ratio}x Y`, w - 28, h - 30);
     } else if (st.delay > 0 || st.cap < 16 || st.policy !== "drop_oldest") {
-        ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
-        ctx.fillRect(w - 390, h - 54, 372, 38);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.80)";
+        ctx.fillRect(w - 400, h - 54, 382, 38);
         ctx.strokeStyle = "#f59e0b";
         ctx.lineWidth = 1.5;
-        ctx.strokeRect(w - 390, h - 54, 372, 38);
+        ctx.strokeRect(w - 400, h - 54, 382, 38);
         ctx.fillStyle = "#fcd34d";
         ctx.font = "700 13px 'JetBrains Mono', monospace";
         ctx.textAlign = "right";
@@ -4753,146 +4758,597 @@ function drawZDiagnosticWatermark(ctx, w, h, st) {
     ctx.restore();
 }
 
-function renderLiveABLoop() {
-    if (!isLiveABActive) return;
+function drawSyntheticLivePreview(ctx, w, h, tick, labelText, isDegraded = false) {
+    ctx.fillStyle = "#0b1120";
+    ctx.fillRect(0, 0, w, h);
+
+    // Grid lines
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.12)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 80) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+    }
+    for (let y = 0; y < h; y += 80) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+    }
+
+    // Animated kinematic skeleton avatar so user sees smooth 30 FPS on Y vs stutter/lag on Z even when webcam is off
+    const cx = (w / 2) + Math.sin(tick * 0.06) * 220;
+    const cy = (h / 2) + 20;
+    const armSwing = Math.cos(tick * 0.12) * 42;
+
+    ctx.strokeStyle = isDegraded ? "#f59e0b" : "#10b981";
+    ctx.lineWidth = 4;
+    // Head
+    ctx.beginPath();
+    ctx.arc(cx, cy - 110, 26, 0, Math.PI * 2);
+    ctx.stroke();
+    // Spine
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 84);
+    ctx.lineTo(cx, cy + 20);
+    // Arms
+    ctx.moveTo(cx - 65, cy - 40 + armSwing);
+    ctx.lineTo(cx, cy - 65);
+    ctx.lineTo(cx + 65, cy - 40 - armSwing);
+    // Legs
+    ctx.moveTo(cx - 45, cy + 115);
+    ctx.lineTo(cx, cy + 20);
+    ctx.lineTo(cx + 45, cy + 115);
+    ctx.stroke();
+
+    // Bounding Box
+    ctx.strokeStyle = isDegraded ? "rgba(245, 158, 11, 0.7)" : "rgba(59, 130, 246, 0.75)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - 95, cy - 155, 190, 290);
+
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "600 14px 'JetBrains Mono', monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(labelText, 24, 38);
+}
+
+function updateLiveParallelReportsAndLogs() {
+    const st = osBranchZState;
+    const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
+    const polText = st.policy === "drop_oldest" ? "Drop-Oldest + Priority" : "Block-Producer + FIFO";
+
+    safeSetText("live-split-z-config-text", `N = ${st.cap} frames (${ramMb} MB RAM) · Độ trễ = ${st.delay} ms · ${polText}`);
+    safeSetText("live-split-z-fps", `${st.zFps} FPS`);
+    safeSetText("live-split-z-lat", `~${st.zLatencyMs} ms`);
+    safeSetText("live-split-z-drop", `${st.zDropPct}%`);
+    safeSetText("live-split-z-ram", `${ramMb} MB`);
+
+    // 1. Cập nhật Báo cáo AI Nhánh Y (Chuẩn 100%)
+    const latestPosture = document.getElementById("live-alert-text") ? document.getElementById("live-alert-text").textContent : "Trạng thái: An toàn";
+    const latestErgo = document.getElementById("session-ergo-score") ? document.getElementById("session-ergo-score").textContent : "94 / 100";
+    safeSetText("live-y-rep-posture", latestPosture.replace("Trạng thái:", "").trim() || "Hoạt động ổn định (30.0 FPS)");
+    safeSetText("live-y-rep-ergo", `${latestErgo} (Bảo toàn 100% mẫu)`);
+    safeSetText(
+        "live-y-rep-pred",
+        "Nhánh Y duy trì tốc độ 30.0 FPS với độ trễ tối thiểu 33ms, bảo toàn 100% khung hình đỉnh điểm để AI thẩm định chính xác."
+    );
+
+    // 2. Cập nhật Báo cáo AI Nhánh Z (Phản ánh hệ quả HĐH với 0 Token phát sinh)
+    const zThreatEl = document.getElementById("live-z-rep-threat");
+    if (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest") {
+        if (zThreatEl) {
+            zThreatEl.textContent = "ĐỒNG BỘ 100% VỚI Y";
+            zThreatEl.className = "badge badge-safe mono";
+        }
+        safeSetText("live-z-rep-posture", "Khớp 100% với Nhánh chuẩn Y (Điểm cân bằng tối ưu)");
+        safeSetText("live-z-rep-ergo", "100% mẫu động học (Không rơi khung)");
+        safeSetText(
+            "live-z-rep-pred",
+            "Nhánh Z đang dùng cùng cấu hình khuyến nghị của Y (N=16, 0ms, Priority). Kết quả nhận diện và dự đoán của AI trùng khớp 100%."
+        );
+    } else if (st.cap > 16 && st.delay === 0 && st.policy === "drop_oldest") {
+        const ratio = (st.cap / 16.0).toFixed(1);
+        if (zThreatEl) {
+            zThreatEl.textContent = `DƯ THỪA ${ratio}x RAM · TRỄ +${st.zLatencyMs}ms`;
+            zThreatEl.className = "badge badge-warning mono";
+        }
+        safeSetText("live-z-rep-posture", "Độ chính xác ngang bằng Y (Không thể vượt trần 100% của Y)");
+        safeSetText("live-z-rep-ergo", `Tốn ${ramMb} MB RAM (Gấp ${ratio}x nhánh Y)`);
+        safeSetText(
+            "live-z-rep-pred",
+            `Chứng minh Định luật Điểm Cân Bằng Y: Tăng Buffer Z lên N=${st.cap} không làm AI chính xác hơn Y, nhưng gây lãng phí ${ramMb} MB RAM và tạo độ trễ hàng đợi Bufferbloat ~${st.zLatencyMs}ms.`
+        );
+    } else {
+        const keepPct = Math.max(5, Math.round(100 - st.zDropPct));
+        if (zThreatEl) {
+            zThreatEl.textContent = st.isStall ? "ĐÌNH TRỆ · BỎ SÓT NGHIÊM TRỌNG" : `SUY GIẢM · RƠI ${st.zDropPct}% MẪU`;
+            zThreatEl.className = st.isStall ? "badge badge-danger mono" : "badge badge-warning mono";
+        }
+        safeSetText(
+            "live-z-rep-posture",
+            st.policy === "block_fifo"
+                ? "Nguy cơ Âm tính giả: Khung hình xung đột bị đẩy khỏi RAM bởi chính sách FIFO"
+                : `Bị giật/mất mẫu động học (Chỉ còn ~${st.zFps} FPS so với 30.0 FPS của Y)`
+        );
+        safeSetText("live-z-rep-ergo", `Chỉ giữ được ~${keepPct}% mẫu khung xương`);
+        safeSetText(
+            "live-z-rep-pred",
+            `Do trễ điều phối (${st.delay}ms) và cấu hình bộ đệm Z (N=${st.cap}, ${polText}), AI bên nhánh Z bị mất ${st.zDropPct}% khung hình chuyển tiếp và phản hồi chậm hơn nhánh Y +${st.zLatencyMs}ms.`
+        );
+    }
+
+    // 3. Render danh sách Nhật ký sự kiện cho Cột Y và Cột Z
+    const yList = document.getElementById("live-y-log-list");
+    const zList = document.getElementById("live-z-log-list");
+    const sourceLogs = (typeof cachedLogs !== "undefined" && Array.isArray(cachedLogs) && cachedLogs.length > 0)
+        ? cachedLogs.slice(0, 6)
+        : [
+            { id: "#001", timestamp: "Chu kỳ 01", action: "Ngồi làm việc chuẩn công thái học", description: "Trục cột sống thẳng 92°, vận động tay bình thường.", severity: "safe" },
+            { id: "#002", timestamp: "Chu kỳ 02", action: "Chuyển tiếp cử động nhanh (dE/dt cao)", description: "Phát hiện vung tay / đứng dậy đột ngột trong 0.8s.", severity: "warning" },
+            { id: "#003", timestamp: "Chu kỳ 03", action: "Xung đột / Va chạm thể chất đỉnh điểm", description: "Gia tốc khớp vượt ngưỡng an toàn (Điểm nguy cơ 9.1/10).", severity: "danger" }
+        ];
+
+    if (yList) {
+        yList.innerHTML = sourceLogs.map(item => {
+            const cls = item.severity === "danger" ? "item-danger" : (item.severity === "warning" ? "item-warn" : "");
+            return `
+                <div class="pcol-log-item ${cls}">
+                    <div class="pli-top">
+                        <span class="pli-time mono">${escapeHtml(item.id || "")} · ${escapeHtml(item.timestamp || "")}</span>
+                        <span class="badge ${item.severity === "danger" ? "badge-danger" : (item.severity === "warning" ? "badge-warning" : "badge-safe")} mono">${escapeHtml(item.action || "")}</span>
+                    </div>
+                    <span class="pli-desc">${escapeHtml(item.description || "")}</span>
+                </div>
+            `;
+        }).join("");
+    }
+
+    if (zList) {
+        zList.innerHTML = sourceLogs.map((item, idx) => {
+            const isDroppedOnZ = (
+                (st.policy === "block_fifo" && item.severity === "danger") ||
+                (st.delay >= 60 && idx % 2 === 1) ||
+                (st.cap < 10 && idx === 1)
+            );
+            if (isDroppedOnZ) {
+                return `
+                    <div class="pcol-log-item item-dropped">
+                        <div class="pli-top">
+                            <span class="pli-time mono">${escapeHtml(item.id || "")} · ${escapeHtml(item.timestamp || "")}</span>
+                            <span class="badge badge-danger mono">BỊ BỎ SÓT TRÊN NHÁNH Z</span>
+                        </div>
+                        <span class="pli-desc">Sự kiện "${escapeHtml(item.action || "")}" bị rơi khỏi hàng đợi (Rơi ${st.zDropPct}% khung) hoặc bị đẩy khỏi RAM (${polText}) trước khi tới chu kỳ hội chẩn AI.</span>
+                    </div>
+                `;
+            }
+            const delayTag = (st.cap > 16 || st.delay > 0) ? ` (Trễ hàng đợi +${st.zLatencyMs}ms)` : "";
+            const cls = item.severity === "danger" ? "item-danger" : (item.severity === "warning" ? "item-warn" : "");
+            return `
+                <div class="pcol-log-item ${cls}">
+                    <div class="pli-top">
+                        <span class="pli-time mono">${escapeHtml(item.id || "")} · ${escapeHtml(item.timestamp || "")}${delayTag}</span>
+                        <span class="badge ${item.severity === "danger" ? "badge-danger" : (item.severity === "warning" ? "badge-warning" : "badge-safe")} mono">${escapeHtml(item.action || "")}</span>
+                    </div>
+                    <span class="pli-desc">${escapeHtml(item.description || "")}</span>
+                </div>
+            `;
+        }).join("");
+    }
+}
+
+function renderLiveParallelLoop() {
+    if (!isLiveParallelActive) return;
     liveTickCounter += 1;
 
     const liveImg = document.getElementById("live-stream-img");
-    const canvas = document.getElementById("live-ab-after-canvas");
-    if (canvas) {
-        const ctx = canvas.getContext("2d");
-        const w = canvas.width || 1280;
-        const h = canvas.height || 720;
-        const st = osBranchZState;
+    const yCanvas = document.getElementById("live-split-y-canvas");
+    const zCanvas = document.getElementById("live-split-z-canvas");
+    const st = osBranchZState;
 
-        const hasLiveFrame = liveImg && liveImg.complete && liveImg.naturalWidth > 10;
-        if (hasLiveFrame) {
+    const hasLiveFrame = liveImg && liveImg.complete && liveImg.naturalWidth > 10 && !document.getElementById("cam-offline-overlay")?.classList.contains("cam-offline-active");
+    const camOnline = liveImg && liveImg.src && liveImg.src.includes("/api/stream/live") && liveImg.complete && liveImg.naturalWidth > 10;
+
+    if (yCanvas) {
+        const yCtx = yCanvas.getContext("2d");
+        const w = yCanvas.width || 1280;
+        const h = yCanvas.height || 720;
+        if (camOnline) {
+            yCtx.drawImage(liveImg, 0, 0, w, h);
             pushFrameToRingBuffer(liveRingBuffer, liveImg, w, h);
+        } else {
+            drawSyntheticLivePreview(yCtx, w, h, liveTickCounter, "MÔ PHỎNG ĐỘNG HỌC TRỰC TIẾP · NHÁNH CHUẨN Y (30.0 FPS · 0% RƠI KHUNG)", false);
+            pushFrameToRingBuffer(liveRingBuffer, yCanvas, w, h);
         }
+    }
 
-        // Chỉ cập nhật khung hình trên nhánh Z theo chu kỳ zSkipStride (mô phỏng rơi khung / giật hình thực tế)
+    if (zCanvas) {
+        const zCtx = zCanvas.getContext("2d");
+        const w = zCanvas.width || 1280;
+        const h = zCanvas.height || 720;
         const shouldRefreshZ = !st.isStall && (liveTickCounter % Math.max(1, st.zSkipStride) === 0);
+
         if (shouldRefreshZ || liveTickCounter <= 2) {
             if (liveRingBuffer.length > 0) {
                 const lagIdx = Math.max(0, liveRingBuffer.length - 1 - st.zLagSlots);
-                const chosenFrame = liveRingBuffer[lagIdx] || liveRingBuffer[liveRingBuffer.length - 1];
-                ctx.clearRect(0, 0, w, h);
-                ctx.drawImage(chosenFrame, 0, 0, w, h);
-            } else {
-                // Vẽ lưới mô phỏng trực quan khi camera đang tắt để người dùng vẫn kéo thử thanh Before/After được
-                ctx.fillStyle = "#0f172a";
-                ctx.fillRect(0, 0, w, h);
-                const pulseX = ((liveTickCounter * 6) % (w - 160)) + 80;
-                ctx.strokeStyle = "rgba(59, 130, 246, 0.35)";
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(pulseX, h / 2, 48, 0, Math.PI * 2);
-                ctx.stroke();
+                const chosen = liveRingBuffer[lagIdx] || liveRingBuffer[liveRingBuffer.length - 1];
+                zCtx.clearRect(0, 0, w, h);
+                zCtx.drawImage(chosen, 0, 0, w, h);
             }
-            drawZDiagnosticWatermark(ctx, w, h, st);
+            drawZDiagnosticWatermark(zCtx, w, h, st);
         } else if (st.isStall) {
-            drawZDiagnosticWatermark(ctx, w, h, st);
+            drawZDiagnosticWatermark(zCtx, w, h, st);
         }
     }
 
-    liveABAnimFrameId = requestAnimationFrame(renderLiveABLoop);
-}
-
-function toggleLiveABComparison() {
-    const overlay = document.getElementById("live-ab-overlay");
-    const btn = document.getElementById("btn-toggle-live-ab");
-    const badge = document.getElementById("live-ab-status-badge");
-    if (!overlay) return;
-
-    initCurtainDrag("live-ab-overlay", "live-ab-curtain-line");
-    isLiveABActive = overlay.classList.toggle("hidden") === false;
-
-    if (btn) btn.classList.toggle("active-toggle", isLiveABActive);
-    if (badge) {
-        badge.textContent = isLiveABActive ? "BẬT" : "TẮT";
-        badge.className = isLiveABActive ? "badge badge-safe mono" : "badge badge-neutral mono";
+    if (liveTickCounter % 20 === 1) {
+        updateLiveParallelReportsAndLogs();
     }
 
-    if (isLiveABActive) {
-        liveRingBuffer = [];
-        liveTickCounter = 0;
-        if (liveABAnimFrameId) cancelAnimationFrame(liveABAnimFrameId);
-        liveABAnimFrameId = requestAnimationFrame(renderLiveABLoop);
-        showToast("Đã bật Thanh Kéo Đối Chứng Before/After (Trái: Lý tưởng Y ┃ Phải: Thực nghiệm Z).", "info");
-    } else if (liveABAnimFrameId) {
-        cancelAnimationFrame(liveABAnimFrameId);
-        liveABAnimFrameId = null;
+    liveParallelAnimId = requestAnimationFrame(renderLiveParallelLoop);
+}
+
+function enterLiveParallelSplit() {
+    const normalContainer = document.querySelector("#tab-live .live-full-container");
+    const splitWorkspace = document.getElementById("live-parallel-workspace");
+    if (!splitWorkspace) return;
+
+    if (normalContainer) normalContainer.classList.add("hidden");
+    closeTelemetryPanel();
+    splitWorkspace.classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    isLiveParallelActive = true;
+    liveRingBuffer = [];
+    liveTickCounter = 0;
+    updateLiveParallelReportsAndLogs();
+
+    if (liveParallelAnimId) cancelAnimationFrame(liveParallelAnimId);
+    liveParallelAnimId = requestAnimationFrame(renderLiveParallelLoop);
+}
+
+function exitLiveParallelSplit() {
+    isLiveParallelActive = false;
+    if (liveParallelAnimId) {
+        cancelAnimationFrame(liveParallelAnimId);
+        liveParallelAnimId = null;
+    }
+    const normalContainer = document.querySelector("#tab-live .live-full-container");
+    const splitWorkspace = document.getElementById("live-parallel-workspace");
+    if (splitWorkspace) splitWorkspace.classList.add("hidden");
+    if (normalContainer) normalContainer.classList.remove("hidden");
+}
+
+// ==============================================================================
+// TAB 2 (IMPORT VIDEO): FULL-PAGE 50/50 PARALLEL SPLIT-SCREEN ENGINE (Y || Z)
+// ==============================================================================
+function populateVideoParallelSplitView() {
+    const st = osBranchZState;
+    const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
+    const polText = st.policy === "drop_oldest" ? "Priority Keyframe" : "Block-FIFO";
+
+    safeSetText("split-vid-z-config-text", `N = ${st.cap} frames (${ramMb} MB RAM) · Độ trễ = ${st.delay} ms · ${polText}`);
+    safeSetText("split-vid-z-fps", `${st.zFps} FPS`);
+    safeSetText("split-vid-z-drop", `${st.zDropPct}%`);
+    safeSetText("split-vid-z-ram", `${ramMb} MB`);
+
+    // 1. Gán nguồn video đã dán nhãn cho #split-vid-y-player
+    const srcPlayer = document.getElementById("result-annotated-video");
+    const yPlayer = document.getElementById("split-vid-y-player");
+    if (yPlayer && srcPlayer && srcPlayer.src && yPlayer.src !== srcPlayer.src) {
+        yPlayer.src = srcPlayer.src;
+        yPlayer.currentTime = srcPlayer.currentTime || 0;
+    }
+
+    // 2. Vẽ thanh Timeline Heatmap cho Cột Trái (Y) và Cột Phải (Z)
+    const yHm = document.getElementById("split-vid-y-heatmap");
+    const zHm = document.getElementById("split-vid-z-heatmap");
+    const hmData = (typeof currentHeatmapData !== "undefined" && Array.isArray(currentHeatmapData) && currentHeatmapData.length > 0)
+        ? currentHeatmapData
+        : [
+            { time: 0, time_str: "00:00", score: 1.2, level: "safe" },
+            { time: 3, time_str: "00:03", score: 8.8, level: "danger" },
+            { time: 6, time_str: "00:06", score: 5.4, level: "warning" },
+            { time: 9, time_str: "00:09", score: 1.0, level: "safe" }
+        ];
+
+    if (yHm) {
+        yHm.innerHTML = "";
+        hmData.forEach((slot) => {
+            const c = document.createElement("div");
+            c.className = `heatmap-cell ${slot.level || "safe"}`;
+            c.title = `[Nhánh Y · ${slot.time_str}] Điểm: ${slot.score} — Bảo toàn 100%`;
+            c.onclick = () => {
+                if (yPlayer) yPlayer.currentTime = slot.time || 0;
+            };
+            yHm.appendChild(c);
+        });
+    }
+
+    if (zHm) {
+        zHm.innerHTML = "";
+        hmData.forEach((slot, idx) => {
+            const c = document.createElement("div");
+            const level = slot.level || "safe";
+            const isRisk = (level === "danger" || level === "warning" || parseFloat(slot.score || 0) >= 4.0);
+            const isDropped = (
+                (st.policy === "block_fifo" && isRisk && idx < Math.floor(hmData.length * 0.68)) ||
+                ((st.cap < 16 || st.delay > 0) && ((idx + 1) % (st.delay >= 80 ? 2 : 3) === 0))
+            );
+            const extra = isDropped ? "heatmap-segment seg-z-dropped" : (st.cap > 16 ? "heatmap-segment seg-z-delayed" : "");
+            c.className = `heatmap-cell ${level} ${extra}`.trim();
+            c.title = isDropped
+                ? `[Nhánh Z · ${slot.time_str}] BỊ RỚT / TRÔI KHỎI RAM`
+                : `[Nhánh Z · ${slot.time_str}] Điểm: ${slot.score}`;
+            c.onclick = () => {
+                if (yPlayer) yPlayer.currentTime = slot.time || 0;
+            };
+            zHm.appendChild(c);
+        });
+    }
+
+    // 3. Tổng hợp Báo cáo AI cho Cột Trái (Y) và Cột Phải (Z) (0 Token phát sinh!)
+    const res = (typeof currentAnalysisResult !== "undefined" && currentAnalysisResult) ? currentAnalysisResult : {};
+    const gem = res.gemini_report || {};
+    const segs = (typeof currentSegments !== "undefined" && Array.isArray(currentSegments) && currentSegments.length > 0)
+        ? currentSegments
+        : [
+            { segment_id: "#SEG-01", time_range: "00:00 - 00:04", scene_summary: "Các đối tượng di chuyển vào vị trí, bắt đầu xuất hiện va chạm động học.", danger_score: 8.6, severity: "danger" },
+            { segment_id: "#SEG-02", time_range: "00:04 - 00:08", scene_summary: "Tương tác đối kháng trực diện, gia tốc chi trên vượt ngưỡng an toàn.", danger_score: 9.1, severity: "danger" },
+            { segment_id: "#SEG-03", time_range: "00:08 - 00:12", scene_summary: "Các đối tượng tách ra và ổn định lại tư thế trong không gian.", danger_score: 2.0, severity: "safe" }
+        ];
+
+    const yThreatText = document.getElementById("rep-threat-level") ? document.getElementById("rep-threat-level").textContent : (gem.threat_level || "NGUY HIỂM");
+    const yThreatClass = document.getElementById("rep-threat-level") ? document.getElementById("rep-threat-level").className : "badge badge-danger mono";
+    const yIncident = gem.primary_incident || res.peak_danger_reason || "Phát hiện xung đột thể chất / biến cố động học cường độ cao";
+    const yDiagnosis = gem.detailed_diagnosis || "Hệ thống ghi nhận đầy đủ các khung hình đỉnh điểm (Peak Keyframes) và xác định chính xác thời điểm va chạm.";
+    const yRec = gem.recommended_action || "Cần lưu trữ trích đoạn bằng chứng và kiểm tra an ninh tại khu vực.";
+
+    const yThreatBadge = document.getElementById("split-y-rep-threat");
+    if (yThreatBadge) {
+        yThreatBadge.textContent = yThreatText;
+        yThreatBadge.className = `${yThreatClass} mono`;
+    }
+    safeSetText("split-y-rep-incident", yIncident);
+    safeSetText("split-y-rep-diagnosis", yDiagnosis);
+    safeSetText("split-y-rep-rec", yRec);
+
+    const ySegContainer = document.getElementById("split-y-segments-list");
+    if (ySegContainer) {
+        ySegContainer.innerHTML = segs.map(s => {
+            const numScore = parseFloat(s.danger_score || 0);
+            const isDanger = numScore >= 8.0 || s.severity === "danger";
+            const isWarn = !isDanger && (numScore >= 4.0 || s.severity === "warning");
+            const cls = isDanger ? "item-danger" : (isWarn ? "item-warn" : "");
+            const bCls = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
+            return `
+                <div class="pcol-log-item ${cls}">
+                    <div class="pli-top">
+                        <span class="pli-time mono">${escapeHtml(s.segment_id || "")} · [${escapeHtml(s.time_range || "")}]</span>
+                        <span class="badge ${bCls} mono">Điểm: ${numScore.toFixed(1)} / 10</span>
+                    </div>
+                    <span class="pli-desc">${escapeHtml(s.scene_summary || s.context_description || "")}</span>
+                </div>
+            `;
+        }).join("");
+    }
+
+    // 4. Tính toán Báo cáo AI & Danh sách phân đoạn của Nhánh Z sau khi đi qua Hàng đợi & Bộ nhớ RAM của Z
+    let droppedHighRiskCount = 0;
+    let survivingMaxScore = 0.0;
+    const zSegContainer = document.getElementById("split-z-segments-list");
+
+    const zSegHtml = segs.map((s, idx) => {
+        const numScore = parseFloat(s.danger_score || 0);
+        const isDanger = numScore >= 8.0 || s.severity === "danger";
+        const isWarn = !isDanger && (numScore >= 4.0 || s.severity === "warning");
+
+        // Quy tắc lọc OS Queue & RAM Eviction trên nhánh Z:
+        const evictedByFifo = (st.policy === "block_fifo" && (isDanger || isWarn) && idx < Math.max(1, segs.length - 1));
+        const droppedByQueue = ((st.delay >= 45 || st.cap < 10) && (isDanger || idx % 2 === 0));
+        const isLost = evictedByFifo || droppedByQueue;
+
+        if (isLost) {
+            if (isDanger || isWarn) droppedHighRiskCount += 1;
+            const reasonStr = evictedByFifo
+                ? "BỊ TRÔI KHỎI RAM (Chính sách FIFO bị các khung hình bình thường ở cuối video ghi đè mất Keyframe đỉnh điểm)"
+                : `BỊ RỚT KHUNG HÌNH (Nghẽn Consumer ${st.delay}ms / Buffer N=${st.cap} làm đứt gãy chuỗi mẫu động học)`;
+            return `
+                <div class="pcol-log-item item-dropped">
+                    <div class="pli-top">
+                        <span class="pli-time mono">${escapeHtml(s.segment_id || "")} · [${escapeHtml(s.time_range || "")}]</span>
+                        <span class="badge badge-danger mono">BỊ BỎ SÓT TRÊN NHÁNH Z</span>
+                    </div>
+                    <span class="pli-desc"><strong>${reasonStr}:</strong> Phân đoạn "${escapeHtml(s.scene_summary || "")}" không được gửi tới mô hình AI.</span>
+                </div>
+            `;
+        }
+
+        if (numScore > survivingMaxScore) survivingMaxScore = numScore;
+        const cls = isDanger ? "item-danger" : (isWarn ? "item-warn" : "");
+        const bCls = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
+        const lagNote = st.cap > 16 ? ` · Trễ Bufferbloat +${st.zLatencyMs}ms` : "";
+        return `
+            <div class="pcol-log-item ${cls}">
+                <div class="pli-top">
+                    <span class="pli-time mono">${escapeHtml(s.segment_id || "")} · [${escapeHtml(s.time_range || "")}]${lagNote}</span>
+                    <span class="badge ${bCls} mono">Điểm: ${numScore.toFixed(1)} / 10</span>
+                </div>
+                <span class="pli-desc">${escapeHtml(s.scene_summary || s.context_description || "")}</span>
+            </div>
+        `;
+    }).join("");
+
+    if (zSegContainer) zSegContainer.innerHTML = zSegHtml;
+
+    const zThreatBadge = document.getElementById("split-z-rep-threat");
+    if (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest") {
+        if (zThreatBadge) {
+            zThreatBadge.textContent = `${yThreatText} (ĐỒNG BỘ 100% VỚI Y)`;
+            zThreatBadge.className = `${yThreatClass} mono`;
+        }
+        safeSetText("split-z-rep-incident", yIncident);
+        safeSetText("split-z-rep-diagnosis", yDiagnosis);
+        safeSetText(
+            "split-z-rep-rec",
+            "Nhánh Z đang ở Điểm Cân Bằng Tối Ưu (Sweet Spot: N=16, 0ms, Priority). Toàn bộ bằng chứng hình ảnh và kết luận của AI đạt chuẩn 100% như Nhánh Y."
+        );
+    } else if (st.cap > 16 && st.delay === 0 && st.policy === "drop_oldest") {
+        const ratio = (st.cap / 16.0).toFixed(1);
+        if (zThreatBadge) {
+            zThreatBadge.textContent = `${yThreatText} (LÃNG PHÍ ${ratio}x RAM)`;
+            zThreatBadge.className = "badge badge-warning mono";
+        }
+        safeSetText("split-z-rep-incident", `${yIncident} (Chất lượng không vượt hơn Y dù tốn ${ramMb} MB RAM)`);
+        safeSetText("split-z-rep-diagnosis", yDiagnosis);
+        safeSetText(
+            "split-z-rep-rec",
+            `Chứng minh Định luật Điểm Cân Bằng Y: Cấp phát dư thừa N=${st.cap} (${ramMb} MB RAM vs 42.19 MB của Y) KHÔNG làm tăng độ chính xác của Báo cáo AI, nhưng gây trễ hàng đợi Bufferbloat +${st.zLatencyMs}ms.`
+        );
+    } else if (droppedHighRiskCount > 0) {
+        if (zThreatBadge) {
+            zThreatBadge.textContent = "SAI LỆCH CHẨN ĐOÁN (BỎ SÓT BIẾN CỐ)";
+            zThreatBadge.className = "badge badge-danger mono";
+        }
+        safeSetText(
+            "split-z-rep-incident",
+            `Bỏ sót ${droppedHighRiskCount} phân đoạn nguy cơ cao (Điểm tối đa ghi nhận trên Z tụt xuống ${survivingMaxScore.toFixed(1)}/10)`
+        );
+        safeSetText(
+            "split-z-rep-diagnosis",
+            st.policy === "block_fifo"
+                ? "Do Nhánh Z sử dụng chính sách trục xuất FIFO, các khung hình xung đột đỉnh điểm ở đầu/giữa video đã bị các khung hình bình thường ở cuối video đẩy văng khỏi bộ nhớ RAM. Hệ quả: Mô hình AI chỉ nhận được các khung ảnh tĩnh cuối video và đưa ra kết luận Âm tính giả (An toàn giả tạo)."
+                : `Do Nhánh Z bị nghẽn nhịp Consumer (${st.delay}ms) với bộ đệm N=${st.cap}, luồng xử lý đánh rơi ${st.zDropPct}% khung hình. Các khoảnh khắc va chạm nhanh bị đứt gãy khiến Báo cáo AI không nhận diện được mức độ nghiêm trọng thực sự so với Nhánh Y.`
+        );
+        safeSetText(
+            "split-z-rep-rec",
+            "Khuyến nghị Hệ điều hành: Khôi phục về cấu hình chuẩn RTX 5060 (N=16, Độ trễ 0ms, chính sách Drop-Oldest + Priority Keyframe) để ghim chặt các khung hình nguy cơ cao trong RAM."
+        );
+    } else {
+        if (zThreatBadge) {
+            zThreatBadge.textContent = `TRỄ HỘI CHẨN (+${st.zLatencyMs}ms)`;
+            zThreatBadge.className = "badge badge-warning mono";
+        }
+        safeSetText("split-z-rep-incident", `${yIncident} (Bị trễ phản hồi hàng đợi +${st.zLatencyMs}ms)`);
+        safeSetText("split-z-rep-diagnosis", yDiagnosis);
+        safeSetText(
+            "split-z-rep-rec",
+            `Cấu hình Nhánh Z (N=${st.cap}, Trễ ${st.delay}ms) gây sụt giảm tốc độ xử lý xuống ~${st.zFps} FPS và làm tăng thời gian chờ kết xuất.`
+        );
     }
 }
 
-function renderVideoABLoop() {
-    if (!isVideoABMode) return;
+function renderVideoParallelLoop() {
+    if (!isVideoParallelActive) return;
     videoTickCounter += 1;
 
-    const annotVid = document.getElementById("result-annotated-video");
-    const canvas = document.getElementById("video-ab-after-canvas");
-    if (annotVid && canvas && annotVid.readyState >= 2) {
-        const ctx = canvas.getContext("2d");
-        const w = canvas.width || 1280;
-        const h = canvas.height || 720;
-        const st = osBranchZState;
+    const yPlayer = document.getElementById("split-vid-y-player");
+    const zCanvas = document.getElementById("split-vid-z-canvas");
+    const st = osBranchZState;
 
-        if (!annotVid.paused) {
-            pushFrameToRingBuffer(videoRingBuffer, annotVid, w, h);
-        } else if (videoRingBuffer.length === 0) {
-            pushFrameToRingBuffer(videoRingBuffer, annotVid, w, h);
-        }
+    if (zCanvas) {
+        const zCtx = zCanvas.getContext("2d");
+        const w = zCanvas.width || 1280;
+        const h = zCanvas.height || 720;
 
-        const shouldRefreshZ = !st.isStall && (videoTickCounter % Math.max(1, st.zSkipStride) === 0);
-        if (shouldRefreshZ || annotVid.paused || videoTickCounter <= 2) {
-            if (videoRingBuffer.length > 0) {
-                const lagIdx = Math.max(0, videoRingBuffer.length - 1 - st.zLagSlots);
-                const chosen = videoRingBuffer[lagIdx] || videoRingBuffer[videoRingBuffer.length - 1];
-                ctx.clearRect(0, 0, w, h);
-                ctx.drawImage(chosen, 0, 0, w, h);
-            } else {
-                ctx.drawImage(annotVid, 0, 0, w, h);
+        if (yPlayer && yPlayer.readyState >= 2) {
+            if (!yPlayer.paused || videoRingBuffer.length === 0) {
+                pushFrameToRingBuffer(videoRingBuffer, yPlayer, w, h);
             }
-            drawZDiagnosticWatermark(ctx, w, h, st);
+            const shouldRefreshZ = !st.isStall && (videoTickCounter % Math.max(1, st.zSkipStride) === 0);
+            if (shouldRefreshZ || yPlayer.paused || videoTickCounter <= 2) {
+                if (videoRingBuffer.length > 0) {
+                    const lagIdx = Math.max(0, videoRingBuffer.length - 1 - st.zLagSlots);
+                    const chosen = videoRingBuffer[lagIdx] || videoRingBuffer[videoRingBuffer.length - 1];
+                    zCtx.clearRect(0, 0, w, h);
+                    zCtx.drawImage(chosen, 0, 0, w, h);
+                } else {
+                    zCtx.drawImage(yPlayer, 0, 0, w, h);
+                }
+                drawZDiagnosticWatermark(zCtx, w, h, st);
+            }
+        } else {
+            drawSyntheticLivePreview(zCtx, w, h, videoTickCounter, "ĐANG ĐỒNG BỘ LUỒNG VIDEO ĐỐI CHỨNG NHÁNH Z...", true);
+            drawZDiagnosticWatermark(zCtx, w, h, st);
         }
     }
 
-    videoABAnimFrameId = requestAnimationFrame(renderVideoABLoop);
+    videoParallelAnimId = requestAnimationFrame(renderVideoParallelLoop);
 }
 
-function switchResultVideoViewMode(mode = "side") {
-    const grid = document.getElementById("video-side-by-side-grid");
-    const overlay = document.getElementById("video-ab-overlay");
-    const btnSide = document.getElementById("btn-vid-mode-side");
-    const btnAb = document.getElementById("btn-vid-mode-ab");
-    const label = document.getElementById("annotated-player-label");
+function enterVideoParallelSplit() {
+    const splitWorkspace = document.getElementById("video-parallel-workspace");
+    if (!splitWorkspace) return;
 
-    isVideoABMode = (mode === "ab");
-    if (grid) grid.classList.toggle("ab-single-mode", isVideoABMode);
-    if (overlay) overlay.classList.toggle("hidden", !isVideoABMode);
+    // Ẩn toàn bộ các thẻ thiết lập / nạp video / biên tập timeline / báo cáo đơn lẻ để màn hình chỉ còn 2 cột chạy song song từ trên xuống dưới
+    const importCard = document.querySelector("#tab-video .import-card");
+    const timelineSec = document.getElementById("timeline-section");
+    const trimmerSec = document.getElementById("trimmer-section");
+    const procSec = document.getElementById("processing-section");
+    const resSec = document.getElementById("results-section");
 
-    if (btnSide) {
-        btnSide.className = isVideoABMode ? "btn btn-xs btn-outline" : "btn btn-xs btn-primary";
-    }
-    if (btnAb) {
-        btnAb.className = isVideoABMode ? "btn btn-xs btn-primary" : "btn btn-xs btn-outline";
-    }
-    if (label) {
-        label.textContent = isVideoABMode
-            ? "ĐỐI CHỨNG TRỰC TIẾP BEFORE/AFTER: TRÁI (CHUẨN LÝ TƯỞNG Y) ┃ PHẢI (THỰC NGHIỆM HĐH Z)"
-            : "VIDEO DÁN NHÃN ĐỘNG HỌC & HÀNH VI (CHUẨN LÝ TƯỞNG Y)";
+    if (importCard) importCard.classList.add("hidden");
+    if (timelineSec) timelineSec.classList.add("hidden");
+    if (trimmerSec) trimmerSec.classList.add("hidden");
+    if (procSec) procSec.classList.add("hidden");
+    if (resSec) resSec.classList.add("hidden");
+
+    splitWorkspace.classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    isVideoParallelActive = true;
+    videoRingBuffer = [];
+    videoTickCounter = 0;
+    populateVideoParallelSplitView();
+
+    const yPlayer = document.getElementById("split-vid-y-player");
+    if (yPlayer && yPlayer.src) {
+        yPlayer.play().catch(() => {});
     }
 
-    if (isVideoABMode) {
-        initCurtainDrag("video-ab-overlay", "video-ab-curtain-line");
-        videoRingBuffer = [];
-        videoTickCounter = 0;
-        if (videoABAnimFrameId) cancelAnimationFrame(videoABAnimFrameId);
-        videoABAnimFrameId = requestAnimationFrame(renderVideoABLoop);
-    } else if (videoABAnimFrameId) {
-        cancelAnimationFrame(videoABAnimFrameId);
-        videoABAnimFrameId = null;
+    if (videoParallelAnimId) cancelAnimationFrame(videoParallelAnimId);
+    videoParallelAnimId = requestAnimationFrame(renderVideoParallelLoop);
+}
+
+function exitVideoParallelSplit() {
+    isVideoParallelActive = false;
+    if (videoParallelAnimId) {
+        cancelAnimationFrame(videoParallelAnimId);
+        videoParallelAnimId = null;
     }
+    const yPlayer = document.getElementById("split-vid-y-player");
+    if (yPlayer && !yPlayer.paused) yPlayer.pause();
+
+    const splitWorkspace = document.getElementById("video-parallel-workspace");
+    if (splitWorkspace) splitWorkspace.classList.add("hidden");
+
+    const importCard = document.querySelector("#tab-video .import-card");
+    const timelineSec = document.getElementById("timeline-section");
+    const resSec = document.getElementById("results-section");
+    if (importCard) importCard.classList.remove("hidden");
+    if (timelineSec && typeof currentVideoData !== "undefined" && currentVideoData) {
+        timelineSec.classList.remove("hidden");
+    }
+    if (resSec) resSec.classList.remove("hidden");
+}
+
+function toggleSplitVideoPlayback() {
+    const yPlayer = document.getElementById("split-vid-y-player");
+    if (!yPlayer) return;
+    if (yPlayer.paused) {
+        yPlayer.play().catch(() => {});
+    } else {
+        yPlayer.pause();
+    }
+}
+
+function restartSplitVideoPlayback() {
+    const yPlayer = document.getElementById("split-vid-y-player");
+    if (!yPlayer) return;
+    videoRingBuffer = [];
+    yPlayer.currentTime = 0;
+    yPlayer.play().catch(() => {});
 }
 
 // ==============================================================================
@@ -5079,3 +5535,13 @@ window.toggleLiveABComparison = toggleLiveABComparison;
 window.switchResultVideoViewMode = switchResultVideoViewMode;
 window.renderHeatmapZTrack = renderHeatmapZTrack;
 window.initCurtainDrag = initCurtainDrag;
+
+window.enterLiveParallelSplit = enterLiveParallelSplit;
+window.exitLiveParallelSplit = exitLiveParallelSplit;
+window.enterVideoParallelSplit = enterVideoParallelSplit;
+window.exitVideoParallelSplit = exitVideoParallelSplit;
+window.toggleSplitVideoPlayback = toggleSplitVideoPlayback;
+window.restartSplitVideoPlayback = restartSplitVideoPlayback;
+window.populateVideoParallelSplitView = populateVideoParallelSplitView;
+window.selectPreflightZPreset = selectPreflightZPreset;
+window.syncPreflightZInputs = syncPreflightZInputs;
