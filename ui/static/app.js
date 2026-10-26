@@ -714,7 +714,7 @@ function renderBehaviorTable(logs) {
                         src="${escapeHtml(item.snapshot_url)}" 
                         alt="${escapeHtml(item.action)}" 
                         class="snapshot-thumb"
-                        onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}')"
+                        onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}', '${escapeJsArg(item.model_tier || 'tier_1')}')"
                         title="Nhấn để phóng to ảnh chứng cứ và xem chi tiết"
                     />
                 </td>
@@ -799,7 +799,18 @@ function exportLogsToCSV() {
 // ==============================================================================
 // SNAPSHOT MODAL VIEWER
 // ==============================================================================
-function openSnapshotModal(url, code, action, time, desc, pred) {
+function getModelTierFullLabel(tierKey) {
+    const key = String(tierKey || "").toLowerCase();
+    if (key.includes("tier_2") || key.includes("3.5") || key.includes("1.5")) {
+        return "Mô hình 2 (Dự phòng) — gemini-3-flash-preview";
+    }
+    if (key.includes("local") || key.includes("heuristic") || key.includes("tier_3")) {
+        return "Mô hình 3 (Nội bộ) — YOLOv8-Pose cục bộ";
+    }
+    return "Mô hình 1 (Chính) — gemini-3.1-flash-lite";
+}
+
+function openSnapshotModal(url, code, action, time, desc, pred, modelTier = "tier_1") {
     const modal = document.getElementById("snapshot-modal");
     if (!modal) return;
 
@@ -811,6 +822,9 @@ function openSnapshotModal(url, code, action, time, desc, pred) {
     
     const predEl = document.getElementById("modal-pred");
     if (predEl) predEl.textContent = pred || "Duy trì trạng thái trong 4 giây tiếp theo";
+
+    const tierEl = document.getElementById("modal-model-tier");
+    if (tierEl) tierEl.textContent = getModelTierFullLabel(modelTier);
 
     const downloadLink = document.getElementById("modal-download-link");
     if (downloadLink) {
@@ -5591,7 +5605,7 @@ function updateLiveParallelReportsAndLogs() {
             const rowClass = isDanger ? "row-danger" : "";
             const predText = item.prediction_next_4s || "Duy trì ổn định 4s tới";
             const snapHtml = item.snapshot_url
-                ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
+                ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}', '${escapeJsArg(item.model_tier || 'tier_1')}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -5625,7 +5639,7 @@ function updateLiveParallelReportsAndLogs() {
             const badgeClass = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
             const predText = item.prediction_next_4s || "Duy trì ổn định 4s tới";
             const snapHtml = item.snapshot_url
-                ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
+                ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}', '${escapeJsArg(item.model_tier || 'tier_1')}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -5661,7 +5675,7 @@ function updateLiveParallelReportsAndLogs() {
             ? "filter: blur(1.6px) contrast(0.82) saturate(0.5); border: 1px solid var(--accent-crimson);"
             : (sev === 2 ? "filter: contrast(0.9) saturate(0.8); border: 1px solid var(--accent-amber);" : "");
         const snapHtml = snapUrl
-            ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(narr.action)}" class="snapshot-thumb" style="${thumbStyle}" onclick="openSnapshotModal('${escapeJsArg(snapUrl)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(narr.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(narr.desc)}', '${escapeJsArg(narr.pred)}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
+            ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(narr.action)}" class="snapshot-thumb" style="${thumbStyle}" onclick="openSnapshotModal('${escapeJsArg(snapUrl)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(narr.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(narr.desc)}', '${escapeJsArg(narr.pred)}', '${escapeJsArg(item.model_tier || 'tier_1')}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
             : `<span class="mono text-muted">--</span>`;
 
         return `

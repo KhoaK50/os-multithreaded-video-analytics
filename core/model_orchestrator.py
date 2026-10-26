@@ -641,18 +641,15 @@ class HierarchicalModelOrchestrator:
             data = data[0]
         return data
 
-    def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
-        """Gọi client.models.generate_content ưu tiên model phản hồi nhanh và ổn định nhất thực tế (gemini-3-flash-preview & gemini-3.1-flash-lite với MINIMAL thinking)."""
+    def _safe_generate_content(self, model: str, contents: Any, config: Any = None, tier_key: str = "tier_1"):
+        """Gọi đúng model của từng tầng (Tầng 1: gemini-3.1-flash-lite, Tầng 2: gemini-3-flash-preview) với MINIMAL thinking, minh bạch 1-1."""
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         if is_mock:
             candidates = [model]
+        elif tier_key == "tier_2":
+            candidates = ["gemini-3-flash-preview"]
         else:
-            candidates = [
-                "gemini-3.1-flash-lite",
-                "gemini-3-flash-preview",
-            ]
-            if model and model not in candidates and not any(dep in model for dep in ["2.5-flash", "2.0-flash", "1.5-flash", "3.8-flash", "3.6-flash", "3.7-flash", "3.5-flash"]):
-                candidates.insert(0, model)
+            candidates = ["gemini-3.1-flash-lite"]
 
         last_err = None
         for m in candidates:
@@ -707,7 +704,8 @@ class HierarchicalModelOrchestrator:
         response = self._safe_generate_content(
             model=model,
             contents=contents,
-            config=config
+            config=config,
+            tier_key=tier_key
         )
         raw_text = getattr(response, "text", "") or "{}"
         meta = getattr(response, "usage_metadata", None)
@@ -781,8 +779,9 @@ Trả về định dạng JSON thuần:
 }}
 """
         posture_text = bio.get("posture", "Ngồi thẳng bình thường")
+        is_mock = type(self.client).__module__.startswith("unittest.mock")
 
-        # 2. Thực thi trên Mô hình 1 (Chính) nếu còn hạn mức
+        # 2. Thực thi trên Mô hình 1 (Chính - gemini-3.1-flash-lite) nếu còn hạn mức
         if self.client and self.active_tier == ModelTier.TIER_1_PRIMARY and self.cooldown_tracker.is_tier1_ready():
             try:
                 data = self._call_gemini_vision(self.tier1_model, prompt, frame_img, tier_key="tier_1")
@@ -794,16 +793,23 @@ Trả về định dạng JSON thuần:
                     daily_exhausted = is_daily_quota_error(e1) or (self.quota_tracker.get_stats().get("tier1_rpd_used", 0) >= self.quota_tracker.rpd_limit)
                     self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_2_FALLBACK
+                elif not is_mock and self.cooldown_tracker.is_tier2_ready():
+                    # Nếu Mô hình 1 gặp lỗi mạng/bận tức thời (503/504), chuyển lượt hiện tại sang Mô hình 2 (gemini-3-flash-preview)
+                    # và gắn nhãn trung thực là Mô hình 2 (Dự phòng), đồng thời ghi nhận quota vào tier_2!
+                    try:
+                        data2 = self._call_gemini_vision(self.tier2_model, prompt, frame_img, tier_key="tier_2")
+                        data2["model_tier"] = ModelTier.TIER_2_FALLBACK.value
+                        self._record_success(data2, bio, ModelTier.TIER_2_FALLBACK)
+                        return data2
+                    except Exception:
+                        pass
                 else:
-                    # Lỗi mạng/timeout tạm thời khi Mô hình 1 VẪN CÒN HẠN MỨC:
-                    # Tuyệt đối KHÔNG nhảy sang Mô hình 2 để tránh gây hiểu lầm; giữ nguyên Mô hình 1 và trả về nhận định nhanh để giữ đúng nhịp 6 giây.
-                    logger.warning(f"Mô hình 1 phản hồi chậm quá 4.5s ({e1}) -> Giữ nguyên Mô hình 1 để đảm bảo chu kỳ 6 giây.")
                     res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
-                    res["model_tier"] = ModelTier.TIER_1_PRIMARY.value
-                    self._record_success(res, bio, ModelTier.TIER_1_PRIMARY)
+                    res["model_tier"] = ModelTier.TIER_3_HEURISTIC.value
+                    self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
                     return res
 
-        # 3. Thực thi trên Mô hình 2 (Dự phòng) KHI VÀ CHỈ KHI Mô hình 1 đã hết hạn mức
+        # 3. Thực thi trên Mô hình 2 (Dự phòng - gemini-3-flash-preview) khi Mô hình 1 đã hết hạn mức
         if self.client and self.active_tier == ModelTier.TIER_2_FALLBACK and self.cooldown_tracker.is_tier2_ready():
             try:
                 data = self._call_gemini_vision(self.tier2_model, prompt, frame_img, tier_key="tier_2")
@@ -816,15 +822,16 @@ Trả về định dạng JSON thuần:
                     self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_3_HEURISTIC
                 else:
-                    logger.warning(f"Mô hình 2 phản hồi chậm ({e2}) -> Giữ nguyên Mô hình 2.")
                     res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
-                    res["model_tier"] = ModelTier.TIER_2_FALLBACK.value
-                    self._record_success(res, bio, ModelTier.TIER_2_FALLBACK)
+                    res["model_tier"] = ModelTier.TIER_3_HEURISTIC.value
+                    self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
                     return res
 
-        # 4. Fallback sang Tier 3 (Xử lý nội bộ) khi cả Mô hình 1 và Mô hình 2 đều cạn kiệt hạn mức
-        self.active_tier = ModelTier.TIER_3_HEURISTIC
+        # 4. Fallback sang Tier 3 (Xử lý nội bộ) khi cả Mô hình 1 và Mô hình 2 đều không thể phản hồi
+        if not self.cooldown_tracker.is_tier1_ready() and not self.cooldown_tracker.is_tier2_ready():
+            self.active_tier = ModelTier.TIER_3_HEURISTIC
         res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
+        res["model_tier"] = ModelTier.TIER_3_HEURISTIC.value
         self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
         return res
 

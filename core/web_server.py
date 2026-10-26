@@ -1501,8 +1501,8 @@ def get_telemetry():
         curr_ergo = 58.0
 
     quota_stats = tier_info.get("quota_stats") or MODEL_ORCHESTRATOR.quota_tracker.get_stats()
-    tier1_m = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
-    tier2_m = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-3.5-flash")
+    tier1_m = "gemini-3.1-flash-lite"
+    tier2_m = "gemini-3-flash-preview"
     t1_rpd = quota_stats.get("tier1_rpd_used", quota_stats.get("rpd_used", 0))
     t1_rpm = quota_stats.get("tier1_rpm_used", quota_stats.get("rpm_used", 0))
     t2_rpd = quota_stats.get("tier2_rpd_used", 0)
