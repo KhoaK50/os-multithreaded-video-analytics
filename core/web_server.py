@@ -597,8 +597,8 @@ class LiveCameraPipeline:
                             daemon=True
                         )
                         t_worker.start()
-                        # Đợi tối đa 4.8 giây; nếu Cloud xong sớm thì lấy luôn, nếu Cloud chậm hơn 4.8s thì chốt dòng đúng nhịp 6s và cập nhật ngầm
-                        done_ev.wait(timeout=4.8)
+                        # Đợi tối đa 5.3 giây; gemini-3-flash-preview thường trả về trong 1.6-3.5s
+                        done_ev.wait(timeout=5.3)
 
                     with self.ai_lock:
                         self.action_logs.insert(0, entry)

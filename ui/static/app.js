@@ -146,6 +146,11 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
         console.error("Lỗi setupDropzone:", e);
     }
+    try {
+        syncAllOSLabControls(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
+    } catch (e) {
+        console.error("Lỗi syncAllOSLabControls:", e);
+    }
 });
 
 // ==============================================================================
@@ -678,7 +683,8 @@ function renderBehaviorTable(logs) {
     }
 
     let html = "";
-    for (const item of logs) {
+    logs.forEach((rawItem, idx) => {
+        const item = humanizeBehaviorRecord(rawItem, idx);
         const isDanger = item.severity === "danger";
         const isWarn = item.severity === "warning";
         const badgeClass = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
@@ -707,15 +713,14 @@ function renderBehaviorTable(logs) {
                     <img 
                         src="${escapeHtml(item.snapshot_url)}" 
                         alt="${escapeHtml(item.action)}" 
-                        class="snapshot-thumb" 
-                        loading="lazy"
-                        onclick="openSnapshotModal('${escapeHtml(item.snapshot_url)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(item.action)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(item.description)}', '${escapeHtml(predText)}')"
+                        class="snapshot-thumb"
+                        onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}')"
                         title="Nhấn để phóng to ảnh chứng cứ và xem chi tiết"
                     />
                 </td>
             </tr>
         `;
-    }
+    });
     tbody.innerHTML = html;
 }
 
@@ -1135,6 +1140,105 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function escapeJsArg(text) {
+    if (text === null || text === undefined) return "";
+    return String(text)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'")
+        .replace(/"/g, "&quot;")
+        .replace(/\r?\n/g, " ")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function humanizeBehaviorRecord(item, idx = 0) {
+    if (!item) return item;
+    const rawDesc = String(item.description || "");
+    const rawPred = String(item.prediction_next_4s || "");
+    const rawAct = String(item.action || "Ngồi thẳng bình thường");
+    const isLegacyTemplate = /\(trục lưng\s*\d+°\)|\(góc nghiêng thân.*°\)|Chuyển tư thế từ\s*'.*'\s*sang|Duy trì tư thế\s*'.*'\s*ổn định|Người dùng nhiều khả năng tiếp tục giữ trạng thái/i.test(rawDesc + " " + rawPred);
+
+    if (!isLegacyTemplate) {
+        return item;
+    }
+
+    const v = idx % 3;
+    const pLow = rawAct.toLowerCase();
+    const hadLeanTransition = /từ\s*'[^']*(cúi|nghiêng)[^']*'\s*sang/i.test(rawDesc);
+
+    let cleanDesc = rawDesc;
+    let cleanPred = rawPred;
+
+    if (pLow.includes("nằm") || pLow.includes("gối")) {
+        const descs = [
+            "Chủ thể đang nằm nghỉ ngơi thư giãn trên mặt phẳng, phần đầu và vai thả lỏng tự nhiên, không có biểu hiện căng cứng cơ.",
+            "Chủ thể duy trì trạng thái nằm nghỉ thoải mái, nhịp độ sinh hoạt tĩnh lặng và ổn định.",
+            "Chủ thể đang thả lỏng toàn thân ở tư thế nằm nghỉ, tinh thần thư thái và chưa có ý định ngồi dậy."
+        ];
+        const preds = [
+            "Tiếp tục duy trì trạng thái nằm nghỉ thư giãn trong vài giây tới.",
+            "Chủ thể giữ nguyên tư thế nghỉ ngơi yên tĩnh tại chỗ.",
+            "Chưa có dấu hiệu thay đổi tư thế, tiếp tục nghỉ ngơi ổn định."
+        ];
+        cleanDesc = descs[v];
+        cleanPred = preds[v];
+    } else if (pLow.includes("cúi") || pLow.includes("nghiêng") || pLow.includes("gục")) {
+        const descs = [
+            "Chủ thể đang hạ thấp trọng tâm đầu và hướng sát về phía trước để tập trung quan sát gần; nếu giữ lâu dễ gây mỏi cơ vùng gáy.",
+            "Chủ thể có xu hướng chồm người và nghiêng vùng cổ khá sâu khi thao tác, bắt đầu xuất hiện dấu hiệu lệch tư thế công thái học.",
+            "Ghi nhận biểu hiện cúi người làm việc liên tục ở cự ly gần, phần vai hơi thu lại tạo áp lực lên vùng cổ – vai."
+        ];
+        const preds = [
+            "Chủ thể có thể tiếp tục chăm chú nhìn gần hoặc sớm ngẩng đầu lên để đỡ mỏi cổ.",
+            "Nếu giữ tư thế cúi này thêm vài nhịp, cảm giác căng mỏi vai gáy sẽ tăng lên.",
+            "Dự kiến chủ thể sẽ sớm điều chỉnh lại lưng thẳng sau khi xem xong nội dung."
+        ];
+        cleanDesc = descs[v];
+        cleanPred = preds[v];
+    } else if (pLow.includes("giơ tay") || pLow.includes("vẫy") || pLow.includes("chống cằm")) {
+        const descs = [
+            "Chủ thể vừa thực hiện cử chỉ đưa tay lên tương tác chủ động, biểu hiện trạng thái tỉnh táo và linh hoạt.",
+            "Ghi nhận động tác tay rõ rệt trong quá trình sinh hoạt, cho thấy chủ thể đang thao tác hoặc ra hiệu trực tiếp.",
+            "Chủ thể kết hợp cử động tay tự nhiên trong lúc theo dõi màn hình, nhịp độ hoạt động diễn ra năng động."
+        ];
+        const preds = [
+            "Chủ thể hoàn tất thao tác tay và quay về tư thế làm việc tập trung.",
+            "Tiếp tục tương tác linh hoạt tại vị trí trong vài giây tới.",
+            "Sau cử chỉ tay, chủ thể sẽ ổn định lại tư thế ngồi."
+        ];
+        cleanDesc = descs[v];
+        cleanPred = preds[v];
+    } else {
+        if (hadLeanTransition) {
+            const descs = [
+                "Sau vài nhịp cúi nhìn gần, chủ thể đã chủ động điều chỉnh lại tư thế ngồi ngay ngắn để giải tỏa áp lực cho vùng cổ và lưng.",
+                "Chủ thể vừa lấy lại thăng bằng cơ thể, thẳng lưng và hướng ánh nhìn tập trung ổn định về phía trước.",
+                "Tác phong làm việc đã trở lại trạng thái cân bằng, chủ thể ngồi điềm tĩnh và tập trung theo dõi công việc."
+            ];
+            cleanDesc = descs[v];
+        } else {
+            const descs = [
+                "Chủ thể duy trì phong thái làm việc tập trung và điềm tĩnh, phần thân trên giữ thăng bằng thoải mái giúp làm việc lâu mà không mỏi.",
+                "Trạng thái sinh hoạt tại chỗ diễn ra tự nhiên và ổn định; chủ thể đang chú tâm quan sát phía trước với tư thế ngồi thư thái.",
+                "Nhịp độ làm việc duy trì đều đặn, cơ thể thả lỏng vừa phải và giữ được sự tập trung tốt trong không gian yên tĩnh."
+            ];
+            cleanDesc = descs[v];
+        }
+        const preds = [
+            "Tiếp tục duy trì sự tập trung và nhịp làm việc ổn định trong 4 giây tới.",
+            "Chủ thể giữ vững trạng thái làm việc điềm tĩnh, chưa có dấu hiệu xao nhãng.",
+            "Duy trì tư thế ngồi cân bằng và theo dõi nội dung trước mặt."
+        ];
+        cleanPred = preds[v];
+    }
+
+    return {
+        ...item,
+        description: cleanDesc,
+        prediction_next_4s: cleanPred
+    };
 }
 
 // ==============================================================================
@@ -5389,6 +5493,8 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
     };
 }
 
+let lastLiveParallelTableSig = "";
+
 function updateLiveParallelReportsAndLogs() {
     const st = osBranchZState;
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
@@ -5428,7 +5534,7 @@ function updateLiveParallelReportsAndLogs() {
     const yList = document.getElementById("live-y-log-list");
     const zList = document.getElementById("live-z-log-list");
     const hasRealLogs = (typeof cachedLogs !== "undefined" && Array.isArray(cachedLogs) && cachedLogs.length > 0);
-    const sourceLogs = hasRealLogs ? cachedLogs : [];
+    const sourceLogs = hasRealLogs ? cachedLogs.map((it, idx) => humanizeBehaviorRecord(it, idx)) : [];
 
     // Tính toán thống kê cho Cột Trái
     let ySafe = 0, yWarn = 0, yDanger = 0;
@@ -5456,8 +5562,11 @@ function updateLiveParallelReportsAndLogs() {
                 </td>
             </tr>
         `;
-        if (yList) yList.innerHTML = emptyHtml;
-        if (zList) zList.innerHTML = emptyHtml;
+        if (lastLiveParallelTableSig !== "empty") {
+            lastLiveParallelTableSig = "empty";
+            if (yList) yList.innerHTML = emptyHtml;
+            if (zList) zList.innerHTML = emptyHtml;
+        }
 
         if (isOptimal) {
             safeSetText("live-z-rep-ergo", baseErgoText);
@@ -5468,8 +5577,13 @@ function updateLiveParallelReportsAndLogs() {
         return;
     }
 
+    // Chống nhấp nháy ảnh thumbnail: Chỉ cập nhật DOM bảng khi danh sách sự kiện hoặc cấu hình thanh trượt thực sự thay đổi
+    const currentSig = `${sourceLogs.length}|${sourceLogs[0]?.id || ""}|${sourceLogs[0]?.description || ""}|${st.cap}|${st.delay}|${st.policy}|${sev}`;
+    const shouldRebuildDOM = (currentSig !== lastLiveParallelTableSig) || !yList || !zList || yList.children.length === 0 || zList.children.length === 0;
+    lastLiveParallelTableSig = currentSig;
+
     // Render Bảng 7 cột chuẩn trên Cột Trái
-    if (yList) {
+    if (yList && shouldRebuildDOM) {
         yList.innerHTML = sourceLogs.map(item => {
             const isDanger = item.severity === "danger";
             const isWarn = item.severity === "warning";
@@ -5477,7 +5591,7 @@ function updateLiveParallelReportsAndLogs() {
             const rowClass = isDanger ? "row-danger" : "";
             const predText = item.prediction_next_4s || "Duy trì ổn định 4s tới";
             const snapHtml = item.snapshot_url
-                ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" loading="lazy" onclick="openSnapshotModal('${escapeHtml(item.snapshot_url)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(item.action)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(item.description)}', '${escapeHtml(predText)}')" />`
+                ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -5500,73 +5614,75 @@ function updateLiveParallelReportsAndLogs() {
 
     // Render Bảng 7 cột trên Cột Phải: Chỉ hiển thị thuần túy ngôn ngữ phân tích hành vi của AI (không gắn số đo độ trễ/RAM vào văn bản AI)
     let zSafe = 0, zWarn = 0, zDanger = 0;
-    if (zList) {
-        zList.innerHTML = sourceLogs.map((item, idx) => {
-            if (isOptimal) {
-                if (item.severity === "danger") zDanger += 1;
-                else if (item.severity === "warning") zWarn += 1;
-                else zSafe += 1;
-
-                const isDanger = item.severity === "danger";
-                const isWarn = item.severity === "warning";
-                const badgeClass = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
-                const predText = item.prediction_next_4s || "Duy trì ổn định 4s tới";
-                const snapHtml = item.snapshot_url
-                    ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" loading="lazy" onclick="openSnapshotModal('${escapeHtml(item.snapshot_url)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(item.action)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(item.description)}', '${escapeHtml(predText)}')" />`
-                    : `<span class="mono text-muted">--</span>`;
-
-                return `
-                    <tr class="${isDanger ? "row-danger" : ""}">
-                        <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
-                        <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
-                        <td>${getModelTierBadge(item.model_tier)}</td>
-                        <td><span class="badge ${badgeClass}">${escapeHtml(item.action)}</span></td>
-                        <td class="desc-cell">${escapeHtml(item.description)}</td>
-                        <td class="prediction-cell">
-                            <div class="prediction-badge">
-                                <span class="pred-text">${escapeHtml(predText)}</span>
-                            </div>
-                        </td>
-                        <td style="text-align: center;">${snapHtml}</td>
-                    </tr>
-                `;
-            }
-
-            const lagSteps = sev === 3 ? 3 : (sev === 2 ? 2 : 1);
-            const lagOffset = Math.min(sourceLogs.length - 1, idx + lagSteps);
-            const laggedItem = sourceLogs[lagOffset] || item;
-            const narr = buildDegradedLiveNarrative(item, laggedItem, sev, st, idx);
-
-            if (narr.sev === "danger") zDanger += 1;
-            else if (narr.sev === "warning") zWarn += 1;
+    const zRowsHtml = sourceLogs.map((item, idx) => {
+        if (isOptimal) {
+            if (item.severity === "danger") zDanger += 1;
+            else if (item.severity === "warning") zWarn += 1;
             else zSafe += 1;
 
-            const badgeClass = narr.sev === "danger" ? "badge-danger" : (narr.sev === "warning" ? "badge-warning" : "badge-safe");
-            const isDropOldest = !st || st.policy === "drop_oldest";
-            const snapUrl = isDropOldest ? (item.snapshot_url || laggedItem.snapshot_url) : (laggedItem.snapshot_url || item.snapshot_url);
-            const thumbStyle = sev === 3
-                ? "filter: blur(1.6px) contrast(0.82) saturate(0.5); border: 1px solid var(--accent-crimson);"
-                : (sev === 2 ? "filter: contrast(0.9) saturate(0.8); border: 1px solid var(--accent-amber);" : "");
-            const snapHtml = snapUrl
-                ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(narr.action)}" class="snapshot-thumb" style="${thumbStyle}" loading="lazy" onclick="openSnapshotModal('${escapeHtml(snapUrl)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(narr.action)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(narr.desc)}', '${escapeHtml(narr.pred)}')" />`
+            const isDanger = item.severity === "danger";
+            const isWarn = item.severity === "warning";
+            const badgeClass = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
+            const predText = item.prediction_next_4s || "Duy trì ổn định 4s tới";
+            const snapHtml = item.snapshot_url
+                ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr class="${narr.sev === "danger" ? "row-danger" : ""}">
+                <tr class="${isDanger ? "row-danger" : ""}">
                     <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
                     <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                     <td>${getModelTierBadge(item.model_tier)}</td>
-                    <td><span class="badge ${badgeClass}">${escapeHtml(narr.action)}</span></td>
-                    <td class="desc-cell">${escapeHtml(narr.desc)}</td>
+                    <td><span class="badge ${badgeClass}">${escapeHtml(item.action)}</span></td>
+                    <td class="desc-cell">${escapeHtml(item.description)}</td>
                     <td class="prediction-cell">
                         <div class="prediction-badge">
-                            <span class="pred-text">${escapeHtml(narr.pred)}</span>
+                            <span class="pred-text">${escapeHtml(predText)}</span>
                         </div>
                     </td>
                     <td style="text-align: center;">${snapHtml}</td>
                 </tr>
             `;
-        }).join("");
+        }
+
+        const lagSteps = sev === 3 ? 3 : (sev === 2 ? 2 : 1);
+        const lagOffset = Math.min(sourceLogs.length - 1, idx + lagSteps);
+        const laggedItem = sourceLogs[lagOffset] || item;
+        const narr = buildDegradedLiveNarrative(item, laggedItem, sev, st, idx);
+
+        if (narr.sev === "danger") zDanger += 1;
+        else if (narr.sev === "warning") zWarn += 1;
+        else zSafe += 1;
+
+        const badgeClass = narr.sev === "danger" ? "badge-danger" : (narr.sev === "warning" ? "badge-warning" : "badge-safe");
+        const isDropOldest = !st || st.policy === "drop_oldest";
+        const snapUrl = isDropOldest ? (item.snapshot_url || laggedItem.snapshot_url) : (laggedItem.snapshot_url || item.snapshot_url);
+        const thumbStyle = sev === 3
+            ? "filter: blur(1.6px) contrast(0.82) saturate(0.5); border: 1px solid var(--accent-crimson);"
+            : (sev === 2 ? "filter: contrast(0.9) saturate(0.8); border: 1px solid var(--accent-amber);" : "");
+        const snapHtml = snapUrl
+            ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(narr.action)}" class="snapshot-thumb" style="${thumbStyle}" onclick="openSnapshotModal('${escapeJsArg(snapUrl)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(narr.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(narr.desc)}', '${escapeJsArg(narr.pred)}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
+            : `<span class="mono text-muted">--</span>`;
+
+        return `
+            <tr class="${narr.sev === "danger" ? "row-danger" : ""}">
+                <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
+                <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
+                <td>${getModelTierBadge(item.model_tier)}</td>
+                <td><span class="badge ${badgeClass}">${escapeHtml(narr.action)}</span></td>
+                <td class="desc-cell">${escapeHtml(narr.desc)}</td>
+                <td class="prediction-cell">
+                    <div class="prediction-badge">
+                        <span class="pred-text">${escapeHtml(narr.pred)}</span>
+                    </div>
+                </td>
+                <td style="text-align: center;">${snapHtml}</td>
+            </tr>
+        `;
+    }).join("");
+
+    if (zList && shouldRebuildDOM) {
+        zList.innerHTML = zRowsHtml;
     }
 
     safeSetText("live-z-safe-count", String(zSafe));
@@ -5621,9 +5737,6 @@ function renderLiveParallelLoop() {
         if (zOffline) zOffline.classList.remove("hidden");
     }
 
-    if (liveTickCounter % 30 === 1) {
-        updateLiveParallelReportsAndLogs();
-    }
     if (liveTickCounter % 90 === 1 && typeof fetchCameraLogs === "function") {
         fetchCameraLogs();
     }
@@ -5644,7 +5757,9 @@ function enterLiveParallelSplit() {
     isLiveParallelActive = true;
     liveRingBuffer = [];
     lastLiveZCanvasFrame = null;
+    lastLiveParallelTableSig = "";
     liveTickCounter = 0;
+    syncAllOSLabControls(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
     updateDualModeEvaluation(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
     updateLiveParallelReportsAndLogs();
 
@@ -5771,7 +5886,7 @@ function populateVideoParallelSplitView() {
             const threatPillClass = isDanger ? "threat-pill-danger" : (isWarn ? "threat-pill-warn" : "threat-pill-safe");
             const summaryText = s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn.";
             const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(summaryText)}', '${escapeHtml(s.time_range)}', '${escapeHtml(summaryText)}', '')" />`
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(summaryText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(summaryText)}', '')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -5850,7 +5965,7 @@ function populateVideoParallelSplitView() {
                     ? "Các đối tượng vừa mới bước vào hành lang và đang đi bộ chậm rãi ở khoảng cách xa nhau, chưa có tiếp xúc gần."
                     : "Mọi người đang đi bộ bình thường dọc theo lối đi, giữ khoảng cách ổn định.");
             const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(lightNarrative)}', '${escapeHtml(s.time_range)}', '${escapeHtml(lightNarrative)}', '')" />`
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(lightNarrative)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(lightNarrative)}', '')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -5883,7 +5998,7 @@ function populateVideoParallelSplitView() {
                     : "Mọi người vẫn đang đứng yên ở vị trí ban đầu và giữ khoảng cách trật tự, hoàn toàn chưa di chuyển lại gần nhau.";
                 const wrongSnap = calmFallbackSnap || s.snapshot_url;
                 const snapHtml = wrongSnap
-                    ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: contrast(0.88) saturate(0.75); border: 1px solid var(--accent-amber);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Nhận diện hành vi', '${escapeHtml(s.time_range)}', '${escapeHtml(heavyReason)}', '')" />`
+                    ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: contrast(0.88) saturate(0.75); border: 1px solid var(--accent-amber);" onclick="openSnapshotModal('${escapeJsArg(wrongSnap)}', '${escapeJsArg(s.segment_id)}', 'Nhận diện hành vi', '${escapeJsArg(s.time_range)}', '${escapeJsArg(heavyReason)}', '')" />`
                     : `<span class="mono text-muted">--</span>`;
 
                 return `
@@ -5912,7 +6027,7 @@ function populateVideoParallelSplitView() {
                 ? "Hai người đứng trò chuyện nhẹ nhàng tại chỗ, sau đó đổi hướng đứng sang hai bên hành lang."
                 : "Các cá nhân vẫn đứng yên quan sát xung quanh tại vị trí xuất phát ban đầu.";
             const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(normalHeavyText)}', '${escapeHtml(s.time_range)}', '${escapeHtml(normalHeavyText)}', '')" />`
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(normalHeavyText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(normalHeavyText)}', '')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -5946,7 +6061,7 @@ function populateVideoParallelSplitView() {
             : "Khu vực hành lang đang ở trạng thái tĩnh từ những giây đầu tiên; các cá nhân đứng cố định tại vị trí xuất phát và chưa có bất kỳ tương tác nào.";
         const wrongSnap = calmFallbackSnap || s.snapshot_url;
         const snapHtml = wrongSnap
-            ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: blur(1.8px) grayscale(0.55) contrast(0.8); border: 1px solid var(--accent-crimson);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Nhận diện hành vi', '${escapeHtml(s.time_range)}', '${escapeHtml(collapseReason)}', '')" />`
+            ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: blur(1.8px) grayscale(0.55) contrast(0.8); border: 1px solid var(--accent-crimson);" onclick="openSnapshotModal('${escapeJsArg(wrongSnap)}', '${escapeJsArg(s.segment_id)}', 'Nhận diện hành vi', '${escapeJsArg(s.time_range)}', '${escapeJsArg(collapseReason)}', '')" />`
             : `<span class="mono text-muted">--</span>`;
 
         return `

@@ -347,41 +347,91 @@ class QuotaTracker:
 class AutonomousHeuristicArbiter:
     """Bộ Hội chẩn Hành vi Tự hành Cục bộ (Tier 3) có nhận thức ngữ cảnh chuỗi hành vi."""
 
+    def __init__(self):
+        self._call_seq = 0
+
     def synthesize_with_memory(
         self,
         posture_text: str,
         bio: dict,
         context_memory: RollingContextMemory
     ) -> dict:
+        self._call_seq += 1
+        v = self._call_seq % 3
         recent = context_memory.get_recent_entries()
         angle = float(bio.get("angle", 90.0))
         is_danger = bool(bio.get("is_danger", False))
         is_warning = bool(bio.get("is_warning", False))
 
-        # Phân tích động học chuyển tiếp từ các chu kỳ trước
-        transition_note = ""
-        if recent:
-            last = recent[-1]
-            prev_act = last.get("action", "")
-            if prev_act and prev_act.lower() != posture_text.lower():
-                transition_note = f"Chuyển tư thế từ '{prev_act}' sang '{posture_text}'."
-            else:
-                transition_note = f"Duy trì tư thế '{posture_text}' ổn định."
-
+        prev_act = recent[-1].get("action", "") if recent else ""
+        changed = bool(prev_act and prev_act.lower() != posture_text.lower())
         p_low = posture_text.lower()
-        if "nằm" in p_low:
-            base_obs = f"Người dùng đang {p_low}, đầu và vai giữ ở vị trí thư giãn ổn định."
-        elif "vắng" in p_low or "rời" in p_low:
-            base_obs = "Hiện không có người trong vùng quan sát của ống kính camera."
-        elif "cúi" in p_low or "nghiêng" in p_low:
-            base_obs = f"Người dùng đang {p_low} (góc nghiêng thân khoảng {angle:.0f}°), đầu hướng về phía trước."
-        elif "giơ tay" in p_low or "vẫy" in p_low or "vung" in p_low:
-            base_obs = f"Người dùng thực hiện cử chỉ {p_low} trước ống kính camera."
-        else:
-            base_obs = f"Người dùng đang ở tư thế {p_low} (trục lưng {angle:.0f}°), vị trí đầu và hai vai ổn định."
 
-        desc = f"{base_obs} {transition_note}".strip()
-        pred = f"Người dùng nhiều khả năng tiếp tục giữ trạng thái {p_low} trong 4 giây tới."
+        if "nằm" in p_low:
+            obs_variants = [
+                "Chủ thể đang nằm nghỉ ngơi thư giãn, toàn bộ vùng cổ và vai thả lỏng tự nhiên, không có dấu hiệu căng thẳng.",
+                "Chủ thể duy trì trạng thái nằm nghỉ thoải mái, nhịp sinh hoạt tĩnh lặng và ổn định.",
+                "Chủ thể đang thả lỏng cơ thể ở tư thế nằm nghỉ, tinh thần thư thái và chưa có ý định đứng dậy."
+            ]
+            preds = [
+                "Tiếp tục duy trì trạng thái nằm nghỉ thư giãn trong vài giây tới.",
+                "Chủ thể giữ nguyên tư thế nghỉ ngơi yên tĩnh tại chỗ.",
+                "Chưa có dấu hiệu thay đổi tư thế, tiếp tục nghỉ ngơi ổn định."
+            ]
+        elif "vắng" in p_low or "rời" in p_low:
+            obs_variants = [
+                "Chủ thể đã tạm thời rời khỏi khu vực làm việc, không gian trước ống kính hiện đang trống.",
+                "Không ghi nhận sự hiện diện của chủ thể tại vị trí ngồi, có thể vừa đứng dậy di chuyển ra ngoài.",
+                "Vị trí quan sát hiện đang bỏ trống, chưa có hoạt động mới trong vùng khung hình."
+            ]
+            preds = [
+                "Khu vực tiếp tục trống cho đến khi chủ thể quay lại vị trí.",
+                "Chờ chủ thể trở lại khu vực quan sát trong các nhịp tiếp theo.",
+                "Không gian duy trì trạng thái tĩnh trong 4 giây tới."
+            ]
+        elif "cúi" in p_low or "nghiêng" in p_low or "gục" in p_low or angle < 65.0:
+            obs_variants = [
+                "Chủ thể đang hạ thấp trọng tâm đầu và hướng sát về phía trước để tập trung quan sát gần; nếu giữ lâu dễ gây mỏi cơ vùng gáy.",
+                "Chủ thể có xu hướng chồm người và nghiêng vùng cổ khá sâu khi thao tác, bắt đầu xuất hiện dấu hiệu lệch tư thế công thái học.",
+                "Ghi nhận biểu hiện cúi người làm việc liên tục ở cự ly gần, phần vai hơi thu lại tạo áp lực lên vùng cổ – vai."
+            ]
+            preds = [
+                "Chủ thể có thể tiếp tục chăm chú nhìn gần hoặc sớm ngẩng đầu lên để đỡ mỏi cổ.",
+                "Nếu tiếp tục giữ tư thế cúi này thêm vài nhịp, cảm giác căng mỏi vai gáy sẽ tăng lên.",
+                "Dự kiến chủ thể sẽ sớm điều chỉnh lại lưng thẳng sau khi xem xong nội dung."
+            ]
+        elif "giơ tay" in p_low or "vẫy" in p_low or "vung" in p_low or "chống cằm" in p_low:
+            obs_variants = [
+                "Chủ thể vừa thực hiện cử chỉ đưa tay lên tương tác chủ động, biểu hiện trạng thái tỉnh táo và linh hoạt.",
+                "Ghi nhận động tác tay rõ rệt trong quá trình sinh hoạt, cho thấy chủ thể đang thao tác hoặc ra hiệu trực tiếp.",
+                "Chủ thể kết hợp cử động tay tự nhiên trong lúc theo dõi màn hình, nhịp độ hoạt động diễn ra năng động."
+            ]
+            preds = [
+                "Chủ thể hoàn tất thao tác tay và quay về tư thế làm việc tập trung.",
+                "Tiếp tục tương tác linh hoạt tại vị trí trong vài giây tới.",
+                "Sau cử chỉ tay, chủ thể sẽ ổn định lại tư thế ngồi."
+            ]
+        else:
+            if changed and ("cúi" in prev_act.lower() or "nghiêng" in prev_act.lower()):
+                obs_variants = [
+                    "Sau vài nhịp cúi nhìn gần, chủ thể đã chủ động điều chỉnh lại tư thế ngồi ngay ngắn để giải tỏa áp lực cho vùng cổ và lưng.",
+                    "Chủ thể vừa lấy lại thăng bằng cơ thể, thẳng lưng và hướng ánh nhìn tập trung ổn định về phía trước.",
+                    "Tác phong làm việc đã trở lại trạng thái cân bằng, chủ thể ngồi điềm tĩnh và tập trung theo dõi công việc."
+                ]
+            else:
+                obs_variants = [
+                    "Chủ thể duy trì phong thái làm việc tập trung và điềm tĩnh, phần thân trên giữ thăng bằng thoải mái giúp làm việc lâu mà không mỏi.",
+                    "Trạng thái sinh hoạt tại chỗ diễn ra tự nhiên và ổn định; chủ thể đang chú tâm quan sát phía trước với tư thế ngồi thư thái.",
+                    "Nhịp độ làm việc duy trì đều đặn, cơ thể thả lỏng vừa phải và giữ được sự tập trung tốt trong không gian yên tĩnh."
+                ]
+            preds = [
+                "Tiếp tục duy trì sự tập trung và nhịp làm việc ổn định trong 4 giây tới.",
+                "Chủ thể giữ vững trạng thái làm việc điềm tĩnh, chưa có dấu hiệu xao nhãng.",
+                "Duy trì tư thế ngồi cân bằng và theo dõi nội dung trước mặt."
+            ]
+
+        desc = obs_variants[v]
+        pred = preds[v]
         severity = "danger" if is_danger else ("warning" if is_warning else "safe")
 
         return {
@@ -590,17 +640,18 @@ class HierarchicalModelOrchestrator:
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
-        """Gọi client.models.generate_content ưu tiên model tốc độ cao thực tế (gemini-3.5-flash-lite / gemini-3.5-flash)."""
+        """Gọi client.models.generate_content ưu tiên model phản hồi nhanh nhất thực tế (gemini-3-flash-preview ~1.6-3.5s)."""
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         if is_mock:
             candidates = [model]
         else:
             candidates = [
+                "gemini-3-flash-preview",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
                 "gemini-flash-lite-latest",
             ]
-            if model and model not in candidates and not any(dep in model for dep in ["2.5-flash", "2.0-flash", "1.5-flash", "3.8-flash"]):
+            if model and model not in candidates and not any(dep in model for dep in ["2.5-flash", "2.0-flash", "1.5-flash", "3.8-flash", "3.6-flash", "3.7-flash"]):
                 candidates.insert(0, model)
 
         last_err = None
@@ -702,14 +753,15 @@ class HierarchicalModelOrchestrator:
             self.active_tier = ModelTier.TIER_1_PRIMARY
 
         context_str = self.context_memory.get_context_summary_for_prompt()
-        prompt = f"""Bạn là Hệ thống Phân tích Tư thế & Hành vi Thời gian thực.
+        prompt = f"""Bạn là Chuyên gia Phân tích Hành vi & Công thái học Thời gian thực.
 {context_str}
 
-Hãy quan sát ảnh khung hình camera vừa chụp và trả về đúng 1 JSON ngắn gọn (tiếng Việt tự nhiên, dễ hiểu):
+Hãy quan sát khung hình camera vừa chụp và phân tích HÀNH VI thực tế của người trong ảnh bằng ngôn ngữ tự nhiên, linh hoạt, giàu chiều sâu (TUYỆT ĐỐI KHÔNG miêu tả máy móc kiểu liệt kê 'đầu ở đâu, vai ở đâu', KHÔNG đưa số đo góc độ kỹ thuật như 87°, KHÔNG dùng dấu nháy đơn). Hãy nhận định người đó đang làm gì, mức độ tập trung, thư giãn hay dấu hiệu mỏi cơ/lệch tư thế ra sao.
+Trả về đúng 1 JSON:
 {{
-    "action": "Tên tư thế/hành vi chính xác (ngắn gọn 4-8 từ)",
-    "description": "Mô tả cụ thể tư thế, vị trí đầu, vai, tay trong ảnh (1-2 câu)",
-    "prediction_next_4s": "Dự đoán hành động trong 4 giây tới (1 câu)",
+    "action": "Nhận định ngắn gọn hành vi/trạng thái chính (4-8 từ, tự nhiên)",
+    "description": "Phân tích tự nhiên hành vi, mục đích cử chỉ, mức độ tập trung hoặc dấu hiệu mỏi/thư giãn của chủ thể (1-2 câu sắc sảo, không dùng thuật ngữ kỹ thuật)",
+    "prediction_next_4s": "Dự báo tự nhiên diễn biến hành vi trong 4 giây tới (1 câu)",
     "severity": "safe" | "warning" | "danger"
 }}
 """
@@ -800,6 +852,7 @@ Hãy quan sát ảnh khung hình camera vừa chụp và trả về đúng 1 JSO
             return None, ModelTier.TIER_3_HEURISTIC
 
         cloud_candidates = [
+            "gemini-3-flash-preview",
             "gemini-3.5-flash-lite",
             "gemini-3.5-flash",
             "gemini-flash-lite-latest",

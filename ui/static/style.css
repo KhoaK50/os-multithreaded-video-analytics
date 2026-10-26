@@ -7414,8 +7414,8 @@ tr.active-segment-row {
     background: linear-gradient(
         to right,
         var(--accent-primary) 0%,
-        var(--accent-primary) var(--slider-pct, 12%),
-        var(--border-subtle) var(--slider-pct, 12%),
+        var(--accent-primary) var(--slider-pct, 0%),
+        var(--border-subtle) var(--slider-pct, 0%),
         var(--border-subtle) 100%
     );
     outline: none;
