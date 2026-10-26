@@ -227,9 +227,9 @@ async function fetchTelemetry() {
         const hwmVal = data.high_water_mark !== undefined ? data.high_water_mark : 0;
 
         safeSetText("live-queue", `${qSize} / ${qMax} frames`);
-        safeSetText("live-hwm-badge", `HWM: ${hwmVal}`);
+        safeSetText("live-hwm-badge", `Đỉnh: ${hwmVal}`);
         safeSetText("live-drop-frames", `${droppedFrames} frames`);
-        safeSetText("live-drop-rate", `Drop: ${Number(dropRate).toFixed(1)}%`);
+        safeSetText("live-drop-rate", `Bỏ qua: ${Number(dropRate).toFixed(1)}%`);
 
         // Cập nhật Nguyên ngữ Đồng bộ hóa & Trần bộ nhớ
         safeSetText("os-sync-mutex", `${(data.mutex_lock_count || 0).toLocaleString()} lượt`);
@@ -247,15 +247,13 @@ async function fetchTelemetry() {
 
         const prodBadge = document.getElementById("producer-thread-badge");
         if (prodBadge) {
+            prodBadge.className = "telemetry-sub-meta mono";
             if (data.stress_test_active) {
-                prodBadge.textContent = "XUNG KIỂM THỬ";
-                prodBadge.className = "badge badge-warning mono";
+                prodBadge.textContent = "Đang kiểm thử tải";
             } else if (data.camera_running || data.producer_running) {
-                prodBadge.textContent = "ĐANG THU NHẬN";
-                prodBadge.className = "badge badge-safe mono";
+                prodBadge.textContent = "Đang thu nhận";
             } else {
-                prodBadge.textContent = "SẴN SÀNG";
-                prodBadge.className = "badge badge-neutral mono";
+                prodBadge.textContent = "Sẵn sàng";
             }
         }
 
@@ -3424,6 +3422,15 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
     if (d2 && parseInt(d2.value, 10) !== delayVal) d2.value = delayVal;
     if (p2 && p2.value !== policyVal) p2.value = policyVal;
 
+    const capPct = Math.max(0, Math.min(100, ((capVal - 1) / 127) * 100));
+    const delayPct = Math.max(0, Math.min(100, (delayVal / 500) * 100));
+    [c1, c2].forEach(el => {
+        if (el) el.style.setProperty("--slider-pct", `${capPct.toFixed(1)}%`);
+    });
+    [d1, d2].forEach(el => {
+        if (el) el.style.setProperty("--slider-pct", `${delayPct.toFixed(1)}%`);
+    });
+
     const pfBuf = document.getElementById("pf-z-buf");
     const pfDelay = document.getElementById("pf-z-delay");
     const pfPolicy = document.getElementById("pf-z-policy");
@@ -3440,12 +3447,17 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
     }
 
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
-    safeSetText("os-lab-cap-display", `N = ${capVal} · ${ramMb} MB`);
-    safeSetText("os-lab-delay-display", `${delayVal} ms`);
-    safeSetText("os-lab-policy-display", policyVal === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)");
+    const polHint = policyVal === "drop_oldest"
+        ? "Bám sát hiện tại · Nhảy cóc nếu trễ"
+        : "Xếp hàng tuần tự · Trễ pha quá khứ";
 
-    safeSetText("vid-z-cap-val", `N = ${capVal} · ${ramMb} MB`);
+    safeSetText("os-lab-cap-display", `${capVal} khung · ${ramMb} MB`);
+    safeSetText("os-lab-delay-display", `${delayVal} ms`);
+    safeSetText("os-lab-policy-display", polHint);
+
+    safeSetText("vid-z-cap-val", `${capVal} khung · ${ramMb} MB`);
     safeSetText("vid-z-delay-val", `${delayVal} ms`);
+    safeSetText("vid-z-policy-hint", polHint);
 }
 
 function applySplitResourcePreset(capVal, delayVal, policyVal) {
@@ -3530,45 +3542,52 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     const branchZPct = Math.min(60.0, Number((4.0 + (capVal / 128.0) * 34.0 + (delayVal / 500.0) * 22.0).toFixed(1)));
     const reservePct = Number((100.0 - branchYPct - branchZPct).toFixed(1));
 
-    // Tính toán thông số thực tế của Luồng Tùy Chỉnh Tài Nguyên (mở rộng cực hạn 1..128 khung & 0..500ms)
+    // Tính toán thông số thực tế của Luồng Tùy Chỉnh Tài Nguyên (phân hóa rõ rệt 2 chính sách bộ nhớ đệm)
     let zFps = 30.0;
     let zDropPct = 0.0;
     let zLatencyMs = 33;
     let zLagSlots = 0;
     let zSkipStride = 1;
 
-    if (delayVal === 0) {
-        zFps = capVal >= 8 ? 30.0 : Number((12.0 + (capVal / 8.0) * 18.0).toFixed(1));
-        zDropPct = capVal >= 8 ? 0.0 : Number(((8 - capVal) * 8.5).toFixed(1));
-        zLatencyMs = capVal <= 16 ? Math.round(capVal * 33.3 * 0.25) : Math.round(33 + (capVal - 16) * 16.5);
-        zLagSlots = capVal <= 16 ? 0 : Math.min(46, Math.round((capVal - 16) * 0.42));
-        zSkipStride = capVal >= 8 ? 1 : (capVal <= 2 ? 6 : 3);
-    } else if (pol === "block_fifo" && capVal >= 32 && delayVal <= 40) {
-        // Kịch bản Dư Bộ Nhớ (Bufferbloat): Hàng đợi FIFO lớn giữ toàn bộ khung hình trong RAM nhưng tích lũy độ trễ hàng đợi lớn
-        zFps = Number((1000.0 / (33.3 + delayVal)).toFixed(1));
-        zDropPct = 0.0;
-        zLatencyMs = Math.round(capVal * (33.3 + delayVal) * 0.45);
-        zLagSlots = Math.min(46, Math.max(8, Math.round((capVal / 128.0) * 44)));
-        zSkipStride = Math.max(1, Math.min(5, Math.round(30.0 / Math.max(4.0, zFps))));
-    } else {
-        const capPenaltyMs = capVal < 4 ? (4 - capVal) * 48 : 0;
-        zFps = Number(Math.max(1.2, 1000.0 / (33.3 + delayVal + capPenaltyMs)).toFixed(1));
-        zDropPct = Number(((delayVal / (33.3 + delayVal)) * 100.0).toFixed(1));
-        if (capVal < 16) {
-            zDropPct = Math.min(97.5, Number((zDropPct + (16 - capVal) * 2.2).toFixed(1)));
+    if (pol === "drop_oldest") {
+        // Chính sách 1 (Ưu tiên khung mới - Xóa ảnh cũ, lấy ảnh mới nhất):
+        // Không bị trễ pha quá khứ (zLagSlots = 0), luôn bám sát thời điểm hiện tại nhưng nhảy cóc bỏ qua các khung hình trung gian
+        const capPenaltyMs = capVal < 8 ? (8 - capVal) * 26 : 0;
+        if (delayVal === 0 && capVal >= 8) {
+            zFps = 30.0;
+            zDropPct = 0.0;
+            zLatencyMs = 33;
+            zLagSlots = 0;
+            zSkipStride = 1;
+        } else {
+            zFps = Number(Math.max(1.2, 1000.0 / (33.3 + delayVal + capPenaltyMs)).toFixed(1));
+            zDropPct = Number(Math.min(97.5, ((delayVal + capPenaltyMs) / (33.3 + delayVal + capPenaltyMs)) * 100.0).toFixed(1));
+            zLatencyMs = Math.round(33 + delayVal * 0.65);
+            zLagSlots = 0;
+            zSkipStride = Math.max(3, Math.min(26, Math.round(30.0 / Math.max(1.2, zFps))));
         }
-        zLatencyMs = Math.round(capVal * 33.3 + delayVal * 2.2);
-        zLagSlots = Math.min(46, Math.max(3, Math.round((capVal / 128.0) * 28 + (delayVal / 500.0) * 32)));
-        zSkipStride = Math.max(2, Math.min(28, Math.round(30.0 / Math.max(1.2, zFps))));
+    } else {
+        // Chính sách 2 (Giữ tuần tự FIFO - Xếp hàng ảnh cũ, trễ pha quá khứ):
+        // Giữ chặt các khung hình cũ ở đầu hàng đợi để xử lý tuần tự, khiến luồng video và AI bị trễ lùi về quá khứ nhiều giây
+        const queueDepthEffect = Math.max(12, capVal * 1.4);
+        zFps = delayVal === 0
+            ? (capVal < 8 ? Number((14.0 + capVal * 1.8).toFixed(1)) : 24.0)
+            : Number(Math.max(1.5, 1000.0 / (33.3 + delayVal * 1.15)).toFixed(1));
+        zDropPct = capVal >= 32
+            ? Number(Math.min(45.0, (delayVal / 500.0) * 35.0).toFixed(1))
+            : Number(Math.min(92.0, ((delayVal / (33.3 + delayVal)) * 78.0) + Math.max(0, (16 - capVal) * 2.5)).toFixed(1));
+        zLatencyMs = Math.round(queueDepthEffect * (33.3 + delayVal * 0.85));
+        zLagSlots = Math.min(84, Math.max(24, Math.round(18 + capVal * 0.45 + delayVal * 0.12)));
+        zSkipStride = delayVal >= 180 ? 12 : (delayVal >= 50 ? 4 : 2);
     }
 
-    // Phân cấp 4 mức độ suy giảm nhận diện hành vi AI (0: Lý tưởng, 1: Suy giảm nhẹ / Dư bộ nhớ, 2: Suy giảm nặng, 3: Sụp đổ phân tích cực hạn)
+    // Phân cấp 4 mức độ suy giảm nhận diện hành vi AI (0: Lý tưởng, 1: Suy giảm nhẹ, 2: Suy giảm nặng, 3: Sụp đổ cực hạn)
     let severityTier = 0;
     if (capVal === 16 && delayVal === 0 && pol === "drop_oldest") {
         severityTier = 0;
     } else if (delayVal >= 200 || (capVal <= 2 && delayVal >= 80) || zDropPct >= 82.0 || zFps <= 4.5) {
         severityTier = 3;
-    } else if (delayVal >= 50 || capVal <= 4 || (pol === "block_fifo" && delayVal >= 20) || zDropPct >= 45.0) {
+    } else if (delayVal >= 45 || capVal <= 4 || (pol === "block_fifo" && (delayVal >= 15 || capVal >= 32)) || zDropPct >= 42.0) {
         severityTier = 2;
     } else {
         severityTier = 1;
@@ -3604,30 +3623,17 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     safeSetText("budget-label-z", `Luồng Tùy Chỉnh: ${branchZPct.toFixed(1)}% · ${ramZ} MB`);
     safeSetText("budget-label-reserve", `Dự Trữ Hệ Điều Hành: ${reservePct.toFixed(1)}% · Khóa cứng ≥ 20%`);
 
-    const sweetBadge = document.getElementById("os-sweet-spot-badge");
-    let sweetTitle = "Điểm Cân Bằng Tối Ưu";
-    let sweetClass = "badge-safe";
     let sweetVerdict = "Luồng Tùy Chỉnh khớp 100% với Luồng Chuẩn Khuyến Nghị: Đạt trần 30.0 FPS, hình ảnh mượt mà và bảo toàn 100% độ chính xác nhận diện hành vi.";
-
     if (severityTier === 0) {
         // Optimal
-    } else if (capVal > 16 && delayVal <= 40) {
-        sweetTitle = `Dư Thừa Bộ Đệm (${ramRatio}x RAM) · Phản Hồi Chậm Nhịp`;
-        sweetClass = "badge-warning";
-        sweetVerdict = `Cấp phát bộ đệm lớn gấp ${ramRatio}x mức khuyến nghị (${ramZ} MB RAM) làm hình ảnh đưa vào AI bị trễ nhịp so với thực tế mà không tăng thêm độ chính xác.`;
-    } else if (severityTier === 3) {
-        sweetTitle = "Cực Hạn Suy Thoái · AI Thất Bại Nhận Diện";
-        sweetClass = "badge-danger";
-        sweetVerdict = `Tốc độ dựng hình sụt xuống ~${zFps} FPS (mất ${zDropPct}% khung hình); video bị đứng hình, nhòe chuyển động nặng và AI mất dấu hoàn toàn hành vi chủ thể.`;
+    } else if (pol === "drop_oldest") {
+        sweetVerdict = severityTier === 3
+            ? `Chính sách Ưu tiên khung mới ở mức cực hạn (~${zFps} FPS): Video nhảy cóc và vỡ nét nặng; AI mất toàn bộ cử động trung gian nên đoán mò sai lệch hoàn toàn tư thế của chủ thể.`
+            : `Chính sách Ưu tiên khung mới (~${zFps} FPS): Luồng bên phải luôn bám sát thời điểm hiện tại nhưng nhảy cóc qua các khung hình chuyển tiếp, khiến AI đoán nhầm hành động đang diễn ra.`;
     } else {
-        sweetTitle = "Thiếu Hụt Tài Nguyên · Sai Lệch Phân Tích Hành Vi";
-        sweetClass = "badge-warning";
-        sweetVerdict = `Tốc độ luồng giảm còn ~${zFps} FPS và mất ${zDropPct}% khung hình trung gian, khiến AI bỏ sót các cử động nhanh và đánh giá sai tư thế.`;
-    }
-
-    if (sweetBadge) {
-        sweetBadge.textContent = sweetTitle;
-        sweetBadge.className = `badge ${sweetClass} mono`;
+        sweetVerdict = severityTier === 3
+            ? `Chính sách Giữ tuần tự FIFO ở mức cực hạn (trễ ~${(zLatencyMs / 1000).toFixed(1)}s): Hàng đợi bị ứ đọng nghiêm trọng; video bên phải bị đóng băng ở quá khứ và AI vẫn đánh giá dựa trên tư thế cũ từ nhiều giây trước.`
+            : `Chính sách Giữ tuần tự FIFO (trễ ~${(zLatencyMs / 1000).toFixed(1)}s): Luồng bên phải xếp hàng xử lý lần lượt các khung ảnh cũ, khiến hình ảnh và kết quả nhận diện của AI luôn đi chậm hơn thực tế bên trái.`;
     }
     safeSetText("os-sweet-spot-verdict", sweetVerdict);
 
@@ -4882,7 +4888,7 @@ function updateLabMemoryDOM(data) {
 let isLiveParallelActive = false;
 let liveParallelAnimId = null;
 let liveRingBuffer = [];
-const MAX_RING_BUFFER_SLOTS = 48;
+const MAX_RING_BUFFER_SLOTS = 90;
 let liveTickCounter = 0;
 let cachedSnapshotFallbackImg = null;
 let cachedSnapshotFallbackUrl = "";
@@ -4949,6 +4955,7 @@ let lastVideoZCanvasFrame = null;
 function renderDegradedCanvasFrame(ctx, ringBuffer, fallbackSource, w, h, st, tickCounter, isLive = true) {
     if (!ctx) return;
     const sev = st ? (st.severityTier || 0) : 0;
+    const isDropOldest = !st || st.policy === "drop_oldest";
 
     if (sev === 0 || ringBuffer.length === 0) {
         ctx.imageSmoothingEnabled = true;
@@ -4961,78 +4968,108 @@ function renderDegradedCanvasFrame(ctx, ringBuffer, fallbackSource, w, h, st, ti
         return;
     }
 
-    const stride = sev === 3
-        ? Math.max(18, st.zSkipStride || 20)
-        : (sev === 2 ? Math.max(5, st.zSkipStride || 6) : Math.max(1, st.zSkipStride || 1));
-    const shouldRefresh = (tickCounter <= 2) || (tickCounter % stride === 0);
+    if (isDropOldest) {
+        // CHÍNH SÁCH 1 (Ưu tiên khung mới - drop_oldest):
+        // Luôn lấy khung hình MỚI NHẤT (ringBuffer[ringBuffer.length - 1]) nên không trễ pha thời gian so với cột trái,
+        // nhưng chỉ cập nhật sau mỗi `stride` nhịp, làm chủ thể nhảy cóc / dịch chuyển tức thời qua các tư thế.
+        const stride = sev === 3
+            ? Math.max(20, st.zSkipStride || 22)
+            : (sev === 2 ? Math.max(8, st.zSkipStride || 10) : Math.max(4, st.zSkipStride || 5));
+        const shouldRefresh = (tickCounter <= 2) || (tickCounter % stride === 0);
+        const latestFrame = ringBuffer[ringBuffer.length - 1] || fallbackSource;
+        const prevJumpFrame = ringBuffer[Math.max(0, ringBuffer.length - 1 - stride)] || ringBuffer[0] || latestFrame;
 
-    const lagIdx = Math.max(0, ringBuffer.length - 1 - (st.zLagSlots || 0));
-    const chosen = ringBuffer[lagIdx] || ringBuffer[0] || fallbackSource;
-    const ghostIdx = Math.max(0, lagIdx - (sev === 3 ? 12 : 6));
-    const ghostFrame = ringBuffer[ghostIdx] || ringBuffer[0] || chosen;
+        if (shouldRefresh && latestFrame) {
+            if (isLive) lastLiveZCanvasFrame = latestFrame;
+            else lastVideoZCanvasFrame = latestFrame;
+        }
+        const activeFrame = (isLive ? lastLiveZCanvasFrame : lastVideoZCanvasFrame) || latestFrame || fallbackSource;
+        if (!activeFrame) return;
 
-    if (shouldRefresh && chosen) {
-        if (isLive) lastLiveZCanvasFrame = chosen;
-        else lastVideoZCanvasFrame = chosen;
+        ctx.clearRect(0, 0, w, h);
+
+        if (sev === 1) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(activeFrame, 0, 0, w, h);
+            return;
+        }
+
+        if (sev === 2) {
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            ctx.filter = "contrast(0.94) saturate(0.82)";
+            ctx.drawImage(activeFrame, 0, 0, w, h);
+            if (prevJumpFrame && prevJumpFrame !== activeFrame) {
+                ctx.globalAlpha = 0.26;
+                ctx.drawImage(prevJumpFrame, 10, 0, w - 10, h);
+            }
+            const tearY = Math.floor(h * 0.45);
+            const tearH = Math.floor(h * 0.06);
+            ctx.drawImage(activeFrame, 0, tearY, w, tearH, -12, tearY, w, tearH);
+            ctx.restore();
+            return;
+        }
+
+        // Mức 3 (drop_oldest cực hạn): Nhảy cóc dữ dội (~1-2 FPS), vỡ khối điểm ảnh và xé ngang khung hình
+        if (!degradeOffscreenCanvas) {
+            degradeOffscreenCanvas = document.createElement("canvas");
+        }
+        const lowW = st.cap <= 1 ? 120 : 168;
+        const lowH = st.cap <= 1 ? 68 : 94;
+        if (degradeOffscreenCanvas.width !== lowW) degradeOffscreenCanvas.width = lowW;
+        if (degradeOffscreenCanvas.height !== lowH) degradeOffscreenCanvas.height = lowH;
+        const offCtx = degradeOffscreenCanvas.getContext("2d");
+        offCtx.imageSmoothingEnabled = false;
+        offCtx.clearRect(0, 0, lowW, lowH);
+        offCtx.drawImage(activeFrame, 0, 0, lowW, lowH);
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.filter = "contrast(0.84) saturate(0.52) brightness(0.92)";
+        ctx.drawImage(degradeOffscreenCanvas, 0, 0, lowW, lowH, 0, 0, w, h);
+        if (prevJumpFrame) {
+            ctx.globalAlpha = 0.36;
+            ctx.drawImage(prevJumpFrame, -16, 4, w, h);
+        }
+        const tearY1 = Math.floor(h * 0.34);
+        const tearH1 = Math.floor(h * 0.08);
+        ctx.drawImage(degradeOffscreenCanvas, 0, Math.floor(lowH * 0.34), lowW, Math.max(2, Math.floor(lowH * 0.08)), 20, tearY1, w, tearH1);
+        ctx.restore();
+        drawZDiagnosticWatermark(ctx, w, h, st);
+        return;
     }
-    const activeFrame = (isLive ? lastLiveZCanvasFrame : lastVideoZCanvasFrame) || chosen || fallbackSource;
-    if (!activeFrame) return;
+
+    // CHÍNH SÁCH 2 (Giữ tuần tự FIFO - block_fifo):
+    // Không xóa ảnh cũ mà xếp hàng xử lý tuần tự từ đầu hàng đợi (ringBuffer[0..lagIdx]),
+    // khiến video bên phải bị TRỄ PHA THỜI GIAN rõ rệt (phát lại cảnh trong quá khứ cách cột trái vài giây).
+    const fifoLagSlots = sev === 3
+        ? Math.max(55, ringBuffer.length - 1)
+        : (sev === 2 ? Math.max(36, st.zLagSlots || 42) : Math.max(22, st.zLagSlots || 26));
+    const lagIdx = sev === 3 ? 0 : Math.max(0, ringBuffer.length - 1 - fifoLagSlots);
+    const chosenOldFrame = ringBuffer[lagIdx] || ringBuffer[0] || fallbackSource;
+    const fifoStride = sev === 3 ? 16 : (sev === 2 ? 4 : 1);
+
+    if ((tickCounter <= 2 || tickCounter % fifoStride === 0) && chosenOldFrame) {
+        if (isLive) lastLiveZCanvasFrame = chosenOldFrame;
+        else lastVideoZCanvasFrame = chosenOldFrame;
+    }
+    const activeOldFrame = (isLive ? lastLiveZCanvasFrame : lastVideoZCanvasFrame) || chosenOldFrame || fallbackSource;
+    if (!activeOldFrame) return;
 
     ctx.clearRect(0, 0, w, h);
-
-    if (sev === 1) {
-        // Suy giảm nhẹ / Dư bộ nhớ: Hình ảnh vẫn nét nhưng bị trễ nhịp thời gian so với luồng chuẩn bên trái
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "medium";
-        ctx.drawImage(activeFrame, 0, 0, w, h);
-        return;
-    }
-
-    if (sev === 2) {
-        // Suy giảm nặng: Khung hình giật cục (~5-10 FPS) kèm bóng ma mờ do mất khung chuyển tiếp
-        ctx.save();
-        ctx.imageSmoothingEnabled = true;
-        ctx.filter = "contrast(0.92) saturate(0.82)";
-        ctx.drawImage(activeFrame, 0, 0, w, h);
-        if (ghostFrame && ghostFrame !== activeFrame) {
-            ctx.globalAlpha = 0.28;
-            ctx.drawImage(ghostFrame, 6, 0, w - 6, h);
-        }
-        ctx.restore();
-        return;
-    }
-
-    // Mức 3 (Cực hạn suy thoái): Đứng hình nặng (1-2 FPS), vỡ khối điểm ảnh (macroblock pixelation), nhòe bóng ma kép và xé hình
-    if (!degradeOffscreenCanvas) {
-        degradeOffscreenCanvas = document.createElement("canvas");
-    }
-    const lowW = st.cap <= 1 ? 128 : 176;
-    const lowH = st.cap <= 1 ? 72 : 99;
-    if (degradeOffscreenCanvas.width !== lowW) degradeOffscreenCanvas.width = lowW;
-    if (degradeOffscreenCanvas.height !== lowH) degradeOffscreenCanvas.height = lowH;
-    const offCtx = degradeOffscreenCanvas.getContext("2d");
-    offCtx.imageSmoothingEnabled = false;
-    offCtx.clearRect(0, 0, lowW, lowH);
-    offCtx.drawImage(activeFrame, 0, 0, lowW, lowH);
-
     ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.filter = "contrast(0.84) saturate(0.55) brightness(0.92)";
-    ctx.drawImage(degradeOffscreenCanvas, 0, 0, lowW, lowH, 0, 0, w, h);
-
-    // Chồng bóng ma lệch pha mạnh khiến cử động bị nhòe kép
-    if (ghostFrame) {
-        ctx.globalAlpha = 0.38;
-        ctx.drawImage(ghostFrame, -14, 4, w, h);
+    ctx.imageSmoothingEnabled = true;
+    if (sev === 1) {
+        ctx.drawImage(activeOldFrame, 0, 0, w, h);
+    } else if (sev === 2) {
+        ctx.filter = "contrast(0.92) saturate(0.78)";
+        ctx.drawImage(activeOldFrame, 0, 0, w, h);
+    } else {
+        ctx.filter = "contrast(0.82) saturate(0.45) brightness(0.9)";
+        ctx.drawImage(activeOldFrame, 0, 0, w, h);
+        drawZDiagnosticWatermark(ctx, w, h, st);
     }
-
-    // Hiệu ứng xé dòng ngang (horizontal frame tear) khi bộ đệm sụp đổ
-    const tearY1 = Math.floor(h * 0.34);
-    const tearH1 = Math.floor(h * 0.08);
-    ctx.drawImage(degradeOffscreenCanvas, 0, Math.floor(lowH * 0.34), lowW, Math.max(2, Math.floor(lowH * 0.08)), 18, tearY1, w, tearH1);
     ctx.restore();
-
-    drawZDiagnosticWatermark(ctx, w, h, st);
 }
 
 function drawZDiagnosticWatermark(ctx, w, h, st) {
@@ -5046,63 +5083,77 @@ function drawZDiagnosticWatermark(ctx, w, h, st) {
 }
 
 function buildDegradedLiveNarrative(item, laggedItem, sev, st) {
-    const baseAction = item.action || "Ngồi làm việc";
     const isRisk = (item.severity === "danger" || item.severity === "warning");
-    const dl = item.degraded_light || {};
-    const dh = item.degraded_heavy || {};
+    const isDropOldest = !st || st.policy === "drop_oldest";
 
-    if (sev === 1) {
-        // Mức 1: Bỏ sót các cử động tinh (nghiêng cổ nhẹ, gập cổ tay) hoặc phân tích trễ trên khung hình cũ trong hàng đợi
-        if (st.cap > 16 && laggedItem && laggedItem !== item) {
+    if (isDropOldest) {
+        // Chính sách 1 (Ưu tiên khung mới): Mất các khung chuyển tiếp ở giữa -> AI nhìn tư thế đầu/cuối rồi ĐOÁN MÒ ngây ngô (không viện lý do kỹ thuật)
+        if (sev === 1) {
             return {
-                sev: laggedItem.severity || "safe",
-                action: laggedItem.action || dl.action || "Nhận diện theo tư thế trước đó",
-                desc: `AI đang phân tích dựa trên hình ảnh lưu trong hàng đợi từ vài giây trước: "${laggedItem.description || baseAction}". Các thay đổi tư thế vừa mới diễn ra chưa kịp tới lượt xử lý.`,
-                pred: laggedItem.prediction_next_4s || dl.prediction_next_4s || "Dự báo lặp lại trạng thái cũ, phản ứng chậm với cử động mới."
+                sev: isRisk ? "warning" : "safe",
+                action: isRisk ? "Cúi nhẹ đầu đọc tài liệu trên bàn" : "Ngồi đặt tay cố định trên mặt bàn",
+                desc: isRisk
+                    ? "Chủ thể hơi nghiêng đầu hướng xuống mặt bàn như đang đọc tài liệu giấy, hai vai giữ nguyên và chưa có biểu hiện căng cứng vùng cổ."
+                    : "Chủ thể ngồi yên trên ghế làm việc, hai cẳng tay đặt cố định trên bàn và hầu như không thay đổi góc lưng.",
+                pred: "Chủ thể tiếp tục giữ tư thế đọc tài liệu tại chỗ trong 4 giây tới."
             };
         }
-        return {
-            sev: isRisk ? "warning" : "safe",
-            action: dl.action || (isRisk ? "Ngồi hơi nghiêng người (Thiếu chi tiết góc cổ)" : "Ngồi làm việc cơ bản (Mờ cử động bàn tay)"),
-            desc: dl.description || (isRisk
-                ? "AI nhận thấy thân trên có xu hướng dịch chuyển nhưng do thiếu các khung hình chuyển tiếp ngắn nên không đo được chính xác góc cúi đốt sống cổ và độ tỳ khuỷu tay."
-                : "AI xác nhận chủ thể vẫn ngồi trên ghế nhưng không nhận diện rõ các thao tác tinh của cổ tay và ngón tay do chuỗi ảnh đầu vào bị thưa."),
-            pred: dl.prediction_next_4s || "Dự kiến chủ thể giữ nguyên vị trí ngồi, khó nhận biết sớm các cử động mỏi cơ nhỏ."
-        };
-    }
-
-    if (sev === 2) {
-        // Mức 2: Suy giảm nặng — Bỏ sót hành vi sai tư thế diễn ra nhanh hoặc đánh giá nhầm tư thế do mất khung hình trung gian
+        if (sev === 2) {
+            if (isRisk) {
+                return {
+                    sev: "safe",
+                    action: "Đang vươn vai thư giãn tại chỗ",
+                    desc: "Chủ thể nghiêng thân trên và mở rộng hai vai giống như đang tập động tác vươn vai thư giãn cơ lưng giữa giờ làm việc.",
+                    pred: "Chủ thể hoàn tất động tác vươn vai nghỉ ngơi và trở lại làm việc bình thường."
+                };
+            }
+            return {
+                sev: "warning",
+                action: "Đang xoay người tìm đồ vật bên cạnh",
+                desc: "Đầu và vai chủ thể xoay sang hướng khác trên ghế; có vẻ chủ thể đang với tay tìm kiếm đồ dùng cá nhân ở góc bàn.",
+                pred: "Chủ thể lấy xong đồ vật và quay lại hướng màn hình chính."
+            };
+        }
+        // Mức 3 (Cực hạn - Đoán mò hoàn toàn sai lệch)
         if (isRisk) {
             return {
                 sev: "safe",
-                action: dh.action || "Ngồi tĩnh bình thường (Bỏ sót tư thế xấu)",
-                desc: dh.description || "Khoảnh khắc chủ thể cúi gập cổ hoặc rướn người sát màn hình rơi đúng vào các khung hình bị đánh rơi; AI chỉ nhìn thấy ảnh tĩnh trước đó nên đánh giá nhầm là đang ngồi đúng tư thế.",
-                pred: dh.prediction_next_4s || "Nhận định chủ thể tiếp tục ngồi ổn định, không phát hiện nguy cơ đau mỏi cột sống."
+                action: "Đang ngả lưng nằm nghỉ ngơi trên ghế",
+                desc: "Chủ thể đang thả lỏng toàn thân và ngả rạp người nghỉ ngơi thoải mái trên ghế, hoàn toàn không có dấu hiệu mỏi cổ hay tư thế làm việc nguy hiểm.",
+                pred: "Chủ thể tiếp tục nằm nghỉ tĩnh tại chỗ trong 4 giây tiếp theo."
             };
         }
         return {
-            sev: "warning",
-            action: dh.action || "Tư thế ngắt quãng · Khó xác định trục lưng",
-            desc: dh.description || "Vị trí đầu và hai vai của chủ thể nhảy cóc đột ngột giữa các lần lấy mẫu; AI thiếu chuỗi cử động liên tục nên không thể kết luận chắc chắn lưng đang thẳng hay đang cong.",
-            pred: dh.prediction_next_4s || "Dự báo kém tin cậy do thiếu các khung hình nối tiếp nhau."
+            sev: "safe",
+            action: "Ngồi bất động hoàn toàn tại vị trí",
+            desc: "Chủ thể ngồi bất động như tượng tại vị trí ghế làm việc, hai tay buông dọc thân người và không thực hiện bất kỳ thao tác nào.",
+            pred: "Không có hoạt động mới, chủ thể duy trì trạng thái tĩnh hoàn toàn."
         };
     }
 
-    // Mức 3: Cực hạn suy thoái — AI thất bại hoàn toàn trong việc theo dõi khớp xương và nhận diện sai toàn bộ bối cảnh
-    if (isRisk) {
+    // Chính sách 2 (Giữ tuần tự FIFO): Hàng đợi ứ đọng ảnh cũ -> AI điềm nhiên mô tả tư thế lịch sử từ nhiều giây trước
+    if (sev === 1) {
         return {
             sev: "safe",
-            action: "Không phát hiện bất thường (Mất dấu hành vi)",
-            desc: "Thất bại phân tích: Hình ảnh bị đóng băng và nhòe bóng ma nặng khiến AI hoàn toàn không nhìn thấy diễn biến cúi gập người hay vung tay vừa xảy ra, dẫn đến kết luận an toàn sai lệch hoàn toàn.",
-            pred: "Không thể dự báo hành vi 4 giây tới do mất dấu chuyển động của chủ thể."
+            action: (laggedItem && laggedItem !== item && laggedItem.action) ? laggedItem.action : "Ngồi thẳng lưng nhìn màn hình",
+            desc: "Chủ thể đang ngồi thẳng lưng ngay ngắn trước màn hình máy tính, hai tay đặt nhẹ trên bàn phím và giữ nguyên tư thế làm việc ban đầu.",
+            pred: "Duy trì tư thế ngồi thẳng lưng ổn định trong 4 giây tới."
         };
     }
+    if (sev === 2) {
+        return {
+            sev: "safe",
+            action: "Ngồi thẳng lưng chuẩn mực từ đầu phiên",
+            desc: "Chủ thể vẫn đang ngồi yên lặng ở tư thế chuẩn mực lúc trước, lưng tựa nhẹ vào ghế và mắt hướng thẳng về phía trước, chưa có bất kỳ cử động cúi người hay nghiêng cổ nào.",
+            pred: "Trạng thái ngồi chuẩn mực tiếp tục được duy trì ổn định."
+        };
+    }
+    // Mức 3 (FIFO đóng băng ở khung hình quá khứ đầu tiên)
     return {
-        sev: "warning",
-        action: "Mất dấu khớp xương · Nhận diện thất bại",
-        desc: "Hình ảnh đầu vào bị vỡ khối và đứng hình kéo dài khiến AI mất dấu đường viền cánh tay, vai và cột sống; mô hình chỉ thấy một bóng người mờ nhạt không rõ tư thế.",
-        pred: "Hệ thống mất khả năng dự đoán xu hướng vận động tiếp theo."
+        sev: "safe",
+        action: "Ngồi nghỉ tĩnh từ thời điểm ban đầu",
+        desc: "Chủ thể giữ nguyên tư thế ngồi thẳng tĩnh lặng từ lúc mới bắt đầu phiên quan sát, hai tay đặt trên đùi và chưa bắt đầu bất kỳ chuyển động mới nào.",
+        pred: "Chủ thể tiếp tục ngồi yên tại chỗ, an toàn tuyệt đối."
     };
 }
 
@@ -5549,16 +5600,21 @@ function populateVideoParallelSplitView() {
             `;
         }
 
+        const isDropOldest = st.policy === "drop_oldest";
+
         if (sev === 1) {
-            // Mức 1: Nhận diện được bố cục chính nhưng mất chi tiết cử động phụ hoặc trễ nhịp khởi phát
-            const lightScore = isDanger ? Math.max(5.5, Number((numScore - 1.4).toFixed(1))) : numScore;
+            const lightScore = isDanger ? Math.max(4.8, Number((numScore - 2.2).toFixed(1))) : numScore;
             if (lightScore > survivingMaxScore) survivingMaxScore = lightScore;
-            const badgeClass = isDanger ? "badge badge-warning" : (isWarn ? "badge badge-warning" : "badge badge-safe");
-            const badgeText = isDanger ? "CẢNH BÁO" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
+            const badgeClass = (isDanger || isWarn) ? "badge badge-warning" : "badge badge-safe";
+            const badgeText = (isDanger || isWarn) ? "CẢNH BÁO" : "AN TOÀN";
             const threatPillClass = (isDanger || isWarn) ? "threat-pill-warn" : "threat-pill-safe";
-            const lightNarrative = (isDanger || isWarn)
-                ? "AI nhận thấy nhóm đối tượng đang tiến lại gần nhau nhưng không thấy rõ động tác vung tay khởi phát và phản ứng của người xung quanh do hình ảnh cập nhật trễ nhịp."
-                : "Các đối tượng di chuyển trong không gian; AI ghi nhận được vị trí đứng chung nhưng bỏ sót các cử chỉ trao đổi ngắn của từng người.";
+            const lightNarrative = isDropOldest
+                ? ((isDanger || isWarn)
+                    ? "Hai người đi bộ lại gần nhau và giơ tay ra hiệu; động tác diễn ra nhẹ nhàng như đang trao đổi công việc tại hành lang."
+                    : "Các cá nhân đứng đối diện nhau và giữ nguyên vị trí, không ghi nhận cử động mạnh.")
+                : ((isDanger || isWarn)
+                    ? "Các đối tượng vừa mới bước vào hành lang và đang đi bộ chậm rãi ở khoảng cách xa nhau, chưa có tiếp xúc gần."
+                    : "Mọi người đang đi bộ bình thường dọc theo lối đi, giữ khoảng cách ổn định.");
             const snapHtml = s.snapshot_url
                 ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(lightNarrative)}', '${escapeHtml(s.time_range)}', '${escapeHtml(lightNarrative)}', '')" />`
                 : `<span class="mono text-muted">--</span>`;
@@ -5584,31 +5640,30 @@ function populateVideoParallelSplitView() {
         }
 
         if (sev === 2) {
-            // Mức 2: Suy giảm nặng — Bỏ sót khoảnh khắc va chạm nhanh hoặc nhận nhầm khung hình tĩnh
             if (isDanger || isWarn) {
                 droppedHighRiskCount += 1;
-                const wrongScore = isDanger ? 2.2 : 1.6;
+                const wrongScore = isDropOldest ? 1.8 : 1.5;
                 if (wrongScore > survivingMaxScore) survivingMaxScore = wrongScore;
-                const heavyReason = st.policy === "block_fifo"
-                    ? "AI chỉ nhận được hình ảnh các đối tượng đang đứng tách rời trước khi va chạm xảy ra; khoảnh khắc xô xát chính bị kẹt lại phía sau nên hệ thống đánh giá nhầm là tình huống bình thường."
-                    : "Khoảnh khắc va chạm mạnh diễn ra quá nhanh giữa các lần lấy mẫu bị ngắt quãng; AI chỉ nhìn thấy tư thế đứng đầu và cuối phân đoạn nên kết luận không có xung đột.";
+                const heavyReason = isDropOldest
+                    ? "Các cá nhân đang đứng đối diện và vung tay trò chuyện sôi nổi, sau đó một người tự cúi xuống nhặt đồ vật trên sàn rồi đứng dậy."
+                    : "Mọi người vẫn đang đứng yên ở vị trí ban đầu và giữ khoảng cách trật tự, hoàn toàn chưa di chuyển lại gần nhau.";
                 const wrongSnap = calmFallbackSnap || s.snapshot_url;
                 const snapHtml = wrongSnap
-                    ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: contrast(0.88) saturate(0.75); border: 1px solid var(--accent-amber);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Đánh giá nhầm hành vi', '${escapeHtml(s.time_range)}', '${escapeHtml(heavyReason)}', '')" />`
+                    ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: contrast(0.88) saturate(0.75); border: 1px solid var(--accent-amber);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Nhận diện hành vi', '${escapeHtml(s.time_range)}', '${escapeHtml(heavyReason)}', '')" />`
                     : `<span class="mono text-muted">--</span>`;
 
                 return `
                     <tr>
                         <td>
                             <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                            <div class="seg-id-sub" style="color: var(--accent-amber); font-weight: 600;">${escapeHtml(s.segment_id || "")} · BỎ SÓT</div>
+                            <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
                         </td>
                         <td>
                             <div class="seg-summary-line">${escapeHtml(heavyReason)}</div>
                         </td>
                         <td>
                             <div class="threat-header-row">
-                                <span class="badge badge-safe">AN TOÀN GIẢ TẠO</span>
+                                <span class="badge badge-safe">AN TOÀN</span>
                                 <div class="threat-score-pill mono threat-pill-safe">${wrongScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
                             </div>
                         </td>
@@ -5619,7 +5674,9 @@ function populateVideoParallelSplitView() {
 
             const degradedScore = Math.max(1.2, Number((numScore * 0.7).toFixed(1)));
             if (degradedScore > survivingMaxScore) survivingMaxScore = degradedScore;
-            const normalHeavyText = "Chuyển động của các đối tượng bị ngắt quãng giữa chừng; AI chỉ nhận biết được hướng đứng đại khái, không phân biệt được bước đi tự nhiên hay động tác lao tới.";
+            const normalHeavyText = isDropOldest
+                ? "Hai người đứng trò chuyện nhẹ nhàng tại chỗ, sau đó đổi hướng đứng sang hai bên hành lang."
+                : "Các cá nhân vẫn đứng yên quan sát xung quanh tại vị trí xuất phát ban đầu.";
             const snapHtml = s.snapshot_url
                 ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(normalHeavyText)}', '${escapeHtml(s.time_range)}', '${escapeHtml(normalHeavyText)}', '')" />`
                 : `<span class="mono text-muted">--</span>`;
@@ -5635,8 +5692,8 @@ function populateVideoParallelSplitView() {
                     </td>
                     <td>
                         <div class="threat-header-row">
-                            <span class="badge badge-warning">NHẬN DIỆN MƠ HỒ</span>
-                            <div class="threat-score-pill mono threat-pill-warn">${degradedScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
+                            <span class="badge badge-safe">AN TOÀN</span>
+                            <div class="threat-score-pill mono threat-pill-safe">${degradedScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
                         </div>
                     </td>
                     <td style="text-align: center;">${snapHtml}</td>
@@ -5644,30 +5701,32 @@ function populateVideoParallelSplitView() {
             `;
         }
 
-        // Mức 3: Cực hạn suy thoái — AI thất bại nhận diện hoàn toàn, mất dấu đối tượng và mù sự kiện
+        // Mức 3: Cực hạn suy thoái — AI đoán mò ngây ngô (drop_oldest) hoặc đọc cảnh tĩnh từ đầu video (block_fifo)
         if (isDanger || isWarn) droppedHighRiskCount += 1;
         const collapseScore = 1.0;
         if (collapseScore > survivingMaxScore) survivingMaxScore = collapseScore;
-        const collapseReason = (isDanger || isWarn)
-            ? "Thất bại phân tích hoàn toàn: Hình ảnh bị đóng băng cứng và vỡ nhòe khiến AI mất dấu toàn bộ các chủ thể đang xô xát, kết luận sai lệch rằng khu vực hoàn toàn vắng lặng và an toàn."
-            : "Hình ảnh biến dạng và đứng hình kéo dài khiến AI không thể tách biệt người với nền cảnh, mất dấu định danh và hướng di chuyển của toàn bộ đối tượng.";
+        const collapseReason = isDropOldest
+            ? ((isDanger || isWarn)
+                ? "Một người đang nằm duỗi lưng nghỉ ngơi thư giãn dưới sàn nhà trong khi những người xung quanh đứng yên quan sát, không có hoạt động va chạm nào."
+                : "Các bóng người đứng bất động tại chỗ như tượng, không ghi nhận bất kỳ hoạt động di chuyển hay giao tiếp nào.")
+            : "Khu vực hành lang đang ở trạng thái tĩnh từ những giây đầu tiên; các cá nhân đứng cố định tại vị trí xuất phát và chưa có bất kỳ tương tác nào.";
         const wrongSnap = calmFallbackSnap || s.snapshot_url;
         const snapHtml = wrongSnap
-            ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: blur(1.8px) grayscale(0.55) contrast(0.8); border: 1px solid var(--accent-crimson);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Thất bại phân tích AI', '${escapeHtml(s.time_range)}', '${escapeHtml(collapseReason)}', '')" />`
-            : `<span class="mono text-muted">Mất hình</span>`;
+            ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: blur(1.8px) grayscale(0.55) contrast(0.8); border: 1px solid var(--accent-crimson);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Nhận diện hành vi', '${escapeHtml(s.time_range)}', '${escapeHtml(collapseReason)}', '')" />`
+            : `<span class="mono text-muted">--</span>`;
 
         return `
             <tr>
                 <td>
                     <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                    <div class="seg-id-sub" style="color: var(--accent-crimson); font-weight: 700;">${escapeHtml(s.segment_id || "")} · THẤT BẠI</div>
+                    <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
                 </td>
                 <td>
-                    <div class="seg-summary-line" style="color: var(--accent-amber-text);">${escapeHtml(collapseReason)}</div>
+                    <div class="seg-summary-line">${escapeHtml(collapseReason)}</div>
                 </td>
                 <td>
                     <div class="threat-header-row">
-                        <span class="badge badge-danger">MẤT DẤU HÀNH VI</span>
+                        <span class="badge badge-safe">AN TOÀN</span>
                         <div class="threat-score-pill mono threat-pill-safe">${collapseScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
                     </div>
                 </td>
@@ -5679,9 +5738,10 @@ function populateVideoParallelSplitView() {
     if (zSegContainer) zSegContainer.innerHTML = zSegHtml;
 
     const zThreatBadge = document.getElementById("split-z-rep-threat");
+    const isDropOldest = st.policy === "drop_oldest";
     if (isOptimal) {
         if (zThreatBadge) {
-            zThreatBadge.textContent = `${yThreatText} · CHUẨN 100%`;
+            zThreatBadge.textContent = yThreatText;
             zThreatBadge.className = yThreatClass;
         }
         safeSetText("split-z-rep-incident", yIncident);
@@ -5689,37 +5749,58 @@ function populateVideoParallelSplitView() {
         safeSetText("split-z-rep-rec", yRec);
     } else if (sev === 1) {
         if (zThreatBadge) {
-            zThreatBadge.textContent = "CẢNH BÁO · MẤT CHI TIẾT PHỤ";
+            zThreatBadge.textContent = "CẢNH BÁO NHẸ";
             zThreatBadge.className = "badge badge-warning";
         }
-        safeSetText("split-z-rep-incident", "Nhận diện được tình huống chung nhưng xác định trễ thời điểm khởi phát va chạm.");
+        safeSetText(
+            "split-z-rep-incident",
+            isDropOldest
+                ? "Ghi nhận hai người tiến lại gần nhau và giơ tay trao đổi thông thường."
+                : "Các cá nhân đang đi bộ chậm rãi từ đầu hành lang, chưa xảy ra tiếp xúc gần."
+        );
         safeSetText(
             "split-z-rep-diagnosis",
-            "AI vẫn nắm bắt được bố cục đám đông nhưng do thiếu các khung hình chuyển tiếp ngắn nên bỏ sót động tác vung tay ban đầu và đánh giá thấp mức độ khẩn cấp của sự việc."
+            isDropOldest
+                ? "Các cá nhân di chuyển lại gần và có cử chỉ đưa tay ra phía trước giống như đang chỉ hướng hoặc trò chuyện, không thấy biểu hiện xô xát mạnh."
+                : "Nhóm đối tượng vẫn đang ở giai đoạn di chuyển ban đầu ở khoảng cách an toàn, chưa xuất hiện các động tác va chạm trực diện."
         );
-        safeSetText("split-z-rep-rec", "Đối chiếu với Luồng Chuẩn bên trái để xem đầy đủ các cử chỉ khởi phát của từng đối tượng.");
+        safeSetText("split-z-rep-rec", "Tiếp tục quan sát diễn biến thông thường tại khu vực.");
     } else if (sev === 2) {
         if (zThreatBadge) {
-            zThreatBadge.textContent = "SAI LỆCH · BỎ SÓT XUNG ĐỘT";
-            zThreatBadge.className = "badge badge-danger";
+            zThreatBadge.textContent = "AN TOÀN";
+            zThreatBadge.className = "badge badge-safe";
         }
-        safeSetText("split-z-rep-incident", `Bỏ sót ${Math.max(1, droppedHighRiskCount)} phân đoạn nguy hiểm · Đánh giá nhầm xung đột thành sinh hoạt bình thường.`);
+        safeSetText(
+            "split-z-rep-incident",
+            isDropOldest
+                ? "Sinh hoạt bình thường: Trò chuyện sôi nổi và cúi nhặt đồ vật trên sàn."
+                : "Khu vực trật tự: Mọi người đứng yên giữ khoảng cách tại vị trí ban đầu."
+        );
         safeSetText(
             "split-z-rep-diagnosis",
-            "Chuỗi hình ảnh đưa vào AI bị đứt quãng đúng vào lúc diễn ra xô xát nhanh; mô hình chỉ nhìn thấy các đối tượng khi đang đứng tách rời nên kết luận sai lệch mức độ an toàn."
+            isDropOldest
+                ? "Các cá nhân đứng đối diện vung tay nói chuyện, sau đó một người chủ động cúi gập người xuống sàn để nhặt đồ vật rồi tự đứng lên, hoàn toàn không có xung đột."
+                : "Trong suốt thời gian quan sát, các đối tượng chỉ đứng yên tại chỗ ở khoảng cách xa nhau như lúc mới vào cảnh, không có bất kỳ sự tiếp xúc hay cự cãi nào."
         );
-        safeSetText("split-z-rep-rec", "Không sử dụng kết quả nhận định bị thiếu hụt này làm căn cứ đánh giá an ninh.");
+        safeSetText("split-z-rep-rec", "Khu vực hoàn toàn bình thường, không cần can thiệp an ninh.");
     } else {
         if (zThreatBadge) {
-            zThreatBadge.textContent = "THẤT BẠI NHẬN DIỆN · MÙ SỰ KIỆN";
-            zThreatBadge.className = "badge badge-danger";
+            zThreatBadge.textContent = "AN TOÀN";
+            zThreatBadge.className = "badge badge-safe";
         }
-        safeSetText("split-z-rep-incident", "Mất hoàn toàn khả năng phân tích hành vi · Bỏ sót 100% diễn biến nguy hiểm trong video.");
+        safeSetText(
+            "split-z-rep-incident",
+            isDropOldest
+                ? "Trạng thái nghỉ ngơi: Một người đang nằm duỗi lưng thư giãn dưới sàn."
+                : "Trạng thái tĩnh hoàn toàn: Các cá nhân đứng cố định từ đầu phiên."
+        );
         safeSetText(
             "split-z-rep-diagnosis",
-            "Hình ảnh bị đóng băng kéo dài, vỡ nét và chồng bóng ma nặng khiến AI mất dấu cấu trúc cơ thể người, không thể phân biệt đối tượng và hoàn toàn không nhận biết được vụ va chạm."
+            isDropOldest
+                ? "Ghi nhận một cá nhân đang nằm nghỉ ngơi thoải mái trên mặt sàn trong khi những người xung quanh đứng yên lặng, không có bất kỳ hành vi bạo lực hay khẩn cấp nào."
+                : "Toàn bộ khu vực giữ nguyên trạng thái tĩnh lặng của những giây đầu tiên; các đối tượng đứng yên tại vị trí xuất phát và không phát sinh hành động mới."
         );
-        safeSetText("split-z-rep-rec", "Chọn lại cấu hình 'Chuẩn · 16 khung · 0ms' trên thanh công cụ để khôi phục chất lượng video và độ chính xác AI.");
+        safeSetText("split-z-rep-rec", "Trạng thái an toàn tuyệt đối, không phát hiện rủi ro.");
     }
 }
 
