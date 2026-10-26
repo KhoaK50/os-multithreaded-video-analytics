@@ -190,6 +190,13 @@ async function fetchTelemetry() {
             console.info("[+] Đã kết nối lại máy chủ FastAPI thành công.");
         }
 
+        // Cập nhật tên phần cứng thực tế động trên toàn giao diện (không gán cứng tên GPU)
+        const detectedHwName = data.gpu_name || "Thiết bị xử lý hệ thống";
+        safeSetText("header-gpu-text", detectedHwName);
+        safeSetText("live-gpu-name", detectedHwName);
+        safeSetText("live-split-y-hw-title", `Phần cứng: ${detectedHwName} · Đệm N=16 · 42.19 MB · Priority`);
+        safeSetText("split-vid-y-hw-title", `Phần cứng: ${detectedHwName} · Đệm N=16 · 42.19 MB · Priority`);
+
         // Cập nhật Floating Action Bubble & Realtime Quota Matrix Drawer (hoạt động trên cả 2 Tab)
         if (data.quota_matrix) {
             updateQuotaDrawerUI(data.quota_matrix, data);
@@ -205,7 +212,11 @@ async function fetchTelemetry() {
         safeSetText("live-fps", `${data.fps || 0} FPS`);
         safeSetText("live-consumer-fps", `${data.consumer_fps || data.fps || 30.0} FPS`);
         safeSetText("live-cpu", `${data.cpu_percent || 0}%`);
-        safeSetText("live-vram", `${((data.gpu_vram_mb || 0) / 1024).toFixed(1)} / ${((data.gpu_vram_total_mb || 8192) / 1024).toFixed(1)} GB`);
+        if (data.gpu_vram_total_mb && data.gpu_vram_total_mb > 0) {
+            safeSetText("live-vram", `${((data.gpu_vram_mb || 0) / 1024).toFixed(1)} / ${(data.gpu_vram_total_mb / 1024).toFixed(1)} GB`);
+        } else {
+            safeSetText("live-vram", `RAM chia sẻ`);
+        }
         safeSetText("live-ram", `${data.ram_percent || 0}%`);
 
         // Cập nhật Bounded Buffer & Flow Control thời gian thực
@@ -600,17 +611,17 @@ async function fetchCameraLogs() {
         const data = await res.json();
         const logs = data.logs || [];
 
-        // Cập nhật huy hiệu trạng thái AI (Cloud vs 429 Quota Exceeded vs Heuristic Cục bộ)
+        // Cập nhật huy hiệu trạng thái AI
         const quotaBadge = document.getElementById("gemini-quota-badge");
         if (quotaBadge && data.gemini_status) {
             if (data.gemini_status === "quota_exceeded") {
-                quotaBadge.textContent = "429 Quota Exceeded — AI Tự Hành Cục Bộ";
+                quotaBadge.textContent = "Đang chuyển mạch dự phòng — AI Nội Bộ";
                 quotaBadge.className = "badge badge-warn mono";
             } else if (data.gemini_status === "heuristic_offline") {
-                quotaBadge.textContent = "AI Tự Hành Ngoại Tuyến — 0 Token";
+                quotaBadge.textContent = "Chế độ AI Nội Bộ — Không tốn hạn mức";
                 quotaBadge.className = "badge badge-safe mono";
             } else {
-                quotaBadge.textContent = "13 RPM Free Quota";
+                quotaBadge.textContent = "Sẵn sàng phân tích AI";
                 quotaBadge.className = "badge badge-safe mono";
             }
         }
@@ -639,13 +650,13 @@ async function fetchCameraLogs() {
 function getModelTierBadge(tierKey) {
     const key = (tierKey || "").toLowerCase();
     if (key.includes("tier_1") || key.includes("3.8") || key.includes("2.5") || key.includes("2.0")) {
-        return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Tier-1 Gemini 3.8</span>`;
+        return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Mô hình 1 (Chính)</span>`;
     } else if (key.includes("tier_2") || key.includes("3.5") || key.includes("1.5")) {
-        return `<span class="badge badge-warning mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Tier-2 Gemini 3.5</span>`;
+        return `<span class="badge badge-warning mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Mô hình 2 (Dự phòng)</span>`;
     } else if (key.includes("local") || key.includes("heuristic") || key.includes("tier_3")) {
-        return `<span class="badge badge-outline mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">AI Tự Hành</span>`;
+        return `<span class="badge badge-outline mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Mô hình 3 (Nội bộ)</span>`;
     }
-    return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Tier-1 Gemini 3.8</span>`;
+    return `<span class="badge badge-safe mono" style="font-size: 11px; padding: 2px 7px; white-space: nowrap;">Mô hình 1 (Chính)</span>`;
 }
 
 function renderBehaviorTable(logs) {
@@ -3247,13 +3258,13 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
     const activeTier = tierInfo.active_tier || "tier_1";
     if (bubbleBadge) {
         if (activeTier === "tier_1") {
-            bubbleBadge.textContent = "Tier-1";
+            bubbleBadge.textContent = "Mô hình 1";
             bubbleBadge.className = "bubble-badge mono badge-tier1";
         } else if (activeTier === "tier_2") {
-            bubbleBadge.textContent = "Tier-2";
+            bubbleBadge.textContent = "Mô hình 2";
             bubbleBadge.className = "bubble-badge mono badge-tier2";
         } else {
-            bubbleBadge.textContent = "Tier-3";
+            bubbleBadge.textContent = "Mô hình 3";
             bubbleBadge.className = "bubble-badge mono badge-tier3";
         }
     }
@@ -3262,16 +3273,21 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
     safeSetText("drawer-fps", `${telemetryData.fps || 0} FPS`);
     const dQueueSize = telemetryData.queue_size !== undefined ? telemetryData.queue_size : (telemetryData.bounded_queue_size || 0);
     const dQueueMax = telemetryData.queue_max !== undefined ? telemetryData.queue_max : (telemetryData.bounded_queue_capacity || 16);
-    safeSetText("drawer-queue", `${dQueueSize} / ${dQueueMax} frames`);
+    safeSetText("drawer-queue", `${dQueueSize} / ${dQueueMax} khung`);
     safeSetText("drawer-cpu", `${telemetryData.cpu_percent || 0}%`);
     safeSetText("drawer-ram", `${telemetryData.ram_percent || 0}%`);
-    safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0} / ${telemetryData.gpu_vram_total_mb || 8192} MB ${telemetryData.gpu_name || 'GPU'}`);
+    const hwLabel = telemetryData.gpu_name || "Thiết bị xử lý hệ thống";
+    if (telemetryData.gpu_vram_total_mb && telemetryData.gpu_vram_total_mb > 0) {
+        safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0} / ${telemetryData.gpu_vram_total_mb} MB (${hwLabel})`);
+    } else {
+        safeSetText("drawer-vram", `RAM chia sẻ (${hwLabel})`);
+    }
 
-    // Update realtime Quota Gauges (RPM, RPD & Tokens)
+    // Update realtime Quota Gauges (Minute, Day & Tokens)
     const rq = telemetryData.realtime_quota;
     if (rq) {
         safeSetText("drawer-rpm-val", `${rq.rpm_used || 0} / ${rq.rpm_limit || 15}`);
-        safeSetText("drawer-rpm-rem", `${rq.rpm_remaining !== undefined ? rq.rpm_remaining : 15} req`);
+        safeSetText("drawer-rpm-rem", `Còn lại: ${rq.rpm_remaining !== undefined ? rq.rpm_remaining : 15} lượt`);
         const rpmBar = document.getElementById("drawer-rpm-bar");
         if (rpmBar) {
             rpmBar.style.width = `${Math.min(100, rq.rpm_percent || 0)}%`;
@@ -3285,7 +3301,7 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
         }
 
         safeSetText("drawer-rpd-val", `${(rq.rpd_used || 0).toLocaleString()} / ${(rq.rpd_limit || 1500).toLocaleString()}`);
-        safeSetText("drawer-rpd-rem", `${(rq.rpd_remaining !== undefined ? rq.rpd_remaining : 1500).toLocaleString()} req`);
+        safeSetText("drawer-rpd-rem", `Còn lại: ${(rq.rpd_remaining !== undefined ? rq.rpd_remaining : 1500).toLocaleString()} lượt`);
         const rpdBar = document.getElementById("drawer-rpd-bar");
         if (rpdBar) {
             rpdBar.style.width = `${Math.min(100, rq.rpd_percent || 0)}%`;
@@ -3294,7 +3310,8 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
         safeSetText("drawer-tokens-val", `${(rq.tokens_today || 0).toLocaleString()} tokens`);
 
         if (bubbleBadge && rq.rpm_used > 0) {
-            bubbleBadge.textContent = `${activeTier.toUpperCase()} | ${rq.rpm_used}/15 RPM`;
+            const shortTier = activeTier === "tier_1" ? "Mô hình 1" : (activeTier === "tier_2" ? "Mô hình 2" : "Mô hình 3");
+            bubbleBadge.textContent = `${shortTier} · ${rq.rpm_used}/${rq.rpm_limit || 15}`;
         }
     }
 
@@ -3388,6 +3405,7 @@ let osBranchZState = {
     zLatencyMs: 33,
     zLagSlots: 0,
     zSkipStride: 1,
+    severityTier: 0,
     isStall: false
 };
 
@@ -3424,7 +3442,7 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     safeSetText("os-lab-cap-display", `N = ${capVal} · ${ramMb} MB`);
     safeSetText("os-lab-delay-display", `${delayVal} ms`);
-    safeSetText("os-lab-policy-display", policyVal === "drop_oldest" ? "Drop-Oldest · Priority" : "Block-Producer · FIFO");
+    safeSetText("os-lab-policy-display", policyVal === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)");
 
     safeSetText("vid-z-cap-val", `N = ${capVal} · ${ramMb} MB`);
     safeSetText("vid-z-delay-val", `${delayVal} ms`);
@@ -3497,8 +3515,8 @@ function onVideoZControlInput() {
 }
 
 function applyVideoZUnderProvisionPreset() {
-    applySplitResourcePreset(4, 75, "block_fifo");
-    showToast("Đã áp dụng kịch bản thiếu hụt tài nguyên (N=4, Trễ=75ms, FIFO).", "warning");
+    applySplitResourcePreset(4, 90, "block_fifo");
+    showToast("Đã áp dụng cấu hình thiếu hụt tài nguyên (N=4, Trễ=90ms, FIFO).", "warning");
 }
 
 function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
@@ -3509,10 +3527,10 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
 
     // Tính toán hạn mức ngân sách phần cứng (dành >= 20% dự trữ cho Hệ điều hành máy chủ)
     const branchYPct = 20.0;
-    const branchZPct = Math.min(60.0, Number((6.0 + (capVal / 64.0) * 34.0 + (delayVal / 200.0) * 20.0).toFixed(1)));
+    const branchZPct = Math.min(60.0, Number((4.0 + (capVal / 128.0) * 34.0 + (delayVal / 500.0) * 22.0).toFixed(1)));
     const reservePct = Number((100.0 - branchYPct - branchZPct).toFixed(1));
 
-    // Tính toán thông số thực tế của Luồng Tùy Chỉnh Tài Nguyên
+    // Tính toán thông số thực tế của Luồng Tùy Chỉnh Tài Nguyên (mở rộng cực hạn 1..128 khung & 0..500ms)
     let zFps = 30.0;
     let zDropPct = 0.0;
     let zLatencyMs = 33;
@@ -3520,30 +3538,43 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     let zSkipStride = 1;
 
     if (delayVal === 0) {
-        zFps = capVal >= 8 ? 30.0 : Number((24.0 + (capVal / 8.0) * 6.0).toFixed(1));
-        zDropPct = capVal >= 8 ? 0.0 : Number(((8 - capVal) * 3.5).toFixed(1));
-        zLatencyMs = capVal <= 16 ? Math.round(capVal * 33.3 * 0.25) : Math.round(33 + (capVal - 16) * 14.5);
-        zLagSlots = capVal <= 16 ? 0 : Math.min(36, Math.round((capVal - 16) * 0.65));
-        zSkipStride = capVal >= 8 ? 1 : 2;
+        zFps = capVal >= 8 ? 30.0 : Number((12.0 + (capVal / 8.0) * 18.0).toFixed(1));
+        zDropPct = capVal >= 8 ? 0.0 : Number(((8 - capVal) * 8.5).toFixed(1));
+        zLatencyMs = capVal <= 16 ? Math.round(capVal * 33.3 * 0.25) : Math.round(33 + (capVal - 16) * 16.5);
+        zLagSlots = capVal <= 16 ? 0 : Math.min(46, Math.round((capVal - 16) * 0.42));
+        zSkipStride = capVal >= 8 ? 1 : (capVal <= 2 ? 6 : 3);
     } else if (pol === "block_fifo" && capVal >= 32 && delayVal <= 40) {
-        // Kịch bản Dư Bộ Nhớ (Bufferbloat): Hàng đợi FIFO lớn giữ toàn bộ khung hình trong RAM (0% rơi khung tức thì) nhưng tích lũy độ trễ hàng đợi lớn
+        // Kịch bản Dư Bộ Nhớ (Bufferbloat): Hàng đợi FIFO lớn giữ toàn bộ khung hình trong RAM nhưng tích lũy độ trễ hàng đợi lớn
         zFps = Number((1000.0 / (33.3 + delayVal)).toFixed(1));
         zDropPct = 0.0;
         zLatencyMs = Math.round(capVal * (33.3 + delayVal) * 0.45);
-        zLagSlots = Math.min(44, Math.max(6, Math.round((capVal / 64.0) * 30)));
-        zSkipStride = Math.max(1, Math.min(4, Math.round(30.0 / Math.max(5.0, zFps))));
+        zLagSlots = Math.min(46, Math.max(8, Math.round((capVal / 128.0) * 44)));
+        zSkipStride = Math.max(1, Math.min(5, Math.round(30.0 / Math.max(4.0, zFps))));
     } else {
-        zFps = Number((1000.0 / (33.3 + delayVal)).toFixed(1));
+        const capPenaltyMs = capVal < 4 ? (4 - capVal) * 48 : 0;
+        zFps = Number(Math.max(1.2, 1000.0 / (33.3 + delayVal + capPenaltyMs)).toFixed(1));
         zDropPct = Number(((delayVal / (33.3 + delayVal)) * 100.0).toFixed(1));
         if (capVal < 16) {
-            zDropPct = Math.min(95.0, Number((zDropPct + (16 - capVal) * 1.4).toFixed(1)));
+            zDropPct = Math.min(97.5, Number((zDropPct + (16 - capVal) * 2.2).toFixed(1)));
         }
-        zLatencyMs = Math.round(capVal * 33.3 + delayVal * 1.5);
-        zLagSlots = Math.min(44, Math.max(2, Math.round((capVal / 64.0) * 28 + (delayVal / 200.0) * 18)));
-        zSkipStride = Math.max(2, Math.min(10, Math.round(30.0 / Math.max(2.5, zFps))));
+        zLatencyMs = Math.round(capVal * 33.3 + delayVal * 2.2);
+        zLagSlots = Math.min(46, Math.max(3, Math.round((capVal / 128.0) * 28 + (delayVal / 500.0) * 32)));
+        zSkipStride = Math.max(2, Math.min(28, Math.round(30.0 / Math.max(1.2, zFps))));
     }
 
-    const isStall = delayVal > 80;
+    // Phân cấp 4 mức độ suy giảm nhận diện hành vi AI (0: Lý tưởng, 1: Suy giảm nhẹ / Dư bộ nhớ, 2: Suy giảm nặng, 3: Sụp đổ phân tích cực hạn)
+    let severityTier = 0;
+    if (capVal === 16 && delayVal === 0 && pol === "drop_oldest") {
+        severityTier = 0;
+    } else if (delayVal >= 200 || (capVal <= 2 && delayVal >= 80) || zDropPct >= 82.0 || zFps <= 4.5) {
+        severityTier = 3;
+    } else if (delayVal >= 50 || capVal <= 4 || (pol === "block_fifo" && delayVal >= 20) || zDropPct >= 45.0) {
+        severityTier = 2;
+    } else {
+        severityTier = 1;
+    }
+
+    const isStall = severityTier >= 3 || delayVal > 120;
     osBranchZState = {
         cap: capVal,
         delay: delayVal,
@@ -3553,6 +3584,7 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
         zLatencyMs,
         zLagSlots,
         zSkipStride,
+        severityTier,
         isStall
     };
 
@@ -3563,7 +3595,7 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     if (segY) segY.style.width = `${branchYPct}%`;
     if (segZ) {
         segZ.style.width = `${branchZPct}%`;
-        segZ.classList.toggle("seg-z-warn", (capVal !== 16 || delayVal > 0 || pol !== "drop_oldest") && !isStall);
+        segZ.classList.toggle("seg-z-warn", severityTier > 0 && !isStall);
         segZ.classList.toggle("seg-z-danger", isStall);
     }
     if (segRes) segRes.style.width = `${reservePct}%`;
@@ -3575,18 +3607,22 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     const sweetBadge = document.getElementById("os-sweet-spot-badge");
     let sweetTitle = "Điểm Cân Bằng Tối Ưu";
     let sweetClass = "badge-safe";
-    let sweetVerdict = "Luồng Tùy Chỉnh khớp 100% với Luồng Chuẩn Khuyến Nghị: Đạt trần 30.0 FPS, độ trễ 33ms và bảo toàn 100% sự kiện với 42.19 MB RAM.";
+    let sweetVerdict = "Luồng Tùy Chỉnh khớp 100% với Luồng Chuẩn Khuyến Nghị: Đạt trần 30.0 FPS, hình ảnh mượt mà và bảo toàn 100% độ chính xác nhận diện hành vi.";
 
-    if (capVal === 16 && delayVal === 0 && pol === "drop_oldest") {
+    if (severityTier === 0) {
         // Optimal
     } else if (capVal > 16 && delayVal <= 40) {
-        sweetTitle = `Phình Bộ Đệm · Dư ${ramRatio}x RAM · Trễ +${zLatencyMs}ms`;
+        sweetTitle = `Dư Thừa Bộ Đệm (${ramRatio}x RAM) · Phản Hồi Chậm Nhịp`;
         sweetClass = "badge-warning";
-        sweetVerdict = `Cấp phát bộ đệm lớn gấp ${ramRatio}x mức khuyến nghị (${ramZ} MB RAM) gây tích lũy hàng đợi ~${zLatencyMs} ms mà không làm tăng chất lượng nhận diện AI.`;
+        sweetVerdict = `Cấp phát bộ đệm lớn gấp ${ramRatio}x mức khuyến nghị (${ramZ} MB RAM) làm hình ảnh đưa vào AI bị trễ nhịp so với thực tế mà không tăng thêm độ chính xác.`;
+    } else if (severityTier === 3) {
+        sweetTitle = "Cực Hạn Suy Thoái · AI Thất Bại Nhận Diện";
+        sweetClass = "badge-danger";
+        sweetVerdict = `Tốc độ dựng hình sụt xuống ~${zFps} FPS (mất ${zDropPct}% khung hình); video bị đứng hình, nhòe chuyển động nặng và AI mất dấu hoàn toàn hành vi chủ thể.`;
     } else {
-        sweetTitle = isStall ? "Quá Tải Hàng Đợi · Ngắt Mạch Bảo Vệ" : "Cấu Hình Lệch Chuẩn · Suy Giảm Tần Suất Lấy Mẫu";
-        sweetClass = isStall ? "badge-danger" : "badge-warning";
-        sweetVerdict = `Bộ đệm N=${capVal}, độ trễ ${delayVal}ms làm tốc độ luồng giảm còn ~${zFps} FPS và rơi ${zDropPct}% khung hình.`;
+        sweetTitle = "Thiếu Hụt Tài Nguyên · Sai Lệch Phân Tích Hành Vi";
+        sweetClass = "badge-warning";
+        sweetVerdict = `Tốc độ luồng giảm còn ~${zFps} FPS và mất ${zDropPct}% khung hình trung gian, khiến AI bỏ sót các cử động nhanh và đánh giá sai tư thế.`;
     }
 
     if (sweetBadge) {
@@ -3598,7 +3634,7 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     // Show/hide stall alert banner
     const stallBanner = document.getElementById("os-stall-alert-banner");
     if (stallBanner) {
-        stallBanner.classList.toggle("hidden", delayVal <= 80);
+        stallBanner.classList.toggle("hidden", !isStall);
     }
 
     // Đồng bộ tức thì dữ liệu bảng AI và báo cáo ngay khi kéo thanh trượt trong chế độ So Sánh Song Song
@@ -3615,30 +3651,21 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
 
 let stallRecoveryTimer = null;
 function simulateControlledStall() {
-    syncAllOSLabControls(64, 200, "block_fifo");
-    updateDualModeEvaluation(64, 200, "block_fifo");
+    if (stallRecoveryTimer) {
+        clearInterval(stallRecoveryTimer);
+        stallRecoveryTimer = null;
+    }
+    syncAllOSLabControls(1, 450, "block_fifo");
+    updateDualModeEvaluation(1, 450, "block_fifo");
     commitOSLabConfig(true);
 
     const banner = document.getElementById("os-stall-alert-banner");
     if (banner) banner.classList.remove("hidden");
 
-    let countdownSec = 5.0;
     const cdEl = document.getElementById("os-stall-countdown");
-    if (cdEl) cdEl.textContent = `Tự phục hồi an toàn sau: ${countdownSec.toFixed(1)}s`;
+    if (cdEl) cdEl.textContent = "Đang giữ mức cực hạn để quan sát lỗi phân tích AI";
 
-    if (stallRecoveryTimer) clearInterval(stallRecoveryTimer);
-    stallRecoveryTimer = setInterval(() => {
-        countdownSec -= 0.5;
-        if (cdEl) cdEl.textContent = `Tự phục hồi an toàn sau: ${Math.max(0, countdownSec).toFixed(1)}s`;
-        if (countdownSec <= 0) {
-            clearInterval(stallRecoveryTimer);
-            stallRecoveryTimer = null;
-            resetToHardwareOptimal();
-            showToast("Hệ thống đã tự động hoàn nguyên về cấu hình khuyến nghị tối ưu RTX 5060.", "success");
-        }
-    }, 500);
-
-    showToast("Đang giả lập nguy cơ sập luồng (Khóa cứng ở cận trên RAM 50MB để bảo vệ máy).", "warning");
+    showToast("Đã kích hoạt mức cực hạn cạn kiệt (1 khung · 450ms) để quan sát hiện tượng vỡ khung hình và thất bại phân tích AI.", "warning");
 }
 
 function resetToHardwareOptimal() {
@@ -3652,7 +3679,7 @@ function resetToHardwareOptimal() {
 
     updateDualModeEvaluation(16, 0, "drop_oldest");
     commitOSLabConfig(false);
-    showToast("Đã khôi phục thông số khuyến nghị chuẩn máy: N=16, Độ trễ=0ms, Priority (RTX 5060).", "info");
+    showToast("Đã khôi phục cấu hình chuẩn khuyến nghị (N=16, Độ trễ=0ms, Ưu tiên khung mới).", "info");
 }
 
 async function runOSLiveBenchmark() {
@@ -3780,9 +3807,9 @@ function renderOSPipelineReport(osRep, result) {
     safeSetText("os-rep-speedup-badge", `Tăng tốc đa luồng: ${speedup}x`);
     safeSetText("os-rep-seq-time", `${seqTime}s`);
     safeSetText("os-rep-par-time", `${parTime}s`);
-    safeSetText("os-rep-overlap", `${speedup}x · Chồng lấp ${overlap}%`);
-    safeSetText("os-rep-sync-total", `${(osRep.total_mutex_locks || 0).toLocaleString()} locks · ${(osRep.total_condition_signals || 0).toLocaleString()} signals`);
-    safeSetText("os-rep-ram-bound", `${Number(osRep.ram_ceiling_mb || osRep.bounded_ram_ceiling_mb || 84.38).toFixed(2)} MB · _SENTINEL`);
+    safeSetText("os-rep-overlap", `${speedup}x · Xử lý song song ${overlap}%`);
+    safeSetText("os-rep-sync-total", `${(osRep.total_mutex_locks || 0).toLocaleString()} lượt khóa · ${(osRep.total_condition_signals || 0).toLocaleString()} tín hiệu`);
+    safeSetText("os-rep-ram-bound", `${Number(osRep.ram_ceiling_mb || osRep.bounded_ram_ceiling_mb || 84.38).toFixed(2)} MB · Đóng luồng an toàn`);
 
     // Cache final frame deck for reopening Live OS Pipeline Modal after job completion
     const finalFps = Number(st2.throughput_fps || (result && result.overall_fps) || 30.0);
@@ -4086,7 +4113,7 @@ function renderStroboscopicStackCanvas(deck, headIdx) {
         ctx.restore();
     }
 
-    // Hộp chú thích vector động học ở góc dưới trái của Canvas
+    // Hộp chú thích đường di chuyển ở góc dưới trái của Canvas
     const firstF = readySlices[0].entry;
     const lastF = readySlices[readySlices.length - 1].entry;
     const deltaFrames = Math.max(1, Number(lastF.frame_idx || 0) - Number(firstF.frame_idx || 0));
@@ -4094,11 +4121,11 @@ function renderStroboscopicStackCanvas(deck, headIdx) {
     ctx.fillStyle = "rgba(9, 13, 22, 0.92)";
     ctx.strokeStyle = "rgba(56, 189, 248, 0.55)";
     ctx.lineWidth = 1.25;
-    ctx.fillRect(14, H - 44, 330, 30);
-    ctx.strokeRect(14, H - 44, 330, 30);
+    ctx.fillRect(14, H - 44, 340, 30);
+    ctx.strokeRect(14, H - 44, 340, 30);
     ctx.fillStyle = "#38bdf8";
     ctx.font = "700 11.5px 'JetBrains Mono', monospace";
-    ctx.fillText(`QUỸ ĐẠO Δv QUA ${readySlices.length} LỚP (Δf = ${deltaFrames} khung)`, 24, H - 25);
+    ctx.fillText(`ĐƯỜNG DI CHUYỂN QUA ${readySlices.length} LỚP (${deltaFrames} khung)`, 24, H - 25);
     ctx.restore();
 }
 
@@ -4148,7 +4175,7 @@ function stepFlipbookTick() {
     // 1. Đồng bộ Cột Trái (1 khung đơn lẻ tại đúng thời điểm t) với Cột Phải (chồng 4 khung t-3 ➔ t)
     updateLeftSingleFrameInspector(cur, latestPipelineLiveState);
 
-    // 2. Vẽ Khối Chồng Đa Khung Liên Tiếp (t-3 ➔ t) + Quỹ Đạo Động Học Δv trên #os-stroboscopic-canvas
+    // 2. Vẽ Khối Chồng Đa Khung Liên Tiếp (t-3 ➔ t) trên #os-stroboscopic-canvas
     renderStroboscopicStackCanvas(deck, idx);
 
     const winStart = Math.max(0, idx - 3);
@@ -4162,17 +4189,17 @@ function stepFlipbookTick() {
     );
     safeSetText(
         "os-tensor-active-readout",
-        `Đang gom cửa sổ ${winCount} khung [${frameSpanIds}] từ Bounded Buffer để tính đạo hàm chuyển động Δv tại t${idx + 1}/${deck.length}`
+        `Đang ghép ${winCount} khung liên tiếp [${frameSpanIds}] để theo dõi hướng và tốc độ cử động tại bước ${idx + 1}/${deck.length}`
     );
 
     const idsList = formatActiveIdsText(cur.active_ids, cur.persons);
     safeSetText(
         "os-modal-static-limit",
-        `Tại riêng Khung #${cur.frame_idx} (${cur.time_str || "00:00"}): Chỉ có tọa độ tĩnh 17 khớp của ${idsList} · Đạo hàm thời gian Δt = 0 ➔ Vận tốc Δv = 0 px/s, không biết hướng di chuyển hay lực va chạm.`
+        `Tại riêng Khung #${cur.frame_idx} (${cur.time_str || "00:00"}): Chỉ thấy vị trí đứng yên của ${idsList} tại một khoảnh khắc, chưa thể biết chủ thể đang đứng yên hay đang vung tay nhanh.`
     );
     safeSetText(
         "os-modal-dynamic-gain",
-        `Chồng liên tiếp ${winCount} khung (${frameSpanIds}) từ Bounded Buffer: Tích hợp Δt = ${winCount} mẫu liên tiếp để đo vector dịch chuyển Δv và quỹ đạo tương tác của ${idsList}.`
+        `Khi ghép liên tiếp ${winCount} khung (${frameSpanIds}): Hệ thống nối được đường đi của tay, đầu và thân người để xác định rõ hướng di chuyển và mức độ va chạm của ${idsList}.`
     );
 
     const dotsEl = document.getElementById("os-flipbook-dots");
@@ -4915,23 +4942,176 @@ function getLatestRealSnapshotElement() {
     return null;
 }
 
+let degradeOffscreenCanvas = null;
+let lastLiveZCanvasFrame = null;
+let lastVideoZCanvasFrame = null;
+
+function renderDegradedCanvasFrame(ctx, ringBuffer, fallbackSource, w, h, st, tickCounter, isLive = true) {
+    if (!ctx) return;
+    const sev = st ? (st.severityTier || 0) : 0;
+
+    if (sev === 0 || ringBuffer.length === 0) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        const src = ringBuffer.length > 0 ? ringBuffer[ringBuffer.length - 1] : fallbackSource;
+        if (src) {
+            ctx.clearRect(0, 0, w, h);
+            drawImageContain(ctx, src, w, h);
+        }
+        return;
+    }
+
+    const stride = sev === 3
+        ? Math.max(18, st.zSkipStride || 20)
+        : (sev === 2 ? Math.max(5, st.zSkipStride || 6) : Math.max(1, st.zSkipStride || 1));
+    const shouldRefresh = (tickCounter <= 2) || (tickCounter % stride === 0);
+
+    const lagIdx = Math.max(0, ringBuffer.length - 1 - (st.zLagSlots || 0));
+    const chosen = ringBuffer[lagIdx] || ringBuffer[0] || fallbackSource;
+    const ghostIdx = Math.max(0, lagIdx - (sev === 3 ? 12 : 6));
+    const ghostFrame = ringBuffer[ghostIdx] || ringBuffer[0] || chosen;
+
+    if (shouldRefresh && chosen) {
+        if (isLive) lastLiveZCanvasFrame = chosen;
+        else lastVideoZCanvasFrame = chosen;
+    }
+    const activeFrame = (isLive ? lastLiveZCanvasFrame : lastVideoZCanvasFrame) || chosen || fallbackSource;
+    if (!activeFrame) return;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (sev === 1) {
+        // Suy giảm nhẹ / Dư bộ nhớ: Hình ảnh vẫn nét nhưng bị trễ nhịp thời gian so với luồng chuẩn bên trái
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "medium";
+        ctx.drawImage(activeFrame, 0, 0, w, h);
+        return;
+    }
+
+    if (sev === 2) {
+        // Suy giảm nặng: Khung hình giật cục (~5-10 FPS) kèm bóng ma mờ do mất khung chuyển tiếp
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.filter = "contrast(0.92) saturate(0.82)";
+        ctx.drawImage(activeFrame, 0, 0, w, h);
+        if (ghostFrame && ghostFrame !== activeFrame) {
+            ctx.globalAlpha = 0.28;
+            ctx.drawImage(ghostFrame, 6, 0, w - 6, h);
+        }
+        ctx.restore();
+        return;
+    }
+
+    // Mức 3 (Cực hạn suy thoái): Đứng hình nặng (1-2 FPS), vỡ khối điểm ảnh (macroblock pixelation), nhòe bóng ma kép và xé hình
+    if (!degradeOffscreenCanvas) {
+        degradeOffscreenCanvas = document.createElement("canvas");
+    }
+    const lowW = st.cap <= 1 ? 128 : 176;
+    const lowH = st.cap <= 1 ? 72 : 99;
+    if (degradeOffscreenCanvas.width !== lowW) degradeOffscreenCanvas.width = lowW;
+    if (degradeOffscreenCanvas.height !== lowH) degradeOffscreenCanvas.height = lowH;
+    const offCtx = degradeOffscreenCanvas.getContext("2d");
+    offCtx.imageSmoothingEnabled = false;
+    offCtx.clearRect(0, 0, lowW, lowH);
+    offCtx.drawImage(activeFrame, 0, 0, lowW, lowH);
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.filter = "contrast(0.84) saturate(0.55) brightness(0.92)";
+    ctx.drawImage(degradeOffscreenCanvas, 0, 0, lowW, lowH, 0, 0, w, h);
+
+    // Chồng bóng ma lệch pha mạnh khiến cử động bị nhòe kép
+    if (ghostFrame) {
+        ctx.globalAlpha = 0.38;
+        ctx.drawImage(ghostFrame, -14, 4, w, h);
+    }
+
+    // Hiệu ứng xé dòng ngang (horizontal frame tear) khi bộ đệm sụp đổ
+    const tearY1 = Math.floor(h * 0.34);
+    const tearH1 = Math.floor(h * 0.08);
+    ctx.drawImage(degradeOffscreenCanvas, 0, Math.floor(lowH * 0.34), lowW, Math.max(2, Math.floor(lowH * 0.08)), 18, tearY1, w, tearH1);
+    ctx.restore();
+
+    drawZDiagnosticWatermark(ctx, w, h, st);
+}
+
 function drawZDiagnosticWatermark(ctx, w, h, st) {
-    // Giữ khung hình sạch hoàn toàn, không vẽ hộp chữ đè lên video hay camera.
     if (st && st.isStall) {
         ctx.save();
-        ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";
+        ctx.strokeStyle = "rgba(239, 68, 68, 0.78)";
         ctx.lineWidth = 4;
         ctx.strokeRect(2, 2, w - 4, h - 4);
         ctx.restore();
     }
 }
 
+function buildDegradedLiveNarrative(item, laggedItem, sev, st) {
+    const baseAction = item.action || "Ngồi làm việc";
+    const isRisk = (item.severity === "danger" || item.severity === "warning");
+    const dl = item.degraded_light || {};
+    const dh = item.degraded_heavy || {};
+
+    if (sev === 1) {
+        // Mức 1: Bỏ sót các cử động tinh (nghiêng cổ nhẹ, gập cổ tay) hoặc phân tích trễ trên khung hình cũ trong hàng đợi
+        if (st.cap > 16 && laggedItem && laggedItem !== item) {
+            return {
+                sev: laggedItem.severity || "safe",
+                action: laggedItem.action || dl.action || "Nhận diện theo tư thế trước đó",
+                desc: `AI đang phân tích dựa trên hình ảnh lưu trong hàng đợi từ vài giây trước: "${laggedItem.description || baseAction}". Các thay đổi tư thế vừa mới diễn ra chưa kịp tới lượt xử lý.`,
+                pred: laggedItem.prediction_next_4s || dl.prediction_next_4s || "Dự báo lặp lại trạng thái cũ, phản ứng chậm với cử động mới."
+            };
+        }
+        return {
+            sev: isRisk ? "warning" : "safe",
+            action: dl.action || (isRisk ? "Ngồi hơi nghiêng người (Thiếu chi tiết góc cổ)" : "Ngồi làm việc cơ bản (Mờ cử động bàn tay)"),
+            desc: dl.description || (isRisk
+                ? "AI nhận thấy thân trên có xu hướng dịch chuyển nhưng do thiếu các khung hình chuyển tiếp ngắn nên không đo được chính xác góc cúi đốt sống cổ và độ tỳ khuỷu tay."
+                : "AI xác nhận chủ thể vẫn ngồi trên ghế nhưng không nhận diện rõ các thao tác tinh của cổ tay và ngón tay do chuỗi ảnh đầu vào bị thưa."),
+            pred: dl.prediction_next_4s || "Dự kiến chủ thể giữ nguyên vị trí ngồi, khó nhận biết sớm các cử động mỏi cơ nhỏ."
+        };
+    }
+
+    if (sev === 2) {
+        // Mức 2: Suy giảm nặng — Bỏ sót hành vi sai tư thế diễn ra nhanh hoặc đánh giá nhầm tư thế do mất khung hình trung gian
+        if (isRisk) {
+            return {
+                sev: "safe",
+                action: dh.action || "Ngồi tĩnh bình thường (Bỏ sót tư thế xấu)",
+                desc: dh.description || "Khoảnh khắc chủ thể cúi gập cổ hoặc rướn người sát màn hình rơi đúng vào các khung hình bị đánh rơi; AI chỉ nhìn thấy ảnh tĩnh trước đó nên đánh giá nhầm là đang ngồi đúng tư thế.",
+                pred: dh.prediction_next_4s || "Nhận định chủ thể tiếp tục ngồi ổn định, không phát hiện nguy cơ đau mỏi cột sống."
+            };
+        }
+        return {
+            sev: "warning",
+            action: dh.action || "Tư thế ngắt quãng · Khó xác định trục lưng",
+            desc: dh.description || "Vị trí đầu và hai vai của chủ thể nhảy cóc đột ngột giữa các lần lấy mẫu; AI thiếu chuỗi cử động liên tục nên không thể kết luận chắc chắn lưng đang thẳng hay đang cong.",
+            pred: dh.prediction_next_4s || "Dự báo kém tin cậy do thiếu các khung hình nối tiếp nhau."
+        };
+    }
+
+    // Mức 3: Cực hạn suy thoái — AI thất bại hoàn toàn trong việc theo dõi khớp xương và nhận diện sai toàn bộ bối cảnh
+    if (isRisk) {
+        return {
+            sev: "safe",
+            action: "Không phát hiện bất thường (Mất dấu hành vi)",
+            desc: "Thất bại phân tích: Hình ảnh bị đóng băng và nhòe bóng ma nặng khiến AI hoàn toàn không nhìn thấy diễn biến cúi gập người hay vung tay vừa xảy ra, dẫn đến kết luận an toàn sai lệch hoàn toàn.",
+            pred: "Không thể dự báo hành vi 4 giây tới do mất dấu chuyển động của chủ thể."
+        };
+    }
+    return {
+        sev: "warning",
+        action: "Mất dấu khớp xương · Nhận diện thất bại",
+        desc: "Hình ảnh đầu vào bị vỡ khối và đứng hình kéo dài khiến AI mất dấu đường viền cánh tay, vai và cột sống; mô hình chỉ thấy một bóng người mờ nhạt không rõ tư thế.",
+        pred: "Hệ thống mất khả năng dự đoán xu hướng vận động tiếp theo."
+    };
+}
+
 function updateLiveParallelReportsAndLogs() {
     const st = osBranchZState;
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
-    const polText = st.policy === "drop_oldest" ? "Priority" : "Block-FIFO";
-    const isOptimal = (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest");
-    const isOverProvisioned = (st.cap > 16 && st.delay <= 40 && !st.isStall);
+    const polText = st.policy === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)";
+    const sev = st.severityTier || 0;
+    const isOptimal = (sev === 0);
 
     safeSetText("live-split-z-config-text", `N = ${st.cap} · ${ramMb} MB · ${st.delay} ms · ${polText}`);
     safeSetText("live-split-z-fps", `${st.zFps} FPS`);
@@ -4945,16 +5125,20 @@ function updateLiveParallelReportsAndLogs() {
             zThreatEl.textContent = "ĐỒNG BỘ 100%";
             zThreatEl.className = "badge badge-safe";
         }
-    } else if (isOverProvisioned) {
-        const ratio = (st.cap / 16.0).toFixed(1);
+    } else if (sev === 1) {
         if (zThreatEl) {
-            zThreatEl.textContent = `PHÌNH ĐỆM ${ratio}x RAM · TRỄ +${st.zLatencyMs}ms`;
+            zThreatEl.textContent = st.cap > 16 ? "PHẢN HỒI CHẬM NHỊP" : "MẤT CHI TIẾT NHỎ";
+            zThreatEl.className = "badge badge-warning";
+        }
+    } else if (sev === 2) {
+        if (zThreatEl) {
+            zThreatEl.textContent = "BỎ SÓT HÀNH VI NHANH";
             zThreatEl.className = "badge badge-warning";
         }
     } else {
         if (zThreatEl) {
-            zThreatEl.textContent = st.isStall ? `NGHẼN HÀNG ĐỢI · +${st.zLatencyMs}ms` : `GIẢM MẪU · RƠI ${st.zDropPct}%`;
-            zThreatEl.className = st.isStall ? "badge badge-danger" : "badge badge-warning";
+            zThreatEl.textContent = "THẤT BẠI PHÂN TÍCH AI";
+            zThreatEl.className = "badge badge-danger";
         }
     }
 
@@ -4984,7 +5168,7 @@ function updateLiveParallelReportsAndLogs() {
                 <td colspan="7" class="empty-cell">
                     <div class="empty-state-box">
                         <p class="empty-title">Chưa có bản ghi nhận diện tư thế</p>
-                        <span class="empty-sub">Bật camera hoặc chụp Snapshot để đối chiếu trực tiếp hai luồng.</span>
+                        <span class="empty-sub">Bật camera hoặc chụp Snapshot để đối chiếu trực tiếp kết quả phân tích của AI giữa hai luồng.</span>
                     </div>
                 </td>
             </tr>
@@ -4992,11 +5176,11 @@ function updateLiveParallelReportsAndLogs() {
         if (yList) yList.innerHTML = emptyHtml;
         if (zList) zList.innerHTML = emptyHtml;
 
-        if (isOptimal || isOverProvisioned) {
+        if (isOptimal) {
             safeSetText("live-z-rep-ergo", baseErgoText);
         } else {
-            const degradedErgo = Math.max(38, baseErgoNum - Math.round(st.zDropPct * 0.55) - (st.policy === "block_fifo" ? 15 : 5));
-            safeSetText("live-z-rep-ergo", `${degradedErgo} / 100`);
+            const penalty = sev === 3 ? 48 : (sev === 2 ? 26 : 8);
+            safeSetText("live-z-rep-ergo", `${Math.max(25, baseErgoNum - penalty)} / 100`);
         }
         return;
     }
@@ -5031,7 +5215,7 @@ function updateLiveParallelReportsAndLogs() {
         }).join("");
     }
 
-    // Render Bảng 7 cột trên Cột Phải (Giữ nguyên tầng mô hình thực tế của hệ thống, chỉ phản ánh tác động hàng đợi HĐH)
+    // Render Bảng 7 cột trên Cột Phải: Chỉ hiển thị thuần túy ngôn ngữ phân tích hành vi của AI (không gắn số đo độ trễ/RAM vào văn bản AI)
     let zSafe = 0, zWarn = 0, zDanger = 0;
     if (zList) {
         zList.innerHTML = sourceLogs.map((item, idx) => {
@@ -5065,78 +5249,33 @@ function updateLiveParallelReportsAndLogs() {
                 `;
             }
 
-            if (isOverProvisioned) {
-                if (item.severity === "danger") zDanger += 1;
-                else if (item.severity === "warning") zWarn += 1;
-                else zSafe += 1;
+            const lagOffset = sev === 3 ? Math.min(sourceLogs.length - 1, idx + 2) : Math.min(sourceLogs.length - 1, idx + 1);
+            const laggedItem = sourceLogs[lagOffset] || item;
+            const narr = buildDegradedLiveNarrative(item, laggedItem, sev, st);
 
-                const isDanger = item.severity === "danger";
-                const isWarn = item.severity === "warning";
-                const badgeClass = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
-                const predText = item.prediction_next_4s || "Duy trì ổn định 4s tới";
-                const snapHtml = item.snapshot_url
-                    ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" loading="lazy" onclick="openSnapshotModal('${escapeHtml(item.snapshot_url)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(item.action)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(item.description)}', '${escapeHtml(predText)}')" />`
-                    : `<span class="mono text-muted">--</span>`;
-
-                return `
-                    <tr class="${isDanger ? "row-danger" : ""}">
-                        <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
-                        <td class="mono">${escapeHtml(item.timestamp || "--:--:--")} · <span style="color: var(--accent-amber);">+${st.zLatencyMs}ms</span></td>
-                        <td>${getModelTierBadge(item.model_tier)}</td>
-                        <td><span class="badge ${badgeClass}">${escapeHtml(item.action)}</span></td>
-                        <td class="desc-cell">${escapeHtml(item.description)} <span style="color: var(--accent-amber);">· Đệm N=${st.cap} ngốn ${ramMb} MB RAM, gây trễ hàng đợi +${st.zLatencyMs}ms</span></td>
-                        <td class="prediction-cell">
-                            <div class="prediction-badge">
-                                <span class="pred-text">${escapeHtml(predText)} · Trễ +${st.zLatencyMs}ms</span>
-                            </div>
-                        </td>
-                        <td style="text-align: center;">${snapHtml}</td>
-                    </tr>
-                `;
-            }
-
-            // Trường hợp cấu hình tài nguyên thiếu hụt hoặc độ trễ xử lý cao (N < 16 hoặc delay > 40ms)
-            let zSev = item.severity;
-            let zAction = item.action;
-            let zDesc = item.description;
-            let zPred = item.prediction_next_4s || "Duy trì ổn định 4s tới";
-
-            if (item.severity === "danger" || item.severity === "warning") {
-                zSev = "safe";
-                zAction = st.policy === "block_fifo"
-                    ? "Trễ phát hiện · Nghẽn hàng đợi FIFO"
-                    : `Bỏ sót biến cố · Rơi ${st.zDropPct}% khung`;
-                zDesc = `Biến cố bị trễ hoặc rơi mẫu do bộ đệm N=${st.cap}, trễ ${st.delay}ms · ${polText}; luồng xử lý chỉ nhận được khung tĩnh trước đó.`;
-                zPred = `Dự báo trễ nhịp · +${st.zLatencyMs}ms`;
-            } else {
-                // Khi chủ thể đang ngồi đúng tư thế an toàn: không biến thành Nguy Hiểm giả tạo, chỉ ghi nhận độ trễ / giảm mẫu của HĐH
-                zSev = "warning";
-                zAction = `${item.action} · Trễ +${st.zLatencyMs}ms`;
-                zDesc = `${item.description} · Tốc độ luồng giảm còn ~${st.zFps} FPS, rơi ${st.zDropPct}% khung trung gian do N=${st.cap}, trễ ${st.delay}ms.`;
-                zPred = `${zPred} · Trễ +${st.zLatencyMs}ms`;
-            }
-
-            if (zSev === "danger") zDanger += 1;
-            else if (zSev === "warning") zWarn += 1;
+            if (narr.sev === "danger") zDanger += 1;
+            else if (narr.sev === "warning") zWarn += 1;
             else zSafe += 1;
 
-            const badgeClass = zSev === "danger" ? "badge-danger" : (zSev === "warning" ? "badge-warning" : "badge-safe");
-            const laggedItem = sourceLogs[Math.min(sourceLogs.length - 1, idx + 1)] || item;
+            const badgeClass = narr.sev === "danger" ? "badge-danger" : (narr.sev === "warning" ? "badge-warning" : "badge-safe");
             const snapUrl = laggedItem.snapshot_url || item.snapshot_url;
+            const thumbStyle = sev === 3
+                ? "filter: blur(1.6px) contrast(0.82) saturate(0.5); border: 1px solid var(--accent-crimson);"
+                : (sev === 2 ? "filter: contrast(0.9) saturate(0.8); border: 1px solid var(--accent-amber);" : "");
             const snapHtml = snapUrl
-                ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(zAction)}" class="snapshot-thumb" style="filter: contrast(0.94); border: 1px solid var(--accent-amber);" loading="lazy" onclick="openSnapshotModal('${escapeHtml(snapUrl)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(zAction)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(zDesc)}', '${escapeHtml(zPred)}')" title="Khung hình trễ +${st.zLatencyMs}ms" />`
+                ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(narr.action)}" class="snapshot-thumb" style="${thumbStyle}" loading="lazy" onclick="openSnapshotModal('${escapeHtml(snapUrl)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(narr.action)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(narr.desc)}', '${escapeHtml(narr.pred)}')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr class="${zSev === "danger" ? "row-danger" : ""}">
+                <tr class="${narr.sev === "danger" ? "row-danger" : ""}">
                     <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
-                    <td class="mono">${escapeHtml(item.timestamp || "--:--:--")} <span style="color: var(--accent-amber);">+${st.zLatencyMs}ms</span></td>
+                    <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                     <td>${getModelTierBadge(item.model_tier)}</td>
-                    <td><span class="badge ${badgeClass}">${escapeHtml(zAction)}</span></td>
-                    <td class="desc-cell">${escapeHtml(zDesc)}</td>
+                    <td><span class="badge ${badgeClass}">${escapeHtml(narr.action)}</span></td>
+                    <td class="desc-cell">${escapeHtml(narr.desc)}</td>
                     <td class="prediction-cell">
                         <div class="prediction-badge">
-                            <span class="pred-text">${escapeHtml(zPred)}</span>
+                            <span class="pred-text">${escapeHtml(narr.pred)}</span>
                         </div>
                     </td>
                     <td style="text-align: center;">${snapHtml}</td>
@@ -5149,11 +5288,11 @@ function updateLiveParallelReportsAndLogs() {
     safeSetText("live-z-warn-count", String(zWarn));
     safeSetText("live-z-danger-count", String(zDanger));
 
-    if (isOptimal || isOverProvisioned) {
+    if (isOptimal) {
         safeSetText("live-z-rep-ergo", baseErgoText);
     } else {
-        const degradedErgo = Math.max(35, baseErgoNum - Math.round(st.zDropPct * 0.55) - (st.policy === "block_fifo" ? 16 : 6));
-        safeSetText("live-z-rep-ergo", `${degradedErgo} / 100`);
+        const penalty = sev === 3 ? 48 : (sev === 2 ? 26 : 8);
+        safeSetText("live-z-rep-ergo", `${Math.max(25, baseErgoNum - penalty)} / 100`);
     }
 }
 
@@ -5188,27 +5327,9 @@ function renderLiveParallelLoop() {
 
         if (zCanvas) {
             const zCtx = zCanvas.getContext("2d");
-            zCtx.imageSmoothingEnabled = true;
-            zCtx.imageSmoothingQuality = "high";
             const w = zCanvas.width || 1920;
             const h = zCanvas.height || 1080;
-            const shouldRefreshZ = !st.isStall && (liveTickCounter % Math.max(1, st.zSkipStride) === 0);
-
-            if (liveRingBuffer.length > 0) {
-                if (shouldRefreshZ || liveTickCounter <= 3) {
-                    const lagIdx = Math.max(0, liveRingBuffer.length - 1 - st.zLagSlots);
-                    const chosen = liveRingBuffer[lagIdx] || liveRingBuffer[liveRingBuffer.length - 1];
-                    zCtx.clearRect(0, 0, w, h);
-                    zCtx.drawImage(chosen, 0, 0, w, h);
-                } else {
-                    const stuckFrame = liveRingBuffer[0] || activeSource;
-                    zCtx.clearRect(0, 0, w, h);
-                    drawImageContain(zCtx, stuckFrame, w, h);
-                }
-            } else {
-                drawImageContain(zCtx, activeSource, w, h);
-            }
-            drawZDiagnosticWatermark(zCtx, w, h, st);
+            renderDegradedCanvasFrame(zCtx, liveRingBuffer, activeSource, w, h, st, liveTickCounter, true);
         }
     } else {
         if (yOffline) yOffline.classList.remove("hidden");
@@ -5237,6 +5358,7 @@ function enterLiveParallelSplit() {
 
     isLiveParallelActive = true;
     liveRingBuffer = [];
+    lastLiveZCanvasFrame = null;
     liveTickCounter = 0;
     updateDualModeEvaluation(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
     updateLiveParallelReportsAndLogs();
@@ -5263,9 +5385,9 @@ function exitLiveParallelSplit() {
 function populateVideoParallelSplitView() {
     const st = osBranchZState;
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
-    const polText = st.policy === "drop_oldest" ? "Priority" : "Block-FIFO";
-    const isOptimal = (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest");
-    const isOverProvisioned = (st.cap > 16 && st.delay === 0 && st.policy === "drop_oldest");
+    const polText = st.policy === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)";
+    const sev = st.severityTier || 0;
+    const isOptimal = (sev === 0);
 
     safeSetText("split-vid-z-config-text", `N = ${st.cap} · ${ramMb} MB · ${st.delay} ms · ${polText}`);
     safeSetText("split-vid-z-fps", `${st.zFps} FPS`);
@@ -5311,14 +5433,13 @@ function populateVideoParallelSplitView() {
             const c = document.createElement("div");
             const level = slot.level || "safe";
             const isRisk = (level === "danger" || level === "warning" || parseFloat(slot.score || 0) >= 4.0);
-            const isDropped = (
-                (st.policy === "block_fifo" && isRisk && idx < Math.floor(hmData.length * 0.68)) ||
-                ((st.cap < 16 || st.delay > 0) && ((idx + 1) % (st.delay >= 80 ? 2 : 3) === 0))
+            const isDropped = sev === 3 || (
+                sev === 2 && ((st.policy === "block_fifo" && isRisk && idx < Math.floor(hmData.length * 0.7)) || (idx % 2 === 1))
             );
-            const extra = isDropped ? "heatmap-segment seg-z-dropped" : (st.cap > 16 ? "heatmap-segment seg-z-delayed" : "");
-            c.className = `heatmap-cell ${level} ${extra}`.trim();
+            const extra = isDropped ? "heatmap-segment seg-z-dropped" : (sev === 1 ? "heatmap-segment seg-z-delayed" : "");
+            c.className = `heatmap-cell ${isDropped ? "safe" : level} ${extra}`.trim();
             c.title = isDropped
-                ? `[Luồng Tùy Chỉnh · ${slot.time_str}] Mất mẫu do cấu hình tài nguyên`
+                ? `[Luồng Tùy Chỉnh · ${slot.time_str}] AI bỏ sót sự kiện do thiếu khung hình`
                 : `[Luồng Tùy Chỉnh · ${slot.time_str}] Điểm: ${slot.score}`;
             c.onclick = () => {
                 if (yPlayer) yPlayer.currentTime = slot.time || 0;
@@ -5327,7 +5448,7 @@ function populateVideoParallelSplitView() {
         });
     }
 
-    // 3. Tổng hợp Báo cáo AI & Bảng phân đoạn cho Cột Trái và Cột Phải (0 Token phát sinh!)
+    // 3. Tổng hợp Báo cáo AI & Bảng phân đoạn cho Cột Trái và Cột Phải (Đánh giá kép trong 1 lượt gọi - không tốn gấp đôi hạn mức)
     const res = (typeof currentAnalysisResult !== "undefined" && currentAnalysisResult) ? currentAnalysisResult : {};
     const gem = res.gemini_report || {};
     const segs = (typeof currentSegments !== "undefined" && Array.isArray(currentSegments) && currentSegments.length > 0)
@@ -5389,7 +5510,7 @@ function populateVideoParallelSplitView() {
         }).join("");
     }
 
-    // 4. Render Bảng 4 cột trên Cột Phải (#split-z-segments-list) phản ánh hệ quả cấu hình tài nguyên
+    // 4. Render Bảng 4 cột trên Cột Phải (#split-z-segments-list) với thuần túy ngôn ngữ nhận định hành vi của AI
     let droppedHighRiskCount = 0;
     let survivingMaxScore = 0.0;
     const zSegContainer = document.getElementById("split-z-segments-list");
@@ -5428,28 +5549,33 @@ function populateVideoParallelSplitView() {
             `;
         }
 
-        if (isOverProvisioned) {
-            if (numScore > survivingMaxScore) survivingMaxScore = numScore;
-            const badgeClass = isDanger ? "badge badge-danger" : (isWarn ? "badge badge-warning" : "badge badge-safe");
-            const badgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
-            const threatPillClass = isDanger ? "threat-pill-danger" : (isWarn ? "threat-pill-warn" : "threat-pill-safe");
+        if (sev === 1) {
+            // Mức 1: Nhận diện được bố cục chính nhưng mất chi tiết cử động phụ hoặc trễ nhịp khởi phát
+            const lightScore = isDanger ? Math.max(5.5, Number((numScore - 1.4).toFixed(1))) : numScore;
+            if (lightScore > survivingMaxScore) survivingMaxScore = lightScore;
+            const badgeClass = isDanger ? "badge badge-warning" : (isWarn ? "badge badge-warning" : "badge badge-safe");
+            const badgeText = isDanger ? "CẢNH BÁO" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
+            const threatPillClass = (isDanger || isWarn) ? "threat-pill-warn" : "threat-pill-safe";
+            const lightNarrative = (isDanger || isWarn)
+                ? "AI nhận thấy nhóm đối tượng đang tiến lại gần nhau nhưng không thấy rõ động tác vung tay khởi phát và phản ứng của người xung quanh do hình ảnh cập nhật trễ nhịp."
+                : "Các đối tượng di chuyển trong không gian; AI ghi nhận được vị trí đứng chung nhưng bỏ sót các cử chỉ trao đổi ngắn của từng người.";
             const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(summaryText)}', '${escapeHtml(s.time_range)}', '${escapeHtml(summaryText)}', '')" />`
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(lightNarrative)}', '${escapeHtml(s.time_range)}', '${escapeHtml(lightNarrative)}', '')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
                 <tr>
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                        <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")} · +${st.zLatencyMs}ms</div>
+                        <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
                     </td>
                     <td>
-                        <div class="seg-summary-line">${escapeHtml(summaryText)} · <span class="text-muted">Trễ +${st.zLatencyMs}ms · ${ramMb} MB RAM</span></div>
+                        <div class="seg-summary-line">${escapeHtml(lightNarrative)}</div>
                     </td>
                     <td>
                         <div class="threat-header-row">
                             <span class="${badgeClass}">${badgeText}</span>
-                            <div class="threat-score-pill mono ${threatPillClass}">${numScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
+                            <div class="threat-score-pill mono ${threatPillClass}">${lightScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
                         </div>
                     </td>
                     <td style="text-align: center;">${snapHtml}</td>
@@ -5457,37 +5583,60 @@ function populateVideoParallelSplitView() {
             `;
         }
 
-        const evictedByFifo = (st.policy === "block_fifo" && (isDanger || isWarn) && idx < Math.max(1, segs.length - 1));
-        const droppedByQueue = ((st.delay >= 30 || st.cap < 12) && (isDanger || isWarn || idx % 2 === 0));
-        const isMisdiagnosed = evictedByFifo || droppedByQueue;
+        if (sev === 2) {
+            // Mức 2: Suy giảm nặng — Bỏ sót khoảnh khắc va chạm nhanh hoặc nhận nhầm khung hình tĩnh
+            if (isDanger || isWarn) {
+                droppedHighRiskCount += 1;
+                const wrongScore = isDanger ? 2.2 : 1.6;
+                if (wrongScore > survivingMaxScore) survivingMaxScore = wrongScore;
+                const heavyReason = st.policy === "block_fifo"
+                    ? "AI chỉ nhận được hình ảnh các đối tượng đang đứng tách rời trước khi va chạm xảy ra; khoảnh khắc xô xát chính bị kẹt lại phía sau nên hệ thống đánh giá nhầm là tình huống bình thường."
+                    : "Khoảnh khắc va chạm mạnh diễn ra quá nhanh giữa các lần lấy mẫu bị ngắt quãng; AI chỉ nhìn thấy tư thế đứng đầu và cuối phân đoạn nên kết luận không có xung đột.";
+                const wrongSnap = calmFallbackSnap || s.snapshot_url;
+                const snapHtml = wrongSnap
+                    ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: contrast(0.88) saturate(0.75); border: 1px solid var(--accent-amber);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Đánh giá nhầm hành vi', '${escapeHtml(s.time_range)}', '${escapeHtml(heavyReason)}', '')" />`
+                    : `<span class="mono text-muted">--</span>`;
 
-        if (isMisdiagnosed) {
-            if (isDanger || isWarn) droppedHighRiskCount += 1;
-            const wrongScore = isDanger ? 1.8 : 1.2;
-            if (wrongScore > survivingMaxScore) survivingMaxScore = wrongScore;
+                return `
+                    <tr>
+                        <td>
+                            <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
+                            <div class="seg-id-sub" style="color: var(--accent-amber); font-weight: 600;">${escapeHtml(s.segment_id || "")} · BỎ SÓT</div>
+                        </td>
+                        <td>
+                            <div class="seg-summary-line">${escapeHtml(heavyReason)}</div>
+                        </td>
+                        <td>
+                            <div class="threat-header-row">
+                                <span class="badge badge-safe">AN TOÀN GIẢ TẠO</span>
+                                <div class="threat-score-pill mono threat-pill-safe">${wrongScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
+                            </div>
+                        </td>
+                        <td style="text-align: center;">${snapHtml}</td>
+                    </tr>
+                `;
+            }
 
-            const wrongReason = evictedByFifo
-                ? `Mất mẫu đỉnh điểm do trục xuất FIFO; AI nhận nhầm khung tĩnh cuối video.`
-                : `Rơi ${st.zDropPct}% khung hình · N=${st.cap}, trễ ${st.delay}ms; điểm rủi ro tụt từ ${numScore.toFixed(1)} xuống ${wrongScore.toFixed(1)}/10.`;
-
-            const wrongSnap = calmFallbackSnap || s.snapshot_url;
-            const snapHtml = wrongSnap
-                ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: grayscale(0.45) contrast(0.88); border: 1px solid var(--accent-crimson);" title="Khung hình bị lệch mẫu" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Nhận diện sai lệch', '${escapeHtml(s.time_range)}', '${escapeHtml(wrongReason)}', '')" />`
-                : `<span class="mono text-muted">Mất khung</span>`;
+            const degradedScore = Math.max(1.2, Number((numScore * 0.7).toFixed(1)));
+            if (degradedScore > survivingMaxScore) survivingMaxScore = degradedScore;
+            const normalHeavyText = "Chuyển động của các đối tượng bị ngắt quãng giữa chừng; AI chỉ nhận biết được hướng đứng đại khái, không phân biệt được bước đi tự nhiên hay động tác lao tới.";
+            const snapHtml = s.snapshot_url
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(normalHeavyText)}', '${escapeHtml(s.time_range)}', '${escapeHtml(normalHeavyText)}', '')" />`
+                : `<span class="mono text-muted">--</span>`;
 
             return `
                 <tr>
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                        <div class="seg-id-sub" style="color: var(--accent-crimson); font-weight: 600;">${escapeHtml(s.segment_id || "")} · LỆCH MẪU</div>
+                        <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
                     </td>
                     <td>
-                        <div class="seg-summary-line" style="color: var(--accent-amber-text);">${escapeHtml(wrongReason)}</div>
+                        <div class="seg-summary-line">${escapeHtml(normalHeavyText)}</div>
                     </td>
                     <td>
                         <div class="threat-header-row">
-                            <span class="badge badge-safe">AN TOÀN GIẢ TẠO</span>
-                            <div class="threat-score-pill mono threat-pill-safe">${wrongScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
+                            <span class="badge badge-warning">NHẬN DIỆN MƠ HỒ</span>
+                            <div class="threat-score-pill mono threat-pill-warn">${degradedScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
                         </div>
                     </td>
                     <td style="text-align: center;">${snapHtml}</td>
@@ -5495,25 +5644,31 @@ function populateVideoParallelSplitView() {
             `;
         }
 
-        const degradedScore = Math.max(1.0, Number((numScore * 0.65).toFixed(1)));
-        if (degradedScore > survivingMaxScore) survivingMaxScore = degradedScore;
-        const snapHtml = s.snapshot_url
-            ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(summaryText)}', '${escapeHtml(s.time_range)}', '${escapeHtml(summaryText)}', '')" />`
-            : `<span class="mono text-muted">--</span>`;
+        // Mức 3: Cực hạn suy thoái — AI thất bại nhận diện hoàn toàn, mất dấu đối tượng và mù sự kiện
+        if (isDanger || isWarn) droppedHighRiskCount += 1;
+        const collapseScore = 1.0;
+        if (collapseScore > survivingMaxScore) survivingMaxScore = collapseScore;
+        const collapseReason = (isDanger || isWarn)
+            ? "Thất bại phân tích hoàn toàn: Hình ảnh bị đóng băng cứng và vỡ nhòe khiến AI mất dấu toàn bộ các chủ thể đang xô xát, kết luận sai lệch rằng khu vực hoàn toàn vắng lặng và an toàn."
+            : "Hình ảnh biến dạng và đứng hình kéo dài khiến AI không thể tách biệt người với nền cảnh, mất dấu định danh và hướng di chuyển của toàn bộ đối tượng.";
+        const wrongSnap = calmFallbackSnap || s.snapshot_url;
+        const snapHtml = wrongSnap
+            ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: blur(1.8px) grayscale(0.55) contrast(0.8); border: 1px solid var(--accent-crimson);" onclick="openSnapshotModal('${escapeHtml(wrongSnap)}', '${escapeHtml(s.segment_id)}', 'Thất bại phân tích AI', '${escapeHtml(s.time_range)}', '${escapeHtml(collapseReason)}', '')" />`
+            : `<span class="mono text-muted">Mất hình</span>`;
 
         return `
             <tr>
                 <td>
                     <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                    <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")} · +${st.zLatencyMs}ms</div>
+                    <div class="seg-id-sub" style="color: var(--accent-crimson); font-weight: 700;">${escapeHtml(s.segment_id || "")} · THẤT BẠI</div>
                 </td>
                 <td>
-                    <div class="seg-summary-line">${escapeHtml(summaryText)} · <span style="color: var(--accent-amber);">~${st.zFps} FPS</span></div>
+                    <div class="seg-summary-line" style="color: var(--accent-amber-text);">${escapeHtml(collapseReason)}</div>
                 </td>
                 <td>
                     <div class="threat-header-row">
-                        <span class="badge badge-warning">SUY GIẢM MẪU</span>
-                        <div class="threat-score-pill mono threat-pill-warn">${degradedScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
+                        <span class="badge badge-danger">MẤT DẤU HÀNH VI</span>
+                        <div class="threat-score-pill mono threat-pill-safe">${collapseScore.toFixed(1)} <span class="threat-scale">/ 10</span></div>
                     </div>
                 </td>
                 <td style="text-align: center;">${snapHtml}</td>
@@ -5522,12 +5677,6 @@ function populateVideoParallelSplitView() {
     }).join("");
 
     if (zSegContainer) zSegContainer.innerHTML = zSegHtml;
-
-    const totalRiskSegs = segs.filter(s => parseFloat(s.danger_score || 0) >= 4.0 || s.severity === "danger" || s.severity === "warning").length;
-    const retentionPct = totalRiskSegs > 0
-        ? Math.max(0, Math.round(((totalRiskSegs - droppedHighRiskCount) / totalRiskSegs) * 100))
-        : (isOptimal || isOverProvisioned ? 100 : Math.max(20, Math.round(100 - st.zDropPct)));
-    const ramRatio = (st.cap / 16.0).toFixed(1);
 
     const zThreatBadge = document.getElementById("split-z-rep-threat");
     if (isOptimal) {
@@ -5538,35 +5687,39 @@ function populateVideoParallelSplitView() {
         safeSetText("split-z-rep-incident", yIncident);
         safeSetText("split-z-rep-diagnosis", yDiagnosis);
         safeSetText("split-z-rep-rec", yRec);
-    } else if (isOverProvisioned) {
+    } else if (sev === 1) {
         if (zThreatBadge) {
-            zThreatBadge.textContent = `${yThreatText} · DƯ ${ramRatio}x RAM`;
+            zThreatBadge.textContent = "CẢNH BÁO · MẤT CHI TIẾT PHỤ";
             zThreatBadge.className = "badge badge-warning";
         }
-        safeSetText("split-z-rep-incident", `${yIncident} · Tốn ${ramMb} MB RAM`);
-        safeSetText("split-z-rep-diagnosis", yDiagnosis);
-        safeSetText("split-z-rep-rec", `Cấp phát N=${st.cap} gây trễ hàng đợi +${st.zLatencyMs}ms mà không phát hiện thêm biến cố nào.`);
-    } else if (droppedHighRiskCount > 0) {
-        if (zThreatBadge) {
-            zThreatBadge.textContent = "SAI LỆCH · ÂM TÍNH GIẢ";
-            zThreatBadge.className = "badge badge-danger";
-        }
-        safeSetText("split-z-rep-incident", `Bỏ sót ${droppedHighRiskCount} phân đoạn nguy hiểm · Điểm tối đa tụt còn ${survivingMaxScore.toFixed(1)}/10`);
+        safeSetText("split-z-rep-incident", "Nhận diện được tình huống chung nhưng xác định trễ thời điểm khởi phát va chạm.");
         safeSetText(
             "split-z-rep-diagnosis",
-            st.policy === "block_fifo"
-                ? "Chính sách FIFO làm khung hình tĩnh cuối video ghi đè mất các khung hình xung đột đỉnh điểm trong RAM."
-                : `Độ trễ ${st.delay}ms và bộ đệm N=${st.cap} làm rơi ${st.zDropPct}% khung hình · ~${st.zFps} FPS, gây đứt gãy khoảnh khắc va chạm.`
+            "AI vẫn nắm bắt được bố cục đám đông nhưng do thiếu các khung hình chuyển tiếp ngắn nên bỏ sót động tác vung tay ban đầu và đánh giá thấp mức độ khẩn cấp của sự việc."
         );
-        safeSetText("split-z-rep-rec", "Chọn kịch bản 'Chuẩn · 16 khung · 0ms' ở thanh phía trên để khôi phục 100% biến cố.");
+        safeSetText("split-z-rep-rec", "Đối chiếu với Luồng Chuẩn bên trái để xem đầy đủ các cử chỉ khởi phát của từng đối tượng.");
+    } else if (sev === 2) {
+        if (zThreatBadge) {
+            zThreatBadge.textContent = "SAI LỆCH · BỎ SÓT XUNG ĐỘT";
+            zThreatBadge.className = "badge badge-danger";
+        }
+        safeSetText("split-z-rep-incident", `Bỏ sót ${Math.max(1, droppedHighRiskCount)} phân đoạn nguy hiểm · Đánh giá nhầm xung đột thành sinh hoạt bình thường.`);
+        safeSetText(
+            "split-z-rep-diagnosis",
+            "Chuỗi hình ảnh đưa vào AI bị đứt quãng đúng vào lúc diễn ra xô xát nhanh; mô hình chỉ nhìn thấy các đối tượng khi đang đứng tách rời nên kết luận sai lệch mức độ an toàn."
+        );
+        safeSetText("split-z-rep-rec", "Không sử dụng kết quả nhận định bị thiếu hụt này làm căn cứ đánh giá an ninh.");
     } else {
         if (zThreatBadge) {
-            zThreatBadge.textContent = `SUY GIẢM · +${st.zLatencyMs}ms`;
-            zThreatBadge.className = "badge badge-warning";
+            zThreatBadge.textContent = "THẤT BẠI NHẬN DIỆN · MÙ SỰ KIỆN";
+            zThreatBadge.className = "badge badge-danger";
         }
-        safeSetText("split-z-rep-incident", `${yIncident} · Trễ hàng đợi +${st.zLatencyMs}ms`);
-        safeSetText("split-z-rep-diagnosis", `Tốc độ giảm còn ~${st.zFps} FPS · Rơi ${st.zDropPct}% khung hình, làm giảm độ chính xác vận tốc.`);
-        safeSetText("split-z-rep-rec", "Khôi phục cấu hình chuẩn N=16 · 0ms · Priority để đạt 30.0 FPS.");
+        safeSetText("split-z-rep-incident", "Mất hoàn toàn khả năng phân tích hành vi · Bỏ sót 100% diễn biến nguy hiểm trong video.");
+        safeSetText(
+            "split-z-rep-diagnosis",
+            "Hình ảnh bị đóng băng kéo dài, vỡ nét và chồng bóng ma nặng khiến AI mất dấu cấu trúc cơ thể người, không thể phân biệt đối tượng và hoàn toàn không nhận biết được vụ va chạm."
+        );
+        safeSetText("split-z-rep-rec", "Chọn lại cấu hình 'Chuẩn · 16 khung · 0ms' trên thanh công cụ để khôi phục chất lượng video và độ chính xác AI.");
     }
 }
 
@@ -5589,28 +5742,12 @@ function renderVideoParallelLoop() {
             if (!activeVideoEl.paused || videoRingBuffer.length === 0) {
                 pushFrameToRingBuffer(videoRingBuffer, activeVideoEl, w, h);
             }
-            const shouldRefreshZ = !st.isStall && (videoTickCounter % Math.max(1, st.zSkipStride) === 0);
-            if (videoRingBuffer.length > 0) {
-                if (shouldRefreshZ || activeVideoEl.paused || videoTickCounter <= 3) {
-                    const lagIdx = Math.max(0, videoRingBuffer.length - 1 - st.zLagSlots);
-                    const chosen = videoRingBuffer[lagIdx] || videoRingBuffer[videoRingBuffer.length - 1];
-                    zCtx.clearRect(0, 0, w, h);
-                    zCtx.drawImage(chosen, 0, 0, w, h);
-                } else {
-                    const stuckFrame = videoRingBuffer[0] || activeVideoEl;
-                    zCtx.clearRect(0, 0, w, h);
-                    drawImageContain(zCtx, stuckFrame, w, h);
-                }
-            } else {
-                drawImageContain(zCtx, activeVideoEl, w, h);
-            }
-            drawZDiagnosticWatermark(zCtx, w, h, st);
+            renderDegradedCanvasFrame(zCtx, videoRingBuffer, activeVideoEl, w, h, st, videoTickCounter, false);
         } else {
             const snapFallback = getLatestRealSnapshotElement();
             if (snapFallback) {
-                drawImageContain(zCtx, snapFallback, w, h);
+                renderDegradedCanvasFrame(zCtx, videoRingBuffer, snapFallback, w, h, st, videoTickCounter, false);
             }
-            drawZDiagnosticWatermark(zCtx, w, h, st);
         }
     }
 

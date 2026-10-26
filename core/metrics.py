@@ -20,33 +20,29 @@ import torch
 
 def get_hardware_gpu_name() -> str:
     """
-    Nhận diện chính xác thiết bị tính toán phần cứng:
-    - NVIDIA CUDA: Tesla T4, RTX 5060, RTX 4090, v.v.
-    - Apple Silicon: Apple Silicon (MPS)
-    - CPU: CPU
+    Nhận diện tự động thiết bị tính toán phần cứng thực tế của máy đang chạy
+    (tuyệt đối không gán cứng một mã GPU cố định).
     """
     if torch.cuda.is_available():
         try:
-            raw_name = torch.cuda.get_device_name(0)
-            upper = raw_name.upper()
-            if "T4" in upper:
-                return "Tesla T4"
-            if "5060" in upper:
-                return "RTX 5060"
-            if "4090" in upper:
-                return "RTX 4090"
-            if "3060" in upper:
-                return "RTX 3060"
-            if "A100" in upper:
-                return "Tesla A100"
-            if "V100" in upper:
-                return "Tesla V100"
-            cleaned = raw_name.replace("NVIDIA GeForce ", "").replace("NVIDIA ", "").replace(" Laptop GPU", "").strip()
-            return cleaned if len(cleaned) <= 18 else cleaned[:18]
+            raw_name = str(torch.cuda.get_device_name(0) or "").strip()
+            if raw_name:
+                cleaned = (
+                    raw_name.replace("NVIDIA GeForce ", "")
+                    .replace("NVIDIA ", "")
+                    .replace(" Laptop GPU", "")
+                    .strip()
+                )
+                return cleaned if len(cleaned) <= 24 else cleaned[:24]
+            return "NVIDIA CUDA GPU"
         except Exception:
-            return "CUDA GPU"
+            return "NVIDIA CUDA GPU"
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return "Apple Silicon (MPS)"
+    import platform
+    proc_name = str(platform.processor() or os.environ.get("PROCESSOR_IDENTIFIER") or "").strip()
+    if any(k in proc_name.upper() for k in ["INTEL", "AMD"]):
+        return "Intel CPU" if "INTEL" in proc_name.upper() else "AMD CPU"
     return "CPU"
 
 

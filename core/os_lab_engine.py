@@ -511,7 +511,7 @@ class OSLabEngine:
 
         # 2. IMPORT VIDEO
         if delay == 0 and cap == 16 and pol == "drop_oldest":
-            vid_speed = "Quét 1.8x – 2.5x thời gian thực (~55 – 75 FPS trên RTX 5060)"
+            vid_speed = "Quét 1.8x – 2.5x thời gian thực (~55 – 75 FPS trên phần cứng máy chủ)"
             vid_speed_class = "tag-safe"
             vid_stab = f"Khóa trần RAM ≤ {HARD_RAM_CEILING_MB}MB · Chống tràn bộ nhớ OOM 100%"
             vid_stab_class = "tag-safe"
@@ -645,7 +645,7 @@ class OSLabEngine:
         ram_used_mb = stats.get("ram_active_mb", round(cap * 2.64, 2))
 
         if delay == 0:
-            verdict = "Đạt chuẩn vận hành thời gian thực 30 FPS trên phần cứng GPU RTX 5060 (0 khung rơi, độ trễ tối thiểu)."
+            verdict = "Đạt chuẩn vận hành thời gian thực 30 FPS trên phần cứng hệ thống (0 khung rơi, độ trễ tối thiểu)."
             is_safe = True
         elif delay <= 80:
             verdict = f"Cảnh báo: Tốc độ Consumer đạt ~{measured_cons_fps} FPS, rơi {dropped_frames} khung ({drop_rate}%). Hệ thống xả đệm để duy trì luồng."

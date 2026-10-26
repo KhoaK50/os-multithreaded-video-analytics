@@ -572,7 +572,9 @@ class LiveCameraPipeline:
                         "prediction_next_4s": pred_name,
                         "snapshot_url": f"/api/snapshots/{snap_name}",
                         "severity": severity_val,
-                        "model_tier": tier_key
+                        "model_tier": tier_key,
+                        "degraded_light": ai_result.get("degraded_light") if isinstance(ai_result.get("degraded_light"), dict) else None,
+                        "degraded_heavy": ai_result.get("degraded_heavy") if isinstance(ai_result.get("degraded_heavy"), dict) else None,
                     }
 
                     with self.ai_lock:
@@ -1419,14 +1421,8 @@ def get_telemetry():
     tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
     cam_settings = LIVE_CAMERA.get_settings()
 
-    gpu_name = "CPU Only"
-    try:
-        import torch
-        if torch.cuda.is_available():
-            raw_gpu = torch.cuda.get_device_name(0)
-            gpu_name = "RTX 5060" if "5060" in raw_gpu else raw_gpu
-    except Exception:
-        pass
+    from core.metrics import get_hardware_gpu_name
+    gpu_name = get_hardware_gpu_name()
 
     with LIVE_CAMERA.ai_lock:
         bio_copy = dict(LIVE_CAMERA.biomechanics)
@@ -1464,37 +1460,58 @@ def get_telemetry():
     quota_stats = tier_info.get("quota_stats") or MODEL_ORCHESTRATOR.quota_tracker.get_stats()
     tier1_m = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
     tier2_m = getattr(CONFIG, "GEMINI_TIER2_MODEL", "gemini-3.5-flash")
+    t1_rpd = quota_stats.get("tier1_rpd_used", quota_stats.get("rpd_used", 0))
+    t1_rpm = quota_stats.get("tier1_rpm_used", quota_stats.get("rpm_used", 0))
+    t2_rpd = quota_stats.get("tier2_rpd_used", 0)
+    t2_rpm = quota_stats.get("tier2_rpm_used", 0)
+    rpd_lim = quota_stats.get("rpd_limit", 1500)
+    rpm_lim = quota_stats.get("rpm_limit", 15)
+
+    t1_daily_locked = bool(tier_info.get("is_tier1_daily_exhausted", False)) or (t1_rpd >= rpd_lim)
+    if t1_daily_locked:
+        t1_status = "Đã hết hạn mức ngày (Mở lại lúc 00:00 ngày mai)"
+        t1_badge = "Chờ qua ngày"
+    elif tier_info.get("is_cooldown"):
+        t1_status = f"Đang hồi hạn mức phút ({round(tier_info.get('cooldown_remaining', 0), 1)}s ➔ Tự quay lại ngay)"
+        t1_badge = "Tạm nghỉ 60s"
+    else:
+        t1_status = "Đang hoạt động chính"
+        t1_badge = "Đang dùng"
+
+    if tier_info.get("active_tier") == "tier_2":
+        t2_status = (
+            "Đang tiếp quản đến hết ngày (do Mô hình 1 hết hạn mức ngày)"
+            if t1_daily_locked
+            else "Đang tiếp quản tạm thời 60s (khi Mô hình 1 hồi hạn mức phút sẽ trả lại ngay)"
+        )
+        t2_badge = "Đang tiếp quản"
+    else:
+        t2_status = "Sẵn sàng tự động tiếp quản khi Mô hình 1 chạm trần"
+        t2_badge = "Dự phòng"
+
     quota_matrix = {
         "tier_1": {
-            "name": "Tier 1: Cloud Vision Cao Cấp",
+            "name": "Mô hình 1 (Chính): Nhận diện Đám mây",
             "model": tier1_m,
-            "status": "Đang hoạt động" if not tier_info.get("is_cooldown") else f"Hồi hạn mức ({round(tier_info.get('cooldown_remaining', 0), 1)}s)",
-            "limit": f"{quota_stats['rpd_used']}/{quota_stats['rpd_limit']} RPD | {quota_stats['rpm_used']}/{quota_stats['rpm_limit']} RPM",
-            "badge": "Sẵn sàng",
+            "status": t1_status,
+            "limit": f"Ngày: {t1_rpd}/{rpd_lim} lượt | Phút: {t1_rpm}/{rpm_lim} lượt",
+            "badge": t1_badge,
             "is_active": (tier_info.get("active_tier") == "tier_1")
         },
         "tier_2": {
-            "name": "Tier 2: Cloud Vision Kế Cận",
+            "name": "Mô hình 2 (Dự phòng): Tự động tiếp quản",
             "model": tier2_m,
-            "status": "Đang hoạt động (Dự phòng)" if (tier_info.get("active_tier") == "tier_2") else "Sẵn sàng dự phòng",
-            "limit": f"{quota_stats['rpd_used']}/{quota_stats['rpd_limit']} RPD | {quota_stats['rpm_used']}/{quota_stats['rpm_limit']} RPM",
-            "badge": "Dự phòng",
+            "status": t2_status,
+            "limit": f"Ngày: {t2_rpd}/{rpd_lim} lượt | Phút: {t2_rpm}/{rpm_lim} lượt",
+            "badge": t2_badge,
             "is_active": (tier_info.get("active_tier") == "tier_2")
         },
-        "tier_2_5": {
-            "name": "Tier 2.5: Cloud Lite Fallback",
-            "model": "gemini-flash-lite-latest",
-            "status": "Sẵn sàng dự phòng",
-            "limit": "1,500 RPD / 15 RPM",
-            "badge": "Dự phòng phụ",
-            "is_active": False
-        },
         "tier_3": {
-            "name": "Tier 3: Cỗ Máy Động Học Cục Bộ",
-            "model": "Local Kinematic Engine (RTX 5060)",
-            "status": "Vĩnh viễn sẵn sàng (Offline 0 Token)",
-            "limit": "Vô hạn (0 Token)",
-            "badge": "Ngoại tuyến",
+            "name": "Mô hình 3 (Nội bộ): Xử lý trực tiếp trên máy",
+            "model": f"Bộ xử lý trên máy ({gpu_name})",
+            "status": "Luôn sẵn sàng khi cả 2 mô hình đám mây chạm trần",
+            "limit": "Không giới hạn số lượt",
+            "badge": "Nội bộ",
             "is_active": (tier_info.get("active_tier") == "tier_3")
         }
     }
@@ -1533,15 +1550,17 @@ def get_telemetry():
         "cpu_percent": round(LIVE_CAMERA.cpu_smoothed, 1),
         "ram_percent": round(psutil.virtual_memory().percent, 1),
         "gpu_vram_used": round(vram_mb / 1024.0, 2),
-        "gpu_vram_total": round(vram_total / 1024.0, 2) if vram_total > 0 else 8.0,
+        "gpu_vram_total": round(vram_total / 1024.0, 2) if vram_total > 0 else 0.0,
         "gpu_name": gpu_name,
         "active_model_tier": tier_info.get("active_tier", "tier_1"),
-        "active_tier_name": tier_info.get("tier_name", "Tier-1 Gemini 3.8"),
-        "tier_badge": tier_info.get("tier_badge", "Tier-1 Gemini 3.8"),
+        "active_tier_name": tier_info.get("tier_name", "Mô hình 1 (Chính)"),
+        "tier_badge": tier_info.get("tier_badge", "Mô hình 1 (Chính)"),
         "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
         "is_cooldown": tier_info.get("is_cooldown", False),
+        "is_tier1_daily_exhausted": t1_daily_locked,
         "quota_matrix": quota_matrix,
         "realtime_quota": {
+            "date": quota_stats.get("date", time.strftime("%Y-%m-%d")),
             "rpm_used": quota_stats["rpm_used"],
             "rpm_limit": quota_stats["rpm_limit"],
             "rpm_remaining": quota_stats["rpm_remaining"],
@@ -1550,7 +1569,11 @@ def get_telemetry():
             "rpd_limit": quota_stats["rpd_limit"],
             "rpd_remaining": quota_stats["rpd_remaining"],
             "rpd_percent": quota_stats["rpd_percent"],
-            "tokens_today": quota_stats["tokens_today"]
+            "tokens_today": quota_stats["tokens_today"],
+            "tier1_rpm_used": t1_rpm,
+            "tier1_rpd_used": t1_rpd,
+            "tier2_rpm_used": t2_rpm,
+            "tier2_rpd_used": t2_rpd,
         },
         "active_clients": LIVE_CAMERA.active_clients,
 
@@ -1994,7 +2017,7 @@ def ask_gemini_qa(req: ChatRequest):
         percentages = res.get("action_percentages", {})
         gemini_rep = res.get("gemini_report", {})
         context_str = f"""
-THÔNG SỐ PHÂN TÍCH TỪ RTX 5060:
+THÔNG SỐ PHÂN TÍCH TỪ HỆ THỐNG:
 - Thời lượng: {res.get('duration_seconds')}s ({res.get('total_frames')} frames)
 - Tỷ lệ hành vi: {percentages}
 - Mức độ nguy hiểm cao nhất: {res.get('peak_danger_reason')} ({res.get('overall_danger_level')})

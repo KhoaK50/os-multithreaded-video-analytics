@@ -108,37 +108,72 @@ class RollingContextMemory:
 
 
 class CooldownTracker:
-    """Quản lý thời gian hồi phục 60 giây cho các tầng mô hình (Thread-safe)."""
+    """
+    Quản lý cơ chế chuyển đổi và tự phục hồi giữa các mô hình (Thread-safe):
+    - Chạm hạn mức Phút (15 lượt/phút): Tạm chuyển sang Mô hình 2 trong đúng 60 giây, hết 60 giây tự động quay lại Mô hình 1 ngay lập tức.
+    - Chạm hạn mức Ngày (1.500 lượt/ngày): Khóa chuyển sang Mô hình 2 cho đến hết ngày hôm đó (00:00 ngày mới mới mở lại Mô hình 1).
+    """
 
     def __init__(self, cooldown_seconds: float = 60.0):
         self.cooldown_seconds = cooldown_seconds
         self.tier1_cooldown_start: Optional[float] = None
         self.tier2_cooldown_start: Optional[float] = None
+        self.tier1_exhausted_date: Optional[str] = None
+        self.tier2_exhausted_date: Optional[str] = None
         self._lock = threading.Lock()
 
-    def mark_rate_limited(self, tier: ModelTier):
+    def mark_rate_limited(self, tier: ModelTier, is_daily_exhausted: bool = False):
         with self._lock:
             now = time.time()
+            today_str = time.strftime("%Y-%m-%d")
             if tier == ModelTier.TIER_1_PRIMARY:
-                self.tier1_cooldown_start = now
-                logger.warning(f"Tier-1 kích hoạt chế độ Cooldown {self.cooldown_seconds}s từ {now:.1f}")
+                if is_daily_exhausted:
+                    self.tier1_exhausted_date = today_str
+                    self.tier1_cooldown_start = now
+                    logger.warning(f"Mô hình 1 đã chạm hạn mức Ngày ({today_str}) -> Duy trì ở Mô hình 2 đến 00:00 ngày mai.")
+                else:
+                    self.tier1_cooldown_start = now
+                    logger.warning(f"Mô hình 1 chạm hạn mức Phút -> Tạm chuyển sang Mô hình 2 trong {self.cooldown_seconds}s.")
             elif tier == ModelTier.TIER_2_FALLBACK:
-                self.tier2_cooldown_start = now
-                logger.warning(f"Tier-2 kích hoạt chế độ Cooldown {self.cooldown_seconds}s từ {now:.1f}")
+                if is_daily_exhausted:
+                    self.tier2_exhausted_date = today_str
+                    self.tier2_cooldown_start = now
+                    logger.warning(f"Mô hình 2 đã chạm hạn mức Ngày ({today_str}) -> Chuyển sang xử lý nội bộ đến 00:00 ngày mai.")
+                else:
+                    self.tier2_cooldown_start = now
+                    logger.warning(f"Mô hình 2 chạm hạn mức Phút -> Tạm nghỉ {self.cooldown_seconds}s.")
 
     def is_tier1_ready(self) -> bool:
         with self._lock:
+            today_str = time.strftime("%Y-%m-%d")
+            if self.tier1_exhausted_date is not None:
+                if self.tier1_exhausted_date == today_str:
+                    return False
+                # Đã bước sang ngày mới (00:00) -> Khôi phục hạn mức ngày của Mô hình 1
+                self.tier1_exhausted_date = None
+                self.tier1_cooldown_start = None
+                logger.info("Đã bước sang ngày mới -> Tự động khôi phục Mô hình 1 (Chính).")
+                return True
+
             if self.tier1_cooldown_start is None:
                 return True
             elapsed = time.time() - self.tier1_cooldown_start
             if elapsed >= self.cooldown_seconds:
-                self.tier1_cooldown_start = None  # Phục hồi
-                logger.info("Tier-1 đã hết thời gian Cooldown 60s -> Tự phục hồi thành công (Preemptive Reversion)!")
+                self.tier1_cooldown_start = None  # Phục hồi ngay khi qua 60 giây
+                logger.info("Hạn mức phút của Mô hình 1 đã hồi phục sau 60s -> Tự động quay lại Mô hình 1!")
                 return True
             return False
 
     def is_tier2_ready(self) -> bool:
         with self._lock:
+            today_str = time.strftime("%Y-%m-%d")
+            if self.tier2_exhausted_date is not None:
+                if self.tier2_exhausted_date == today_str:
+                    return False
+                self.tier2_exhausted_date = None
+                self.tier2_cooldown_start = None
+                return True
+
             if self.tier2_cooldown_start is None:
                 return True
             elapsed = time.time() - self.tier2_cooldown_start
@@ -147,8 +182,28 @@ class CooldownTracker:
                 return True
             return False
 
+    def is_daily_locked(self, tier: ModelTier) -> bool:
+        with self._lock:
+            today_str = time.strftime("%Y-%m-%d")
+            if tier == ModelTier.TIER_1_PRIMARY:
+                return self.tier1_exhausted_date == today_str
+            elif tier == ModelTier.TIER_2_FALLBACK:
+                return self.tier2_exhausted_date == today_str
+            return False
+
     def get_cooldown_remaining(self, tier: ModelTier) -> float:
         with self._lock:
+            today_str = time.strftime("%Y-%m-%d")
+            if tier == ModelTier.TIER_1_PRIMARY and self.tier1_exhausted_date == today_str:
+                # Tính số giây còn lại đến 00:00 ngày hôm sau
+                lt = time.localtime()
+                secs_passed = lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec
+                return float(max(60, 86400 - secs_passed))
+            if tier == ModelTier.TIER_2_FALLBACK and self.tier2_exhausted_date == today_str:
+                lt = time.localtime()
+                secs_passed = lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec
+                return float(max(60, 86400 - secs_passed))
+
             start_t = self.tier1_cooldown_start if tier == ModelTier.TIER_1_PRIMARY else self.tier2_cooldown_start
             if start_t is None:
                 return 0.0
@@ -159,47 +214,116 @@ class CooldownTracker:
         with self._lock:
             self.tier1_cooldown_start = None
             self.tier2_cooldown_start = None
-
+            self.tier1_exhausted_date = None
+            self.tier2_exhausted_date = None
 
 
 class QuotaTracker:
     """
-    Theo dõi lưu lượng gọi API Gemini thời gian thực:
-    - RPM (Requests Per Minute): Cửa sổ trượt 60 giây (ngưỡng miễn phí: 15 RPM).
-    - RPD (Requests Per Day): Cửa sổ 24 giờ (ngưỡng miễn phí: 1,500 RPD).
-    - Tổng Tokens tích lũy hôm nay.
+    Theo dõi và lưu trữ bền vững hạn mức sử dụng AI theo thời gian thực:
+    - Hạn mức Phút: Cửa sổ trượt 60 giây (tối đa 15 lượt/phút cho mỗi mô hình), tự hồi phục sau đúng 60 giây.
+    - Hạn mức Ngày: Lưu bền vững vào outputs/quota_state.json theo ngày thực tế (YYYY-MM-DD),
+      tuyệt đối không bị đặt lại về 0 khi khởi động lại máy chủ, chỉ làm mới khi sang 00:00 ngày mới.
     """
-    def __init__(self, rpm_limit: int = 15, rpd_limit: int = 1500):
+    def __init__(self, rpm_limit: int = 15, rpd_limit: int = 1500, persist_path: Optional[str] = None):
         self.rpm_limit = rpm_limit
         self.rpd_limit = rpd_limit
+        self.persist_path = persist_path
         self.minute_window: List[float] = []
+        self.tier_minute_windows: Dict[str, List[float]] = {"tier_1": [], "tier_2": []}
         self.daily_requests_count: int = 0
+        self.tier_daily_counts: Dict[str, int] = {"tier_1": 0, "tier_2": 0}
         self.day_start_timestamp: float = time.time()
+        self.current_date_str: str = time.strftime("%Y-%m-%d")
         self.total_tokens_used_today: int = 0
         self._lock = threading.Lock()
+        self._load_persisted_state()
 
-    def record_request(self, token_count: int = 0):
+    def _load_persisted_state(self):
+        if not self.persist_path:
+            return
+        try:
+            if os.path.exists(self.persist_path):
+                with open(self.persist_path, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                today_str = time.strftime("%Y-%m-%d")
+                if isinstance(saved, dict) and saved.get("date") == today_str:
+                    self.current_date_str = today_str
+                    self.daily_requests_count = max(0, int(saved.get("daily_requests_count", 0)))
+                    self.total_tokens_used_today = max(0, int(saved.get("total_tokens_used_today", 0)))
+                    t_counts = saved.get("tier_daily_counts", {})
+                    if isinstance(t_counts, dict):
+                        self.tier_daily_counts["tier_1"] = max(0, int(t_counts.get("tier_1", 0)))
+                        self.tier_daily_counts["tier_2"] = max(0, int(t_counts.get("tier_2", 0)))
+                    if self.daily_requests_count == 0 and (self.tier_daily_counts["tier_1"] + self.tier_daily_counts["tier_2"]) > 0:
+                        self.daily_requests_count = self.tier_daily_counts["tier_1"] + self.tier_daily_counts["tier_2"]
+                    elif self.tier_daily_counts["tier_1"] == 0 and self.tier_daily_counts["tier_2"] == 0 and self.daily_requests_count > 0:
+                        self.tier_daily_counts["tier_1"] = self.daily_requests_count
+        except Exception as e:
+            logger.debug(f"Không thể nạp trạng thái hạn mức ngày từ file: {e}")
+
+    def _save_persisted_state_unlocked(self):
+        if not self.persist_path:
+            return
+        try:
+            parent_dir = os.path.dirname(self.persist_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+            payload = {
+                "date": self.current_date_str,
+                "daily_requests_count": self.daily_requests_count,
+                "total_tokens_used_today": self.total_tokens_used_today,
+                "tier_daily_counts": dict(self.tier_daily_counts),
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            with open(self.persist_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.debug(f"Không thể lưu trạng thái hạn mức ngày xuống file: {e}")
+
+    def _check_date_rollover_unlocked(self, now: float):
+        today_str = time.strftime("%Y-%m-%d")
+        if today_str != self.current_date_str or (now - self.day_start_timestamp >= 86400.0):
+            self.current_date_str = today_str
+            self.day_start_timestamp = now
+            self.daily_requests_count = 0
+            self.tier_daily_counts = {"tier_1": 0, "tier_2": 0}
+            self.total_tokens_used_today = 0
+            self._save_persisted_state_unlocked()
+
+    def record_request(self, token_count: int = 0, tier_key: str = "tier_1"):
         with self._lock:
             now = time.time()
-            if now - self.day_start_timestamp >= 86400.0:
-                self.day_start_timestamp = now
-                self.daily_requests_count = 0
-                self.total_tokens_used_today = 0
+            self._check_date_rollover_unlocked(now)
             self.minute_window.append(now)
+            t_key = "tier_2" if tier_key == "tier_2" else "tier_1"
+            self.tier_minute_windows.setdefault(t_key, []).append(now)
             self.daily_requests_count += 1
+            self.tier_daily_counts[t_key] = self.tier_daily_counts.get(t_key, 0) + 1
             if isinstance(token_count, (int, float)) and token_count > 0:
                 self.total_tokens_used_today += int(token_count)
+            self._save_persisted_state_unlocked()
 
     def get_stats(self) -> dict:
         with self._lock:
             now = time.time()
+            self._check_date_rollover_unlocked(now)
             cutoff = now - 60.0
             self.minute_window = [t for t in self.minute_window if t > cutoff]
+            for k in ("tier_1", "tier_2"):
+                self.tier_minute_windows[k] = [t for t in self.tier_minute_windows.get(k, []) if t > cutoff]
+
+            t1_rpm = len(self.tier_minute_windows["tier_1"])
+            t2_rpm = len(self.tier_minute_windows["tier_2"])
+            t1_rpd = self.tier_daily_counts.get("tier_1", 0)
+            t2_rpd = self.tier_daily_counts.get("tier_2", 0)
+
             rpm_used = len(self.minute_window)
             rpd_used = self.daily_requests_count
             rpm_rem = max(0, self.rpm_limit - rpm_used)
             rpd_rem = max(0, self.rpd_limit - rpd_used)
             return {
+                "date": self.current_date_str,
                 "rpm_used": rpm_used,
                 "rpm_limit": self.rpm_limit,
                 "rpm_remaining": rpm_rem,
@@ -208,7 +332,15 @@ class QuotaTracker:
                 "rpd_limit": self.rpd_limit,
                 "rpd_remaining": rpd_rem,
                 "rpd_percent": round((rpd_used / max(1, self.rpd_limit)) * 100.0, 1),
-                "tokens_today": self.total_tokens_used_today
+                "tokens_today": self.total_tokens_used_today,
+                "tier1_rpm_used": t1_rpm,
+                "tier1_rpd_used": t1_rpd,
+                "tier1_rpm_remaining": max(0, self.rpm_limit - t1_rpm),
+                "tier1_rpd_remaining": max(0, self.rpd_limit - t1_rpd),
+                "tier2_rpm_used": t2_rpm,
+                "tier2_rpd_used": t2_rpd,
+                "tier2_rpm_remaining": max(0, self.rpm_limit - t2_rpm),
+                "tier2_rpd_remaining": max(0, self.rpd_limit - t2_rpd),
             }
 
 
@@ -269,6 +401,14 @@ def is_rate_limit_error(exc: Exception) -> bool:
     return False
 
 
+def is_daily_quota_error(exc: Exception) -> bool:
+    """Phân biệt lỗi chạm hạn mức Ngày (1.500 lượt/ngày) với chạm hạn mức Phút (15 lượt/phút)."""
+    if exc is None:
+        return False
+    exc_str = str(exc).upper()
+    return any(k in exc_str for k in ["PER_DAY", "PER DAY", "RPD", "DAILY", "REQUESTS PER DAY"])
+
+
 class HierarchicalModelOrchestrator:
     """Bộ điều phối chuyển đổi mô hình đa tầng tự phục hồi và bảo toàn ngữ cảnh."""
 
@@ -279,7 +419,8 @@ class HierarchicalModelOrchestrator:
         tier2_model: Optional[str] = None,
         cooldown_seconds: Optional[float] = None,
         rate_limit_interval: Optional[float] = None,
-        api_keys: Optional[List[str]] = None
+        api_keys: Optional[List[str]] = None,
+        persist_path: Optional[str] = None
     ):
         self.api_keys_pool: List[str] = api_keys if api_keys is not None else CONFIG.GEMINI_API_KEYS
         self.current_key_idx: int = 0
@@ -301,7 +442,7 @@ class HierarchicalModelOrchestrator:
         self.tier3_enum = ModelTier.TIER_3_HEURISTIC
 
         self.cooldown_tracker = CooldownTracker(cooldown_seconds=self.cooldown_seconds)
-        self.quota_tracker = QuotaTracker()
+        self.quota_tracker = QuotaTracker(persist_path=persist_path)
         self.context_memory = RollingContextMemory(maxlen=5)
         self.heuristic_arbiter = AutonomousHeuristicArbiter()
 
@@ -318,7 +459,7 @@ class HierarchicalModelOrchestrator:
             try:
                 from google import genai
                 self.client = genai.Client(api_key=self.api_key, http_options={"timeout": 10000})
-                logger.info(f"HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công.")
+                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công.")
             except Exception as e:
                 logger.warning(f"Chưa khởi tạo được genai.Client: {e}")
                 self.client = None
@@ -351,35 +492,54 @@ class HierarchicalModelOrchestrator:
 
     def get_active_tier_info(self) -> dict:
         """Trả về thông tin tầng mô hình đang kích hoạt chuẩn Interface Contract."""
-        if self.active_tier != ModelTier.TIER_1_PRIMARY and self.cooldown_tracker.is_tier1_ready():
+        quota_stats = self.quota_tracker.get_stats()
+
+        # Tự động chuyển đổi nếu chạm trần hạn mức Ngày (1.500 lượt) hoặc Phút (15 lượt) của Mô hình 1
+        if quota_stats.get("tier1_rpd_used", 0) >= self.quota_tracker.rpd_limit and not self.cooldown_tracker.is_daily_locked(ModelTier.TIER_1_PRIMARY):
+            self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=True)
+            if self.active_tier == ModelTier.TIER_1_PRIMARY:
+                self.active_tier = ModelTier.TIER_2_FALLBACK
+        elif quota_stats.get("tier1_rpm_used", 0) >= self.quota_tracker.rpm_limit and self.cooldown_tracker.is_tier1_ready():
+            self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=False)
+            if self.active_tier == ModelTier.TIER_1_PRIMARY:
+                self.active_tier = ModelTier.TIER_2_FALLBACK
+
+        # Ngay khi hạn mức phút (sau 60s) hoặc hạn mức ngày (sau 00:00) của Mô hình 1 hồi lại -> Quay về Mô hình 1 ngay lập tức
+        if (
+            self.active_tier != ModelTier.TIER_1_PRIMARY
+            and self.cooldown_tracker.is_tier1_ready()
+            and quota_stats.get("tier1_rpm_used", 0) < self.quota_tracker.rpm_limit
+            and quota_stats.get("tier1_rpd_used", 0) < self.quota_tracker.rpd_limit
+        ):
             self.active_tier = ModelTier.TIER_1_PRIMARY
+
+        t1_daily_locked = self.cooldown_tracker.is_daily_locked(ModelTier.TIER_1_PRIMARY)
 
         if self.active_tier == ModelTier.TIER_1_PRIMARY:
             tier_key = "tier_1"
             tier_name = self.tier1_model
-            tier_badge = "Tier-1 Gemini 3.8"
+            tier_badge = "Mô hình 1 (Chính)"
             is_cd = False
             cd_rem = 0.0
         elif self.active_tier == ModelTier.TIER_2_FALLBACK:
             tier_key = "tier_2"
             tier_name = self.tier2_model
-            tier_badge = "Tier-2 Gemini 3.5 (Failover)"
+            tier_badge = "Mô hình 2 (Dự phòng)"
             is_cd = True
             cd_rem = self.cooldown_tracker.get_cooldown_remaining(ModelTier.TIER_1_PRIMARY)
         else:
             tier_key = "tier_3"
-            tier_name = "Autonomous Heuristic"
-            tier_badge = "AI Tự Hành (Local Heuristic)"
+            tier_name = "Xử lý nội bộ"
+            tier_badge = "Mô hình 3 (Nội bộ)"
             is_cd = True
             cd_rem = self.cooldown_tracker.get_cooldown_remaining(ModelTier.TIER_1_PRIMARY)
-
-        quota_stats = self.quota_tracker.get_stats()
 
         return {
             "active_tier": tier_key,
             "tier_name": tier_name,
             "tier_badge": tier_badge,
             "is_cooldown": is_cd,
+            "is_tier1_daily_exhausted": t1_daily_locked,
             "cooldown_remaining": round(cd_rem, 1),
             "quota_stats": quota_stats
         }
@@ -462,7 +622,7 @@ class HierarchicalModelOrchestrator:
         if last_err:
             raise last_err
 
-    def _call_gemini_vision(self, model: str, prompt: str, frame_img: Any) -> dict:
+    def _call_gemini_vision(self, model: str, prompt: str, frame_img: Any, tier_key: str = "tier_1") -> dict:
         from google.genai import types
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         contents = [prompt]
@@ -492,7 +652,7 @@ class HierarchicalModelOrchestrator:
         meta = getattr(response, "usage_metadata", None)
         toks = getattr(meta, "total_token_count", 0) if meta else 0
         toks = toks if isinstance(toks, (int, float)) else 0
-        self.quota_tracker.record_request(token_count=toks)
+        self.quota_tracker.record_request(token_count=toks, tier_key=tier_key)
         return self._parse_gemini_json(raw_text)
 
     def _record_success(self, res: dict, bio: dict, tier: ModelTier):
@@ -511,62 +671,87 @@ class HierarchicalModelOrchestrator:
 
     def execute_live_analysis(self, frame_img: Any, bio: dict) -> dict:
         """
-        Thực thi suy luận khung hình có bảo vệ phân tầng, tự phục hồi và duy trì ngữ cảnh:
-        - Returns: {"action": str, "description": str, "prediction_next_4s": str, "severity": str, "model_tier": str}
-        - Tuyệt đối không throw ngoại lệ 429 ra ngoài luồng.
+        Thực thi suy luận khung hình có bảo vệ phân tầng, tự phục hồi và duy trì ngữ cảnh.
+        Cơ chế Đánh Giá Kép Trong 1 Lượt Gọi (1 Request = 0 tốn thêm Quota):
+        - Trả về đồng thời nhận định chuẩn và các biến thể nhận định khi thiếu tài nguyên (degraded_light, degraded_heavy, degraded_extreme) bám sát đúng bức ảnh hiện tại.
         """
-        # 1. Preemptive Cooldown Reversion
-        if self.active_tier != ModelTier.TIER_1_PRIMARY and self.cooldown_tracker.is_tier1_ready():
-            logger.info("Chủ động chuyển đổi ngược về Tier 1 (Preemptive Reversion).")
+        q_stats = self.quota_tracker.get_stats()
+
+        # Kiểm tra chạm hạn mức Ngày hoặc Phút của Mô hình 1 trước khi gọi
+        if q_stats.get("tier1_rpd_used", 0) >= self.quota_tracker.rpd_limit:
+            self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=True)
+            self.active_tier = ModelTier.TIER_2_FALLBACK
+        elif q_stats.get("tier1_rpm_used", 0) >= self.quota_tracker.rpm_limit and self.cooldown_tracker.is_tier1_ready():
+            self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=False)
+            self.active_tier = ModelTier.TIER_2_FALLBACK
+
+        # 1. Tự động quay về Mô hình 1 ngay khi hạn mức phút (sau 60s) hoặc ngày (sau 00:00) hồi phục
+        if (
+            self.active_tier != ModelTier.TIER_1_PRIMARY
+            and self.cooldown_tracker.is_tier1_ready()
+            and q_stats.get("tier1_rpm_used", 0) < self.quota_tracker.rpm_limit
+            and q_stats.get("tier1_rpd_used", 0) < self.quota_tracker.rpd_limit
+        ):
+            logger.info("Hạn mức của Mô hình 1 đã hồi phục -> Chủ động quay về Mô hình 1 (Chính).")
             self.active_tier = ModelTier.TIER_1_PRIMARY
 
         context_str = self.context_memory.get_context_summary_for_prompt()
-        prompt = f"""Bạn là Hệ thống Giám sát & Phân tích Hành vi Thông minh (Học phần Hệ Điều Hành).
+        prompt = f"""Bạn là Hệ thống Phân tích Tư thế & Hành vi Thời gian thực.
 {context_str}
 
-Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JSON:
+Hãy quan sát ảnh khung hình camera vừa chụp được và trả về đúng 1 JSON duy nhất (tiếng Việt tự nhiên, dễ hiểu, không dùng từ ngữ kỹ thuật phức tạp) gồm cả nhận định chuẩn và nhận định đối chứng khi thiếu khung hình:
 {{
-    "action": "Tên hành vi tóm tắt chuẩn mực",
-    "description": "Miêu tả chi tiết ngữ cảnh tiếp nối lịch sử",
-    "prediction_next_4s": "Dự đoán xu hướng trong 4 giây tiếp theo",
-    "severity": "safe" | "warning" | "danger"
+    "action": "Tên tư thế/hành vi chính xác",
+    "description": "Mô tả chi tiết tư thế, vị trí tay, đầu, hướng nhìn trong ảnh",
+    "prediction_next_4s": "Dự đoán hành động trong 4 giây tới",
+    "severity": "safe" | "warning" | "danger",
+    "degraded_light": {{
+        "action": "Tên tư thế đại khái khi thiếu ảnh chuyển tiếp (không thấy rõ chi tiết bàn tay/cổ)",
+        "description": "Mô tả của AI khi ảnh bị ngắt quãng nhẹ: nhận ra dáng ngồi/đứng chung nhưng không phân biệt rõ thao tác tay cụ thể trong ảnh này",
+        "prediction_next_4s": "Dự đoán chung chung do thiếu chi tiết chuyển động nhỏ"
+    }},
+    "degraded_heavy": {{
+        "action": "Nhận định sai lệch khi mất các khung hình chuyển động chính",
+        "description": "Mô tả của AI khi bị rơi mất phần lớn khung hình: bỏ sót cử động tay/người vừa diễn ra hoặc nhìn nhầm trạng thái động thành đứng/ngồi yên",
+        "prediction_next_4s": "Dự đoán lệch so với thực tế do bỏ lỡ khoảnh khắc chuyển tiếp"
+    }}
 }}
 """
         posture_text = bio.get("posture", "Ngồi thẳng bình thường")
 
-        # 2. Thử nghiệm Tier 1 nếu đang là Tier 1
+        # 2. Thử nghiệm Mô hình 1 (Tier 1) nếu đang sẵn sàng
         if self.client and self.active_tier == ModelTier.TIER_1_PRIMARY and self.cooldown_tracker.is_tier1_ready():
             try:
-                data = self._call_gemini_vision(self.tier1_model, prompt, frame_img)
+                data = self._call_gemini_vision(self.tier1_model, prompt, frame_img, tier_key="tier_1")
                 data["model_tier"] = ModelTier.TIER_1_PRIMARY.value
                 self._record_success(data, bio, ModelTier.TIER_1_PRIMARY)
                 return data
             except Exception as e1:
                 if is_rate_limit_error(e1):
-                    logger.warning(f"Tier-1 chạm hạn mức 429 ({e1}). Kích hoạt Cooldown 60s và Failover sang Tier-2!")
-                    self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY)
+                    daily_exhausted = is_daily_quota_error(e1) or (self.quota_tracker.get_stats().get("tier1_rpd_used", 0) >= self.quota_tracker.rpd_limit)
+                    self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_2_FALLBACK
                 else:
                     logger.error(f"Tier-1 lỗi: {e1}")
                     self.active_tier = ModelTier.TIER_2_FALLBACK
 
-        # 3. Thử nghiệm Tier 2 nếu đang là Tier 2 và Tier 2 sẵn sàng
+        # 3. Thử nghiệm Mô hình 2 (Tier 2) nếu đang ở Tier 2 và sẵn sàng
         if self.client and self.active_tier == ModelTier.TIER_2_FALLBACK and self.cooldown_tracker.is_tier2_ready():
             try:
-                data = self._call_gemini_vision(self.tier2_model, prompt, frame_img)
+                data = self._call_gemini_vision(self.tier2_model, prompt, frame_img, tier_key="tier_2")
                 data["model_tier"] = ModelTier.TIER_2_FALLBACK.value
                 self._record_success(data, bio, ModelTier.TIER_2_FALLBACK)
                 return data
             except Exception as e2:
                 if is_rate_limit_error(e2):
-                    logger.warning(f"Tier-2 chạm hạn mức 429 ({e2}). Kích hoạt Cooldown và chuyển sang Tier-3 Arbiter!")
-                    self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK)
+                    daily_exhausted = is_daily_quota_error(e2) or (self.quota_tracker.get_stats().get("tier2_rpd_used", 0) >= self.quota_tracker.rpd_limit)
+                    self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_3_HEURISTIC
                 else:
                     logger.error(f"Tier-2 lỗi: {e2}")
                     self.active_tier = ModelTier.TIER_3_HEURISTIC
 
-        # 4. Fallback sang Tier 3 (Autonomous Heuristic Arbiter)
+        # 4. Fallback sang Tier 3 (Xử lý nội bộ)
         self.active_tier = ModelTier.TIER_3_HEURISTIC
         res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
         self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
@@ -579,14 +764,11 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
     ) -> Tuple[Optional[dict], ModelTier]:
         """
         Thực thi suy luận đa phương thức phục vụ TokenGuard / Video Annotator:
-        Ưu tiên các mô hình Cloud ổn định (3.5-flash -> 3.5-flash-lite -> flash-lite-latest -> 3.6-flash -> 3.7-flash),
-        đặt gemini-3.8-flash ở vị trí áp cuối chuỗi Cloud ngay trước mô hình 0-token cục bộ (Tier-3 Local Arbiter).
-        Trả về (data_dict, used_tier).
+        Ưu tiên các mô hình Cloud ổn định, tự động ghi nhận hạn mức theo từng tầng mô hình.
         """
         if not self.client:
             return None, ModelTier.TIER_3_HEURISTIC
 
-        # Chuỗi Cloud cho phân tích video: đặt gemini-3.8-flash ở áp cuối (trước Tier-3 Local Arbiter 0-token)
         if getattr(self, "_explicit_tier1", False) and self.cooldown_tracker.is_tier1_ready():
             try:
                 resp = self.client.models.generate_content(
@@ -598,7 +780,7 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                 meta1 = getattr(resp, "usage_metadata", None)
                 toks = getattr(meta1, "total_token_count", 0) if meta1 else 0
                 toks = toks if isinstance(toks, (int, float)) else 0
-                self.quota_tracker.record_request(token_count=toks)
+                self.quota_tracker.record_request(token_count=toks, tier_key="tier_1")
                 data = self._parse_gemini_json(raw_text)
                 if isinstance(data, dict) and toks:
                     data["token_usage"] = int(toks)
@@ -606,7 +788,8 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                 return data, ModelTier.TIER_1_PRIMARY
             except Exception as e1:
                 if is_rate_limit_error(e1):
-                    self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY)
+                    daily_exhausted = is_daily_quota_error(e1) or (self.quota_tracker.get_stats().get("tier1_rpd_used", 0) >= self.quota_tracker.rpd_limit)
+                    self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_2_FALLBACK
 
         if not self.cooldown_tracker.is_tier2_ready():
@@ -638,21 +821,23 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và phân tích JS
                 meta = getattr(resp, "usage_metadata", None)
                 toks = getattr(meta, "total_token_count", 0) if meta else 0
                 toks = toks if isinstance(toks, (int, float)) else 0
-                self.quota_tracker.record_request(token_count=toks)
-                data = self._parse_gemini_json(raw_text)
-                if isinstance(data, dict) and toks:
-                    data["token_usage"] = int(toks)
                 used_tier = (
                     ModelTier.TIER_2_FALLBACK
                     if getattr(self, "_explicit_tier1", False) or idx_m > 0
                     else ModelTier.TIER_1_PRIMARY
                 )
+                t_key = "tier_2" if used_tier == ModelTier.TIER_2_FALLBACK else "tier_1"
+                self.quota_tracker.record_request(token_count=toks, tier_key=t_key)
+                data = self._parse_gemini_json(raw_text)
+                if isinstance(data, dict) and toks:
+                    data["token_usage"] = int(toks)
                 self.active_tier = used_tier
                 return data, used_tier
             except Exception as e_cand:
                 if is_rate_limit_error(e_cand):
                     if idx_m == len(dedup_candidates) - 1:
-                        self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK)
+                        daily_ex = is_daily_quota_error(e_cand) or (self.quota_tracker.get_stats().get("tier2_rpd_used", 0) >= self.quota_tracker.rpd_limit)
+                        self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK, is_daily_exhausted=daily_ex)
                         self.active_tier = ModelTier.TIER_3_HEURISTIC
                 else:
                     logger.debug(f"execute_multimodal_failover ({m_cand}) bận tạm thời, tự động chuyển tiếp.")
@@ -747,5 +932,7 @@ def get_model_orchestrator() -> HierarchicalModelOrchestrator:
     global _GLOBAL_ORCHESTRATOR
     with _INIT_LOCK:
         if _GLOBAL_ORCHESTRATOR is None:
-            _GLOBAL_ORCHESTRATOR = HierarchicalModelOrchestrator()
+            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            quota_file = os.path.join(root_dir, "outputs", "quota_state.json")
+            _GLOBAL_ORCHESTRATOR = HierarchicalModelOrchestrator(persist_path=quota_file)
         return _GLOBAL_ORCHESTRATOR
