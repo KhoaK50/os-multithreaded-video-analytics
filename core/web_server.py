@@ -175,7 +175,7 @@ class LiveCameraPipeline:
         if buffer_capacity is not None and hasattr(self, "frame_buffer"):
             self.frame_buffer.resize_capacity(int(buffer_capacity))
         if consumer_delay_ms is not None:
-            self.consumer_delay_ms = max(0, min(200, int(consumer_delay_ms)))
+            self.consumer_delay_ms = max(0, min(500, int(consumer_delay_ms)))
         if reset_counters and hasattr(self, "frame_buffer"):
             with self.frame_buffer.lock:
                 self.frame_buffer.total_produced = 0
@@ -331,13 +331,16 @@ class LiveCameraPipeline:
             return None
         with self.ai_lock:
             bio = dict(self.biomechanics)
+        tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
+        active_tier_key = tier_info.get("active_tier", "tier_1")
         entry = self._record_behavior_log(
             frame=frame,
-            posture=f"Thủ công: {bio.get('posture', 'Bình thường')}",
+            posture=bio.get("posture", "Ngồi thẳng bình thường"),
             angle=bio.get("angle", 90.0),
-            alert="Ảnh chụp tức thì theo lệnh người dùng",
+            alert=bio.get("alert", "Ảnh chụp tức thì theo lệnh người dùng"),
             is_danger=bio.get("is_danger", False),
-            severity="safe"
+            severity="danger" if bio.get("is_danger", False) else "safe",
+            model_tier=active_tier_key
         )
         return entry
 
@@ -472,14 +475,24 @@ class LiveCameraPipeline:
     def _gemini_worker(self):
         """
         Luồng Consumer AI Cloud & Heuristic Arbiter (Hierarchical Model Orchestrator):
-        - Chu kỳ điều phối >= 4.2 giây (khống chế < 15 RPM).
-        - Phân tầng mô hình Tier 1 -> Tier 2 -> Tier 3 qua MODEL_ORCHESTRATOR.
-        - Tự động duy trì và tiêm Rolling Context Memory 3-5 chu kỳ trước.
-        - Tự phục hồi sau 60s cooldown (Preemptive Cooldown Reversion).
-        - Cập nhật nhật ký hành vi thời gian thực và đồng bộ viễn trắc.
+        - Chu kỳ nhịp đồng hồ cố định nghiêm ngặt: Đúng 6.0 giây sinh 1 bản ghi mới (không bao giờ bị treo 15-40 giây khi mạng Cloud chậm).
+        - Nếu Gemini Cloud phản hồi trong <= 4.8 giây: hiển thị trực tiếp kết quả Gemini.
+        - Nếu máy chủ Google phản hồi chậm (> 4.8 giây): chốt ngay bản ghi đúng mốc 6.0 giây để bảng không bị trễ nhịp, và tự động cập nhật nội dung phân tích của Gemini vào đúng dòng đó ngay khi Cloud trả kết quả về.
+        - Không bao giờ chồng lấp 2 lượt gọi Cloud cùng lúc (bảo toàn tuyệt đối hạn mức 15 lượt/phút).
         """
-        # Chờ camera ổn định 0.6s sau khi bật
         time.sleep(0.6)
+        cloud_busy_lock = threading.Lock()
+        cloud_in_flight = [False]
+
+        def _normalize_tier_key(raw_tier: Any) -> str:
+            s = str(raw_tier or "tier_1")
+            if "Tier-1" in s or s == "tier_1":
+                return "tier_1"
+            if "Tier-2" in s or s == "tier_2":
+                return "tier_2"
+            if "Tier-3" in s or s == "tier_3":
+                return "tier_3"
+            return "tier_1"
 
         while self.running:
             t_start = time.time()
@@ -490,103 +503,110 @@ class LiveCameraPipeline:
                     frame = self.latest_raw_frame.copy()
 
             if frame is not None and frame.size > 0:
-                # Khử ảnh nhiễu/đen: Nếu webcam chưa mở cảm biến hoặc bị che tối (độ sáng < 12), bỏ qua
                 mean_brightness = float(np.mean(frame))
                 if mean_brightness < 12.0:
                     time.sleep(0.6)
                     continue
 
-                with self.ai_lock:
-                    logs_empty = len(self.action_logs) == 0
-                    bio = dict(self.biomechanics)
-
-                # Nếu chưa có bản ghi nào khi vừa bật camera, tạo ngay 1 bản ghi khởi tạo tức thì (<0.5s) trước khi gọi Cloud AI
-                if logs_empty:
-                    try:
-                        self.action_counter += 1
-                        init_snap = f"snap_init_{self.action_counter:04d}_{int(t_start)}.jpg"
-                        cv2.imwrite(os.path.join(self.snapshots_dir, init_snap), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-                        heur_res = self._synthesize_heuristic_action(bio.get("posture", "Ngồi thẳng bình thường"), bio)
-                        init_entry = {
-                            "id": f"#{self.action_counter:03d}",
-                            "timestamp": time.strftime("%H:%M:%S"),
-                            "code": f"NORM-{self.action_counter:02d}",
-                            "action": heur_res.get("action", "Ngồi thẳng bình thường"),
-                            "description": heur_res.get("description", "Khởi tạo phiên giám sát công thái học thời gian thực."),
-                            "prediction_next_4s": heur_res.get("prediction_next_4s", "Duy trì tư thế ổn định trong 4s tới."),
-                            "snapshot_url": f"/api/snapshots/{init_snap}",
-                            "severity": heur_res.get("severity", "safe"),
-                            "model_tier": "tier_1"
-                        }
-                        with self.ai_lock:
-                            self.action_logs.insert(0, init_entry)
-                    except Exception:
-                        pass
-
                 try:
                     self.action_counter += 1
+                    cur_idx = self.action_counter
                     snap_time_str = time.strftime("%H:%M:%S")
-                    snap_name = f"snap_gemini_{self.action_counter:04d}_{int(t_start)}.jpg"
+                    snap_name = f"snap_gemini_{cur_idx:04d}_{int(t_start)}.jpg"
                     snap_path = os.path.join(self.snapshots_dir, snap_name)
                     cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
                     with self.ai_lock:
                         bio = dict(self.biomechanics)
 
-                    # Thực thi suy luận đa tầng tự phục hồi qua MODEL_ORCHESTRATOR
-                    ai_result = MODEL_ORCHESTRATOR.execute_live_analysis(frame, bio)
-
-                    tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
-                    if tier_info["active_tier"] == "tier_3" and MODEL_ORCHESTRATOR.client is None:
-                        self.gemini_status = "heuristic_offline"
-                    elif tier_info["is_cooldown"]:
-                        self.gemini_status = "failover_tier2" if tier_info["active_tier"] == "tier_2" else "quota_exceeded"
-                    else:
-                        self.gemini_status = "active"
-
-                    action_name = ai_result.get("action", "Hành vi bình thường")
-                    desc_name = ai_result.get("description", "Không có mô tả chi tiết")
-                    pred_name = ai_result.get("prediction_next_4s", "Duy trì hoạt động hiện tại")
-                    severity_val = ai_result.get("severity", "safe")
-                    if severity_val not in ("safe", "warning", "danger"):
-                        severity_val = "safe"
-
-                    raw_tier = ai_result.get("model_tier", "Tier-1 Gemini 3.8")
-                    if "Tier-1" in str(raw_tier) or str(raw_tier) == "tier_1":
-                        tier_key = "tier_1"
-                    elif "Tier-2" in str(raw_tier) or str(raw_tier) == "tier_2":
-                        tier_key = "tier_2"
-                    elif "Tier-3" in str(raw_tier) or str(raw_tier) == "tier_3":
-                        tier_key = "tier_3"
-                    else:
-                        tier_key = str(raw_tier)
-
-                    code_prefix = "DANGER" if severity_val == "danger" else ("WARN" if severity_val == "warning" else "NORM")
+                    tier_info_before = MODEL_ORCHESTRATOR.get_active_tier_info()
+                    active_tier_before = tier_info_before.get("active_tier", "tier_1")
+                    heur_fallback = self._synthesize_heuristic_action(bio.get("posture", "Ngồi thẳng bình thường"), bio)
+                    init_sev = heur_fallback.get("severity", "safe")
+                    if init_sev not in ("safe", "warning", "danger"):
+                        init_sev = "safe"
+                    init_prefix = "DANGER" if init_sev == "danger" else ("WARN" if init_sev == "warning" else "NORM")
 
                     entry = {
-                        "id": f"#{self.action_counter:03d}",
+                        "id": f"#{cur_idx:03d}",
                         "timestamp": snap_time_str,
-                        "code": f"{code_prefix}-{self.action_counter:02d}",
-                        "action": action_name,
-                        "description": desc_name,
-                        "prediction_next_4s": pred_name,
+                        "code": f"{init_prefix}-{cur_idx:02d}",
+                        "action": heur_fallback.get("action", "Ngồi thẳng bình thường"),
+                        "description": heur_fallback.get("description", "Người dùng đang giữ tư thế ổn định trước camera."),
+                        "prediction_next_4s": heur_fallback.get("prediction_next_4s", "Tiếp tục giữ nguyên tư thế trong 4 giây tới."),
                         "snapshot_url": f"/api/snapshots/{snap_name}",
-                        "severity": severity_val,
-                        "model_tier": tier_key,
-                        "degraded_light": ai_result.get("degraded_light") if isinstance(ai_result.get("degraded_light"), dict) else None,
-                        "degraded_heavy": ai_result.get("degraded_heavy") if isinstance(ai_result.get("degraded_heavy"), dict) else None,
+                        "severity": init_sev,
+                        "model_tier": active_tier_before,
                     }
+
+                    can_call_cloud = False
+                    with cloud_busy_lock:
+                        if not cloud_in_flight[0]:
+                            cloud_in_flight[0] = True
+                            can_call_cloud = True
+
+                    if can_call_cloud:
+                        done_ev = threading.Event()
+                        cloud_res_holder = [None]
+
+                        def _cloud_task(target_entry, f_img, b_snapshot, idx_num):
+                            try:
+                                res = MODEL_ORCHESTRATOR.execute_live_analysis(f_img, b_snapshot)
+                                cloud_res_holder[0] = res
+
+                                t_info = MODEL_ORCHESTRATOR.get_active_tier_info()
+                                if t_info["active_tier"] == "tier_3" and MODEL_ORCHESTRATOR.client is None:
+                                    self.gemini_status = "heuristic_offline"
+                                elif t_info["is_cooldown"]:
+                                    self.gemini_status = "failover_tier2" if t_info["active_tier"] == "tier_2" else "quota_exceeded"
+                                else:
+                                    self.gemini_status = "active"
+
+                                act_val = res.get("action") or target_entry["action"]
+                                desc_val = res.get("description") or target_entry["description"]
+                                pred_val = res.get("prediction_next_4s") or target_entry["prediction_next_4s"]
+                                sev_val = res.get("severity", "safe")
+                                if sev_val not in ("safe", "warning", "danger"):
+                                    sev_val = "safe"
+                                t_key = _normalize_tier_key(res.get("model_tier", active_tier_before))
+                                c_pref = "DANGER" if sev_val == "danger" else ("WARN" if sev_val == "warning" else "NORM")
+
+                                with self.ai_lock:
+                                    target_entry["code"] = f"{c_pref}-{idx_num:02d}"
+                                    target_entry["action"] = act_val
+                                    target_entry["description"] = desc_val
+                                    target_entry["prediction_next_4s"] = pred_val
+                                    target_entry["severity"] = sev_val
+                                    target_entry["model_tier"] = t_key
+                                    self.biomechanics["posture"] = act_val
+                                    self.biomechanics["alert"] = f"Dự đoán 4s tới: {pred_val}"
+                                    self.biomechanics["is_danger"] = (sev_val == "danger")
+                            except Exception as e_cloud:
+                                try:
+                                    print(f"[!] Loi Cloud Gemini #{idx_num:03d}: {e_cloud}")
+                                except Exception:
+                                    pass
+                            finally:
+                                with cloud_busy_lock:
+                                    cloud_in_flight[0] = False
+                                done_ev.set()
+
+                        t_worker = threading.Thread(
+                            target=_cloud_task,
+                            args=(entry, frame.copy(), dict(bio), cur_idx),
+                            daemon=True
+                        )
+                        t_worker.start()
+                        # Đợi tối đa 4.8 giây; nếu Cloud xong sớm thì lấy luôn, nếu Cloud chậm hơn 4.8s thì chốt dòng đúng nhịp 6s và cập nhật ngầm
+                        done_ev.wait(timeout=4.8)
 
                     with self.ai_lock:
                         self.action_logs.insert(0, entry)
                         if len(self.action_logs) > 100:
                             self.action_logs.pop()
-                        self.biomechanics["posture"] = action_name
-                        self.biomechanics["alert"] = f"Dự đoán 4s tới: {pred_name}"
-                        self.biomechanics["is_danger"] = (severity_val == "danger")
 
                     try:
-                        print(f"[+] Gemini Vision #{self.action_counter:03d} ({tier_key}): {action_name} -> {snap_name}")
+                        print(f"[+] Snapshot #{cur_idx:03d} [{snap_time_str}] ({entry['model_tier']}): {entry['action']} -> {snap_name}")
                     except Exception:
                         pass
 
@@ -596,9 +616,9 @@ class LiveCameraPipeline:
                     except Exception:
                         pass
 
-            # Đảm bảo chu kỳ điều phối cố định đúng 6.0 giây mỗi khoảnh khắc
+            # Khóa cứng nhịp đồng hồ đúng 6.0 giây mỗi khoảnh khắc
             elapsed = time.time() - t_start
-            wait_t = max(0.2, 6.0 - elapsed)
+            wait_t = max(0.1, 6.0 - elapsed)
             time.sleep(wait_t)
 
     def _capture_worker(self):
@@ -687,16 +707,14 @@ class LiveCameraPipeline:
                 time.sleep(0.01)
                 continue
 
-            # Nếu giảng viên/người dùng kích hoạt độ trễ giả lập Consumer trong OS Kernel Lab
-            if self.consumer_delay_ms > 0:
-                self.thread_states["CamEdgeAI"] = "THROTTLED"
-                time.sleep(self.consumer_delay_ms / 1000.0)
-
-            self.thread_states["CamEdgeAI"] = "RUNNING"
+            # Luồng AI gốc (Cột Trái - Chuẩn khuyến nghị) luôn chạy mượt ở 30 FPS làm mốc đối chứng chuẩn.
+            # Độ trễ giả lập (consumer_delay_ms) chỉ áp dụng cho Luồng Tùy Chỉnh Tài Nguyên (Cột Phải).
+            self.thread_states["CamEdgeAI"] = "THROTTLED" if self.consumer_delay_ms > 0 else "RUNNING"
             results = self.yolo_model(raw, device=device, conf=CONFIG.YOLO_CONFIDENCE, verbose=False)
             dt = max(1e-4, time.time() - prev_time)
             prev_time = time.time()
-            self.consumer_fps_queue.append(1.0 / dt)
+            dt_eff = dt + (self.consumer_delay_ms / 1000.0) if self.consumer_delay_ms > 0 else dt
+            self.consumer_fps_queue.append(1.0 / max(1e-4, dt_eff))
             self.consumer_fps = sum(self.consumer_fps_queue) / len(self.consumer_fps_queue)
 
             boxes_list = []

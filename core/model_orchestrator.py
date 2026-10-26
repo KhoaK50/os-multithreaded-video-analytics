@@ -364,16 +364,24 @@ class AutonomousHeuristicArbiter:
             last = recent[-1]
             prev_act = last.get("action", "")
             if prev_act and prev_act.lower() != posture_text.lower():
-                transition_note = f"Chuyển tiếp trạng thái từ '{prev_act}' sang '{posture_text}'."
+                transition_note = f"Chuyển tư thế từ '{prev_act}' sang '{posture_text}'."
             else:
-                transition_note = f"Tiếp tục duy trì trạng thái '{posture_text}' ổn định qua {len(recent)} chu kỳ."
+                transition_note = f"Duy trì tư thế '{posture_text}' ổn định."
 
-        desc = (
-            f"Đối tượng duy trì tư thế {posture_text.lower()} (góc thân {angle:.1f}°). "
-            f"{transition_note} Không gian sinh hoạt ổn định, bộ hội chẩn tự hành cục bộ "
-            f"đảm bảo tính liên tục của dữ liệu mà không làm gián đoạn luồng quan sát."
-        )
-        pred = f"Duy trì ổn định trạng thái {posture_text.lower()} trong chu kỳ tiếp theo."
+        p_low = posture_text.lower()
+        if "nằm" in p_low:
+            base_obs = f"Người dùng đang {p_low}, đầu và vai giữ ở vị trí thư giãn ổn định."
+        elif "vắng" in p_low or "rời" in p_low:
+            base_obs = "Hiện không có người trong vùng quan sát của ống kính camera."
+        elif "cúi" in p_low or "nghiêng" in p_low:
+            base_obs = f"Người dùng đang {p_low} (góc nghiêng thân khoảng {angle:.0f}°), đầu hướng về phía trước."
+        elif "giơ tay" in p_low or "vẫy" in p_low or "vung" in p_low:
+            base_obs = f"Người dùng thực hiện cử chỉ {p_low} trước ống kính camera."
+        else:
+            base_obs = f"Người dùng đang ở tư thế {p_low} (trục lưng {angle:.0f}°), vị trí đầu và hai vai ổn định."
+
+        desc = f"{base_obs} {transition_note}".strip()
+        pred = f"Người dùng nhiều khả năng tiếp tục giữ trạng thái {p_low} trong 4 giây tới."
         severity = "danger" if is_danger else ("warning" if is_warning else "safe")
 
         return {
@@ -458,8 +466,15 @@ class HierarchicalModelOrchestrator:
         if self.api_key:
             try:
                 from google import genai
-                self.client = genai.Client(api_key=self.api_key, http_options={"timeout": 4500})
-                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công (timeout=4.5s).")
+                from google.genai import types
+                self.client = genai.Client(
+                    api_key=self.api_key,
+                    http_options=types.HttpOptions(
+                        timeout=20000,
+                        retry_options=types.HttpRetryOptions(attempts=1)
+                    )
+                )
+                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công (timeout=20s, attempts=1).")
             except Exception as e:
                 logger.warning(f"Chưa khởi tạo được genai.Client: {e}")
                 self.client = None
@@ -575,15 +590,18 @@ class HierarchicalModelOrchestrator:
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
-        """Gọi client.models.generate_content nhanh gọn, không lặp qua nhiều model khi mạng timeout để giữ đúng nhịp 6 giây."""
+        """Gọi client.models.generate_content ưu tiên model tốc độ cao thực tế (gemini-3.5-flash-lite / gemini-3.5-flash)."""
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         if is_mock:
             candidates = [model]
         else:
-            primary_m = "gemini-2.5-flash" if any(x in model for x in ["3.8", "3.5", "3.1", "2.0"]) else model
-            candidates = [primary_m]
-            if "gemini-flash-lite-latest" not in candidates:
-                candidates.append("gemini-flash-lite-latest")
+            candidates = [
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+                "gemini-flash-lite-latest",
+            ]
+            if model and model not in candidates and not any(dep in model for dep in ["2.5-flash", "2.0-flash", "1.5-flash", "3.8-flash"]):
+                candidates.insert(0, model)
 
         last_err = None
         for m in candidates:
@@ -602,8 +620,8 @@ class HierarchicalModelOrchestrator:
             except Exception as e:
                 last_err = e
                 err_msg = str(e).upper()
-                # Chỉ thử model kế tiếp nếu tên model không tồn tại (404); nếu lỗi mạng/timeout hoặc 429 thì dừng ngay để không làm trễ chu kỳ 6s
-                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE"]):
+                # Chỉ thử model kế tiếp nếu tên model không tồn tại (404) hoặc máy chủ model đó báo bận tức thời (503)
+                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE", "503", "UNAVAILABLE"]):
                     continue
                 raise e
         if last_err:
@@ -783,11 +801,9 @@ Hãy quan sát ảnh khung hình camera vừa chụp và trả về đúng 1 JSO
 
         cloud_candidates = [
             "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
             "gemini-flash-lite-latest",
             self.tier2_model,
-            "gemini-3.5-flash",
-            "gemini-3.8-flash",
         ]
         dedup_candidates = []
         for m_c in cloud_candidates:
@@ -796,6 +812,7 @@ Hãy quan sát ảnh khung hình camera vừa chụp và trả về đúng 1 JSO
                     continue
                 dedup_candidates.append(m_c)
 
+        tier1_rate_limited = not self.cooldown_tracker.is_tier1_ready()
         for idx_m, m_cand in enumerate(dedup_candidates):
             try:
                 resp = self.client.models.generate_content(
@@ -809,7 +826,7 @@ Hãy quan sát ảnh khung hình camera vừa chụp và trả về đúng 1 JSO
                 toks = toks if isinstance(toks, (int, float)) else 0
                 used_tier = (
                     ModelTier.TIER_2_FALLBACK
-                    if getattr(self, "_explicit_tier1", False) or idx_m > 0
+                    if (getattr(self, "_explicit_tier1", False) or tier1_rate_limited)
                     else ModelTier.TIER_1_PRIMARY
                 )
                 t_key = "tier_2" if used_tier == ModelTier.TIER_2_FALLBACK else "tier_1"
@@ -821,7 +838,12 @@ Hãy quan sát ảnh khung hình camera vừa chụp và trả về đúng 1 JSO
                 return data, used_tier
             except Exception as e_cand:
                 if is_rate_limit_error(e_cand):
-                    if idx_m == len(dedup_candidates) - 1:
+                    if not tier1_rate_limited:
+                        tier1_rate_limited = True
+                        daily_ex1 = is_daily_quota_error(e_cand) or (self.quota_tracker.get_stats().get("tier1_rpd_used", 0) >= self.quota_tracker.rpd_limit)
+                        self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=daily_ex1)
+                        self.active_tier = ModelTier.TIER_2_FALLBACK
+                    elif idx_m == len(dedup_candidates) - 1:
                         daily_ex = is_daily_quota_error(e_cand) or (self.quota_tracker.get_stats().get("tier2_rpd_used", 0) >= self.quota_tracker.rpd_limit)
                         self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK, is_daily_exhausted=daily_ex)
                         self.active_tier = ModelTier.TIER_3_HEURISTIC
