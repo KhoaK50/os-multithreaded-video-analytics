@@ -39,7 +39,7 @@ def sanitize_gemini_model(model_name: Optional[str], default: str) -> str:
         return default
     m = model_name.strip()
     m_lower = m.lower()
-    if any(k in m_lower for k in ["2.0-flash", "2.5-flash"]):
+    if "2.0-flash" in m_lower or "2.5-flash" in m_lower:
         return "gemini-3.8-flash"
     elif "1.5-flash" in m_lower:
         return "gemini-3.5-flash"

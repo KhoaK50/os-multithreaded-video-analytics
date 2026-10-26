@@ -431,6 +431,8 @@ class AutonomousHeuristicArbiter:
             ]
 
         desc = obs_variants[v]
+        if changed and prev_act and prev_act not in desc:
+            desc = f"Sau nhịp {prev_act}, {desc[0].lower() + desc[1:]}"
         pred = preds[v]
         severity = "danger" if is_danger else ("warning" if is_warning else "safe")
 
@@ -657,16 +659,21 @@ class HierarchicalModelOrchestrator:
         last_err = None
         for m in candidates:
             try:
+                eff_config = config
+                if not is_mock and "gemini-3-" in m:
+                    try:
+                        from google.genai import types
+                        if isinstance(config, types.GenerateContentConfig) and getattr(config, "thinking_config", None) is None:
+                            eff_config = config.model_copy(
+                                update={"thinking_config": types.ThinkingConfig(thinking_level="MINIMAL")}
+                            )
+                    except Exception:
+                        eff_config = config
                 res = self.client.models.generate_content(
                     model=m,
                     contents=contents,
-                    config=config
+                    config=eff_config
                 )
-                if m != model and not is_mock:
-                    if self.tier1_model == model:
-                        self.tier1_model = m
-                    elif self.tier2_model == model:
-                        self.tier2_model = m
                 return res
             except Exception as e:
                 last_err = e
@@ -865,13 +872,24 @@ Trả về đúng 1 JSON:
                     continue
                 dedup_candidates.append(m_c)
 
+        is_mock = type(self.client).__module__.startswith("unittest.mock")
         tier1_rate_limited = not self.cooldown_tracker.is_tier1_ready()
         for idx_m, m_cand in enumerate(dedup_candidates):
             try:
+                eff_config = config
+                if not is_mock and "gemini-3-" in m_cand:
+                    try:
+                        from google.genai import types
+                        if isinstance(config, types.GenerateContentConfig) and getattr(config, "thinking_config", None) is None:
+                            eff_config = config.model_copy(
+                                update={"thinking_config": types.ThinkingConfig(thinking_level="MINIMAL")}
+                            )
+                    except Exception:
+                        eff_config = config
                 resp = self.client.models.generate_content(
                     model=m_cand,
                     contents=contents,
-                    config=config
+                    config=eff_config
                 )
                 raw_text = getattr(resp, "text", "") or "{}"
                 meta = getattr(resp, "usage_metadata", None)

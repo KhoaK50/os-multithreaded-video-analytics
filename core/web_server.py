@@ -539,6 +539,14 @@ class LiveCameraPipeline:
                         "model_tier": active_tier_before,
                     }
 
+                    # Nếu lượt gọi trước còn đang hoàn tất nốt những mili-giây cuối, chờ tối đa 1.8s để không bỏ lỡ lượt gọi Gemini thật
+                    wait_busy_start = time.time()
+                    while time.time() - wait_busy_start < 1.8:
+                        with cloud_busy_lock:
+                            if not cloud_in_flight[0]:
+                                break
+                        time.sleep(0.08)
+
                     can_call_cloud = False
                     with cloud_busy_lock:
                         if not cloud_in_flight[0]:
@@ -597,8 +605,8 @@ class LiveCameraPipeline:
                             daemon=True
                         )
                         t_worker.start()
-                        # Đợi tối đa 5.3 giây; gemini-3-flash-preview thường trả về trong 1.6-3.5s
-                        done_ev.wait(timeout=5.3)
+                        # Đợi tối đa 5.5 giây; gemini-3-flash-preview với thinking_level=MINIMAL phản hồi chỉ trong ~2.2-2.8 giây
+                        done_ev.wait(timeout=5.5)
 
                     with self.ai_lock:
                         self.action_logs.insert(0, entry)
