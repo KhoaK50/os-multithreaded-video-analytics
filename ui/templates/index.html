@@ -1411,98 +1411,112 @@
                     </div>
                 </div>
 
-                <!-- TOP DUAL VISUAL STUDIO: LEFT = X-RAY SPLIT DISSECTOR (RAW -> 17-POINT SKELETON), RIGHT = LIVE CHRONO-STITCHER -->
+                <!-- TẦNG 1: ĐỐI CHỨNG NHÂN - QUẢ: KHUNG ĐƠN LẺ TĨNH (TRÁI) vs CHỒNG ĐA KHUNG ĐỘNG HỌC (PHẢI) -->
                 <div class="os-live-top-grid">
-                    <!-- Left: Step 1 & 2 - Interactive X-Ray Split Frame Dissector (Raw Frame -> 17-Point Skeleton Frame) -->
+                    <!-- CỘT TRÁI: PHÂN TÍCH 1 KHUNG HÌNH RỜI TĨNH (Δt = 0) -->
                     <div class="os-live-monitor-card">
                         <div class="os-live-monitor-header">
                             <div class="os-live-monitor-title">
                                 <span class="indicator-pulse" id="os-modal-pulse-dot"></span>
-                                <span class="mono" id="os-modal-monitor-label">BƯỚC 1 &amp; 2 · QUÉT X-RAY: ẢNH THÔ ➔ 17 KHỚP XƯƠNG GPU</span>
+                                <span class="mono" id="os-modal-monitor-label">CỘT 1 · KHUNG ĐƠN LẺ TĨNH TẠI THỜI ĐIỂM t · Δt = 0</span>
                             </div>
                             <div class="os-xray-controls mono">
-                                <span class="os-xray-lbl">Tách lớp X-Ray:</span>
-                                <input type="range" id="os-xray-wipe-slider" class="os-xray-slider" min="0" max="100" value="36" oninput="setXraySplitPct(this.value)" title="Kéo thanh quét để đối chiếu trực tiếp Khung Gốc Thô Stage 1 và Khung Xương 17 Điểm Stage 2" />
+                                <button type="button" class="flip-ctrl-btn active" id="btn-left-pose" onclick="setLeftFrameLayer('pose')">17 Khớp Stage 2</button>
+                                <button type="button" class="flip-ctrl-btn" id="btn-left-raw" onclick="setLeftFrameLayer('raw')">Ảnh Thô Stage 1</button>
                                 <span id="os-modal-frame-counter" class="os-frame-counter-pill">Khung #0 / 0</span>
                                 <span id="os-modal-time-readout" class="os-time-pill">00:00</span>
                             </div>
                         </div>
-                        <div class="os-live-viewport os-xray-viewport" id="os-xray-stage" style="--xray-split: 36%;">
-                            <!-- Layer 2 (Full Base): Stage 2 17-Point GPU Skeleton Annotated Frame -->
+                        <div class="os-live-viewport" id="os-xray-stage">
+                            <!-- Stage 2: 17-Point GPU Skeleton Annotated Frame -->
                             <img id="os-modal-live-img" class="os-live-viewport-img hidden" src="" alt="Khung hình đã vẽ khung xương 17 điểm" />
-                            <!-- Layer 1 (Clipped Left): Stage 1 Unprocessed Raw Frame -->
+                            <!-- Stage 1: Raw Unprocessed Frame (Toggleable) -->
                             <div id="os-modal-raw-pip" class="os-raw-pip-card os-xray-raw-layer hidden">
                                 <img id="os-modal-raw-compare-img" src="" alt="Khung gốc chưa vẽ khung xương" />
                             </div>
-                            <!-- Laser Split-Wipe Divider -->
-                            <div id="os-xray-divider" class="os-xray-divider">
-                                <span class="xray-tag xray-tag-left mono">STAGE 1 · ẢNH THÔ</span>
-                                <span class="xray-handle-pill mono">⇄</span>
-                                <span class="xray-tag xray-tag-right mono">STAGE 2 · 17 KHỚP GPU</span>
-                            </div>
                             <div id="os-modal-viewport-empty" class="os-live-viewport-empty">
                                 <svg class="ui-icon empty-svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                                <span class="mono">Đang nạp các khung hình thực tế đầu tiên từ đường ống...</span>
+                                <span class="mono">Đang nạp khung hình thực tế đầu tiên từ đường ống...</span>
                             </div>
                         </div>
                         <div class="os-live-hud-overlay mono">
                             <span id="os-modal-hud-ids">Chủ thể: --</span>
                             <span id="os-modal-hud-latency">Chu kỳ suy luận: -- ms/khung</span>
                         </div>
+                        <div class="os-proof-box proof-static">
+                            <div class="os-proof-row">
+                                <span class="os-proof-tag tag-static mono">GIỚI HẠN CỦA 1 KHUNG TĨNH</span>
+                                <span class="os-proof-text" id="os-modal-static-limit">Chỉ biết tọa độ tĩnh 17 khớp xương tại 1 thời điểm duy nhất · Đạo hàm thời gian Δt = 0 ➔ Vận tốc Δv = 0 px/s, không phân biệt được đứng yên hay đang lao vào va chạm.</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Right: Step 3 - Live Flipbook / Cel-Animation Continuous Stitcher -->
+                    <!-- CỘT PHẢI: CHỒNG KHÍT ĐA KHUNG LIÊN TIẾP TRÊN 1 CANVAS (t-3 ➔ t) -->
                     <div class="os-live-monitor-card os-flipbook-card">
                         <div class="os-live-monitor-header">
                             <div class="os-live-monitor-title">
                                 <span class="indicator-pulse flipbook-pulse"></span>
-                                <span class="mono">BƯỚC 3 · HỢP NHẤT CHUỖI KHUNG THÀNH CHUYỂN ĐỘNG</span>
+                                <span class="mono">CỘT 2 · CHỒNG ĐA KHUNG LIÊN TIẾP t-3 ➔ t · ĐO QUỸ ĐẠO Δv</span>
                             </div>
                             <div class="os-flipbook-controls mono">
-                                <button type="button" class="flip-ctrl-btn" id="btn-flip-slow" onclick="setFlipbookSpeed('slow')">Từng nhịp 5 FPS</button>
-                                <button type="button" class="flip-ctrl-btn active" id="btn-flip-normal" onclick="setFlipbookSpeed('normal')">Ghép mượt 14 FPS</button>
-                                <button type="button" class="flip-ctrl-btn active" id="btn-flip-onion" onclick="toggleFlipbookOnionSkin()" title="Hiển thị dư ảnh chuyển động của khung liền trước">Dư ảnh chuyển động</button>
+                                <button type="button" class="flip-ctrl-btn active" id="btn-stack-canvas-3d" onclick="setStroboscopicMode('layered3d')">Chồng Lớp 3D + Quỹ Đạo</button>
+                                <button type="button" class="flip-ctrl-btn" id="btn-stack-canvas-1to1" onclick="setStroboscopicMode('overlay1to1')">Chồng Khít Hoạt Nghiệm 1:1</button>
+                                <button type="button" class="flip-ctrl-btn" id="btn-flip-slow" onclick="setFlipbookSpeed('slow')">5 FPS</button>
+                                <button type="button" class="flip-ctrl-btn active" id="btn-flip-normal" onclick="setFlipbookSpeed('normal')">14 FPS</button>
                             </div>
                         </div>
                         <div class="os-live-viewport os-flipbook-viewport">
-                            <!-- Onion-skin ghost layer (frame t-1) -->
-                            <img id="os-modal-flipbook-ghost-img" class="os-flipbook-ghost-img hidden" src="" alt="Bóng mờ khung trước" />
-                            <!-- Active stitched animation frame (frame t) -->
-                            <img id="os-modal-flipbook-img" class="os-live-viewport-img hidden" src="" alt="Chuyển động ghép liên tiếp từ chuỗi khung hình" />
+                            <!-- Dedicated Multi-Frame Stacking & Trajectory Canvas -->
+                            <canvas id="os-stroboscopic-canvas" class="os-stroboscopic-canvas hidden" width="960" height="540"></canvas>
+                            <!-- Hidden fallback elements preserved for DOM compatibility -->
+                            <img id="os-modal-flipbook-ghost-img" class="os-flipbook-ghost-img hidden" style="display:none;" src="" alt="" />
+                            <img id="os-modal-flipbook-img" class="os-live-viewport-img hidden" style="display:none;" src="" alt="" />
                             <div id="os-modal-flipbook-empty" class="os-live-viewport-empty">
                                 <svg class="ui-icon empty-svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                <span class="mono">Đang ghép chuỗi khung hình liên tiếp thành chuyển động...</span>
+                                <span class="mono">Đang tích hợp cửa sổ trượt các khung hình liên tiếp...</span>
                             </div>
                         </div>
                         <div class="os-live-hud-overlay os-flipbook-hud mono">
-                            <span id="os-flipbook-step-label">Đang lật ghép: --</span>
+                            <span id="os-flipbook-step-label">Đang chồng lớp: --</span>
                             <div id="os-flipbook-dots" class="os-flipbook-dots"></div>
+                        </div>
+                        <div class="os-proof-box proof-dynamic">
+                            <div class="os-proof-row">
+                                <span class="os-proof-tag tag-dynamic mono">Ý NGHĨA KHI CHỒNG ĐA KHUNG</span>
+                                <span class="os-proof-text" id="os-modal-dynamic-gain">Nhờ Bounded Buffer giữ chuỗi khung liên tiếp t-3 ➔ t trong RAM, hệ thống chồng khít vị trí qua nhiều thời điểm để đo vector vận tốc Δv, gia tốc xung lực và phát hiện chính xác hành vi bất thường.</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- BOTTOM SECTION: 3D ISOMETRIC SPATIO-TEMPORAL TENSOR STACK OF OVERLAPPING VIDEO FRAMES -->
+                <!-- TẦNG 2: MA TRẬN 10 KHUNG HÌNH THEO 3 GIAI ĐOẠN ĐƯỜNG ỐNG HỆ ĐIỀU HÀNH (KHÔNG TRÀN LỀ) -->
                 <div class="os-conveyor-section">
                     <div class="os-conveyor-header">
                         <div class="os-conveyor-title">
                             <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                            <span>KHỐI XẾP CHỒNG KHÔNG GIAN – THỜI GIAN 3D · 10 LÁT CẮT KHUNG HÌNH LIÊN TIẾP</span>
+                            <span>MA TRẬN ĐƯỜNG ỐNG 3 GIAI ĐOẠN HỆ ĐIỀU HÀNH · CỬA SỔ TRƯỢT 10 KHUNG HÌNH LIÊN TIẾP</span>
                         </div>
-                        <div class="os-stack-mode-controls mono">
-                            <span class="os-conveyor-hint">Chế độ xếp chồng:</span>
-                            <button type="button" class="flip-ctrl-btn active" id="btn-stack-iso" onclick="setTensorStackMode('isometric')">Lát Cắt 3D Tensor</button>
-                            <button type="button" class="flip-ctrl-btn" id="btn-stack-deck" onclick="setTensorStackMode('chronodeck')">Chồng Khít Đa Lớp</button>
-                        </div>
+                        <span id="os-tensor-active-readout" class="os-conveyor-hint mono">Khung viền xanh lá đang được gom nhóm 4 lát cắt t-3 ➔ t để chồng quỹ đạo ở Cột 2 · Nhấp chọn khung bất kỳ để đối chiếu</span>
                     </div>
 
                     <div class="os-filmstrip-reel-wrapper" id="os-conveyor-track">
-                        <div class="os-tensor-axis-bar mono">
-                            <span>TRỤC THỜI GIAN TENSOR W × H × T</span>
-                            <span class="os-axis-arrow">t₁ ➔ t₂ ➔ t₃ ➔ t₄ ➔ t₅ ➔ t₆ ➔ t₇ ➔ t₈ ➔ t₉ ➔ t₁₀</span>
-                            <span id="os-tensor-active-readout">Rê chuột để tách lớp từng khung hình</span>
+                        <!-- 3-Stage OS Pipeline Partition Bar aligned with the 10-column grid -->
+                        <div class="os-pipeline-span-bar mono">
+                            <div class="os-stage-span span-stage3">
+                                <span class="span-badge">STAGE 3 · WRITER CONSUMER</span>
+                                <span class="span-desc">Đã kết xuất quỹ đạo &amp; ghi luồng MP4 · t₁ ➔ t₃</span>
+                            </div>
+                            <div class="os-stage-span span-buffer">
+                                <span class="span-badge">BOUNDED BUFFER WINDOW · N = 16</span>
+                                <span class="span-desc">Giữ trong RAM để chồng lớp động học · t₄ ➔ t₇</span>
+                            </div>
+                            <div class="os-stage-span span-stage2">
+                                <span class="span-badge">STAGE 1 &amp; 2 · PRODUCER + GPU WORKER</span>
+                                <span class="span-desc">Vừa tách khung &amp; quét 17 khớp xương · t₈ ➔ t₁₀</span>
+                            </div>
                         </div>
-                        <div class="os-frame-cascade-fan mode-isometric" id="os-conveyor-cascade-fan">
-                            <div class="os-frame-empty mono">Đang nạp chuỗi khung hình thực tế vào khối Tensor 3D...</div>
+                        <div class="os-frame-cascade-fan" id="os-conveyor-cascade-fan">
+                            <div class="os-frame-empty mono">Đang nạp chuỗi 10 khung hình thực tế vào ma trận đường ống Hệ điều hành...</div>
                         </div>
                     </div>
                 </div>

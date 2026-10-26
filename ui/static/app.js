@@ -3815,6 +3815,9 @@ let flipbookLastFrameIdx = -1;
 let flipbookEndHoldTicks = 0;
 let flipbookSpeedMode = "normal"; // "slow" | "normal"
 let flipbookOnionSkin = true;
+let leftFrameLayerMode = "pose"; // "pose" | "raw"
+let stroboscopicStackMode = "layered3d"; // "layered3d" | "overlay1to1"
+let stroboscopicImgCache = new Map();
 let lastRenderedDeckSignature = "";
 
 function formatImgDataUrl(b64) {
@@ -3832,9 +3835,36 @@ function formatActiveIdsText(activeIds, persons) {
     return `${persons || 0} đối tượng`;
 }
 
+function getCachedDeckImage(f) {
+    if (!f) return null;
+    const key = `${f.frame_idx}_pose`;
+    if (stroboscopicImgCache.has(key)) {
+        return stroboscopicImgCache.get(key);
+    }
+    const src = formatImgDataUrl(f.pose_b64 || f.raw_b64);
+    if (!src) return null;
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => {
+        const modal = document.getElementById("os-live-pipeline-modal");
+        if (modal && !modal.classList.contains("hidden") && latestPipelineLiveState && Array.isArray(latestPipelineLiveState.frame_deck)) {
+            const deck = latestPipelineLiveState.frame_deck;
+            const activeIdx = pinnedConveyorFrameIdx !== null ? pinnedConveyorFrameIdx : Math.min(deck.length - 1, Math.max(0, flipbookCursorIdx));
+            renderStroboscopicStackCanvas(deck, activeIdx);
+        }
+    };
+    img.src = src;
+    if (stroboscopicImgCache.size > 40) {
+        const firstKey = stroboscopicImgCache.keys().next().value;
+        stroboscopicImgCache.delete(firstKey);
+    }
+    stroboscopicImgCache.set(key, img);
+    return img;
+}
+
 function startFlipbookLoop() {
     stopFlipbookLoop();
-    const intervalMs = flipbookSpeedMode === "slow" ? 360 : 190;
+    const intervalMs = flipbookSpeedMode === "slow" ? 420 : 220;
     flipbookTimer = setInterval(stepFlipbookTick, intervalMs);
 }
 
@@ -3857,30 +3887,219 @@ function setFlipbookSpeed(mode) {
 
 function toggleFlipbookOnionSkin() {
     flipbookOnionSkin = !flipbookOnionSkin;
-    const onionBtn = document.getElementById("btn-flip-onion");
-    if (onionBtn) onionBtn.classList.toggle("active", flipbookOnionSkin);
     stepFlipbookTick();
 }
 
-function setXraySplitPct(val) {
-    const pct = Math.max(0, Math.min(100, Number(val) || 36));
-    const stage = document.getElementById("os-xray-stage");
-    if (stage) {
-        stage.style.setProperty("--xray-split", `${pct}%`);
-    }
+function setLeftFrameLayer(layerMode) {
+    leftFrameLayerMode = layerMode === "raw" ? "raw" : "pose";
+    const btnPose = document.getElementById("btn-left-pose");
+    const btnRaw = document.getElementById("btn-left-raw");
+    const rawPip = document.getElementById("os-modal-raw-pip");
+    if (btnPose) btnPose.classList.toggle("active", leftFrameLayerMode === "pose");
+    if (btnRaw) btnRaw.classList.toggle("active", leftFrameLayerMode === "raw");
+    if (rawPip) rawPip.classList.toggle("hidden", leftFrameLayerMode !== "raw");
 }
 
-function setTensorStackMode(mode) {
-    const cascadeEl = document.getElementById("os-conveyor-cascade-fan");
-    const btnIso = document.getElementById("btn-stack-iso");
-    const btnDeck = document.getElementById("btn-stack-deck");
-    const isChrono = mode === "chronodeck";
-    if (cascadeEl) {
-        cascadeEl.classList.toggle("mode-isometric", !isChrono);
-        cascadeEl.classList.toggle("mode-chronodeck", isChrono);
+function setStroboscopicMode(mode) {
+    stroboscopicStackMode = mode === "overlay1to1" ? "overlay1to1" : "layered3d";
+    const btn3d = document.getElementById("btn-stack-canvas-3d");
+    const btn1to1 = document.getElementById("btn-stack-canvas-1to1");
+    if (btn3d) btn3d.classList.toggle("active", stroboscopicStackMode === "layered3d");
+    if (btn1to1) btn1to1.classList.toggle("active", stroboscopicStackMode === "overlay1to1");
+    stepFlipbookTick();
+}
+
+function renderStroboscopicStackCanvas(deck, headIdx) {
+    const canvas = document.getElementById("os-stroboscopic-canvas");
+    const emptyFlip = document.getElementById("os-modal-flipbook-empty");
+    if (!canvas || !Array.isArray(deck) || deck.length === 0) return;
+
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width || 960;
+    const H = canvas.height || 540;
+
+    // Thu thập cửa sổ trượt tối đa 4 khung hình liên tiếp [t-3, t-2, t-1, t]
+    const winStart = Math.max(0, headIdx - 3);
+    const windowSlices = [];
+    for (let i = winStart; i <= headIdx; i++) {
+        if (deck[i]) {
+            windowSlices.push({
+                entry: deck[i],
+                deckIdx: i,
+                relOffset: i - headIdx, // -3, -2, -1, 0
+                img: getCachedDeckImage(deck[i])
+            });
+        }
     }
-    if (btnIso) btnIso.classList.toggle("active", !isChrono);
-    if (btnDeck) btnDeck.classList.toggle("active", isChrono);
+
+    const readySlices = windowSlices.filter(s => s.img && s.img.complete && s.img.naturalWidth > 0);
+    if (readySlices.length === 0) return;
+
+    canvas.classList.remove("hidden");
+    if (emptyFlip) emptyFlip.classList.add("hidden");
+
+    // Vẽ nền kỹ thuật số tối kèm lưới tọa độ mảnh
+    ctx.fillStyle = "#060911";
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.07)";
+    ctx.lineWidth = 1;
+    for (let gx = 48; gx < W; gx += 48) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, H);
+        ctx.stroke();
+    }
+    for (let gy = 48; gy < H; gy += 48) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(W, gy);
+        ctx.stroke();
+    }
+
+    if (stroboscopicStackMode === "overlay1to1") {
+        // CHẾ ĐỘ 2: Chồng khít hệ tọa độ 1:1 (Stroboscopic Multi-Exposure trên cùng 1 khung hình)
+        const total = readySlices.length;
+        readySlices.forEach((sl, sIdx) => {
+            const isHead = sIdx === total - 1;
+            ctx.save();
+            if (total === 1) {
+                ctx.globalAlpha = 1.0;
+            } else if (isHead) {
+                ctx.globalAlpha = 0.68;
+                ctx.globalCompositeOperation = "source-over";
+            } else {
+                ctx.globalAlpha = 0.24 + (sIdx / total) * 0.22;
+                ctx.globalCompositeOperation = sIdx === 0 ? "source-over" : "screen";
+            }
+            drawImageContain(ctx, sl.img, W, H);
+            ctx.restore();
+        });
+
+        // Vẽ nhãn đối chứng góc trên trái
+        const frameLabels = readySlices.map(s => `#${s.entry.frame_idx}`).join(" + ");
+        ctx.save();
+        ctx.fillStyle = "rgba(9, 13, 22, 0.88)";
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.65)";
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(14, 14, 460, 32);
+        ctx.strokeRect(14, 14, 460, 32);
+        ctx.fillStyle = "#6ee7b7";
+        ctx.font = "700 13px 'JetBrains Mono', monospace";
+        ctx.fillText(`CHỒNG KHÍT TỌA ĐỘ 1:1 (${readySlices.length} KHUNG): ${frameLabels}`, 24, 35);
+        ctx.restore();
+        return;
+    }
+
+    // CHẾ ĐỘ 1 (MẶC ĐỊNH): Chồng Lớp 3D (Layered Stack t-3 -> t) + Đường Nối Quỹ Đạo Động Học Δv
+    const total = readySlices.length;
+    const slotGeometries = [
+        { x: 26,  y: 22,  w: 548, h: 308, alpha: 0.46, stroke: "#38bdf8", badgeBg: "rgba(14, 116, 144, 0.92)" },
+        { x: 132, y: 70,  w: 564, h: 317, alpha: 0.64, stroke: "#60a5fa", badgeBg: "rgba(30, 64, 175, 0.92)" },
+        { x: 242, y: 120, w: 580, h: 326, alpha: 0.82, stroke: "#f59e0b", badgeBg: "rgba(180, 83, 9, 0.94)" },
+        { x: 356, y: 170, w: 576, h: 324, alpha: 1.00, stroke: "#10b981", badgeBg: "rgba(6, 95, 70, 0.96)" }
+    ];
+    const startGeoIdx = Math.max(0, 4 - total);
+    const drawnCenters = [];
+
+    readySlices.forEach((sl, sIdx) => {
+        const geo = slotGeometries[startGeoIdx + sIdx] || slotGeometries[slotGeometries.length - 1];
+        const isHead = sIdx === total - 1;
+        const relTag = sl.relOffset === 0 ? "HIỆN TẠI t" : `QUÁ KHỨ t${sl.relOffset}`;
+
+        ctx.save();
+        ctx.globalAlpha = geo.alpha;
+        ctx.shadowColor = isHead ? "rgba(16, 185, 129, 0.45)" : "rgba(0, 0, 0, 0.75)";
+        ctx.shadowBlur = isHead ? 22 : 14;
+        ctx.shadowOffsetX = -6;
+        ctx.shadowOffsetY = 5;
+
+        ctx.fillStyle = "#090d16";
+        ctx.fillRect(geo.x, geo.y, geo.w, geo.h);
+        ctx.drawImage(sl.img, geo.x, geo.y, geo.w, geo.h);
+        ctx.restore();
+
+        // Viền khung phân biệt rõ từng lớp thời gian t-3, t-2, t-1, t
+        ctx.save();
+        ctx.strokeStyle = geo.stroke;
+        ctx.lineWidth = isHead ? 3 : 1.75;
+        ctx.strokeRect(geo.x, geo.y, geo.w, geo.h);
+
+        // Nhãn ở góc trên-trái của mỗi lớp (không bao giờ bị lớp sau đè khuất)
+        const labelText = `${relTag} · #${sl.entry.frame_idx} (${sl.entry.time_str || "00:00"})`;
+        ctx.font = "700 12px 'JetBrains Mono', monospace";
+        const textW = ctx.measureText(labelText).width + 16;
+        ctx.fillStyle = geo.badgeBg;
+        ctx.fillRect(geo.x + 6, geo.y + 6, textW, 22);
+        ctx.strokeStyle = geo.stroke;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(geo.x + 6, geo.y + 6, textW, 22);
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillText(labelText, geo.x + 14, geo.y + 21);
+        ctx.restore();
+
+        drawnCenters.push({
+            cx: geo.x + geo.w * 0.52,
+            cy: geo.y + geo.h * 0.48,
+            hx: geo.x + geo.w * 0.48,
+            hy: geo.y + geo.h * 0.28,
+            stroke: geo.stroke,
+            frameIdx: sl.entry.frame_idx
+        });
+    });
+
+    // Vẽ đường nối quỹ đạo động học Δv xuyên qua các lớp khung hình (t-3 ➔ t-2 ➔ t-1 ➔ t)
+    if (drawnCenters.length >= 2) {
+        ctx.save();
+        // Đường quỹ đạo trọng tâm cơ thể
+        ctx.beginPath();
+        drawnCenters.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.cx, pt.cy);
+            else ctx.lineTo(pt.cx, pt.cy);
+        });
+        ctx.strokeStyle = "#fbbf24";
+        ctx.lineWidth = 2.75;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+
+        // Đường quỹ đạo khớp vai / đầu
+        ctx.beginPath();
+        drawnCenters.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.hx, pt.hy);
+            else ctx.lineTo(pt.hx, pt.hy);
+        });
+        ctx.strokeStyle = "#34d399";
+        ctx.lineWidth = 2.25;
+        ctx.setLineDash([]);
+        ctx.stroke();
+
+        // Vẽ các nút khớp nối tại mỗi lát cắt thời gian
+        drawnCenters.forEach((pt, idx) => {
+            const isLast = idx === drawnCenters.length - 1;
+            ctx.beginPath();
+            ctx.arc(pt.cx, pt.cy, isLast ? 6 : 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = isLast ? "#10b981" : "#fbbf24";
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "#060911";
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    // Hộp chú thích vector động học ở góc dưới trái của Canvas
+    const firstF = readySlices[0].entry;
+    const lastF = readySlices[readySlices.length - 1].entry;
+    const deltaFrames = Math.max(1, Number(lastF.frame_idx || 0) - Number(firstF.frame_idx || 0));
+    ctx.save();
+    ctx.fillStyle = "rgba(9, 13, 22, 0.92)";
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.55)";
+    ctx.lineWidth = 1.25;
+    ctx.fillRect(14, H - 44, 330, 30);
+    ctx.strokeRect(14, H - 44, 330, 30);
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "700 11.5px 'JetBrains Mono', monospace";
+    ctx.fillText(`QUỸ ĐẠO Δv QUA ${readySlices.length} LỚP (Δf = ${deltaFrames} khung)`, 24, H - 25);
+    ctx.restore();
 }
 
 function stepFlipbookTick() {
@@ -3926,46 +4145,34 @@ function stepFlipbookTick() {
     const cur = deck[idx];
     if (!cur) return;
 
-    const flipImg = document.getElementById("os-modal-flipbook-img");
-    const ghostImg = document.getElementById("os-modal-flipbook-ghost-img");
-    const emptyFlip = document.getElementById("os-modal-flipbook-empty");
-    const curSrc = formatImgDataUrl(cur.pose_b64 || cur.raw_b64);
+    // 1. Đồng bộ Cột Trái (1 khung đơn lẻ tại đúng thời điểm t) với Cột Phải (chồng 4 khung t-3 ➔ t)
+    updateLeftSingleFrameInspector(cur, latestPipelineLiveState);
 
-    if (flipImg && curSrc) {
-        if (flipImg.getAttribute("data-frame-idx") !== String(cur.frame_idx)) {
-            flipImg.src = curSrc;
-            flipImg.setAttribute("data-frame-idx", String(cur.frame_idx));
-        }
-        flipImg.classList.remove("hidden");
-        if (emptyFlip) emptyFlip.classList.add("hidden");
-    }
+    // 2. Vẽ Khối Chồng Đa Khung Liên Tiếp (t-3 ➔ t) + Quỹ Đạo Động Học Δv trên #os-stroboscopic-canvas
+    renderStroboscopicStackCanvas(deck, idx);
 
-    if (ghostImg) {
-        if (flipbookOnionSkin && idx > 0 && deck.length > 1) {
-            const prevFrame = deck[idx - 1];
-            const prevSrc = formatImgDataUrl(prevFrame && (prevFrame.pose_b64 || prevFrame.raw_b64));
-            if (prevSrc) {
-                if (ghostImg.getAttribute("data-frame-idx") !== String(prevFrame.frame_idx)) {
-                    ghostImg.src = prevSrc;
-                    ghostImg.setAttribute("data-frame-idx", String(prevFrame.frame_idx));
-                }
-                ghostImg.classList.remove("hidden");
-            } else {
-                ghostImg.classList.add("hidden");
-            }
-        } else {
-            ghostImg.classList.add("hidden");
-        }
-    }
+    const winStart = Math.max(0, idx - 3);
+    const firstWinFrame = deck[winStart] || cur;
+    const winCount = idx - winStart + 1;
+    const frameSpanIds = deck.slice(winStart, idx + 1).map(f => `#${f.frame_idx}`).join(" ➔ ");
 
-    const modeSuffix = latestPipelineLiveState.is_completed ? " · Phát lại chuỗi 10 khung" : " · Dòng thời gian thực";
     safeSetText(
         "os-flipbook-step-label",
-        `Lát t${idx + 1}/${deck.length} · Khung #${cur.frame_idx || 0} · ${cur.time_str || "00:00"}${modeSuffix}`
+        `Cửa sổ chồng ${winCount} khung: ${frameSpanIds} · Mốc ${cur.time_str || "00:00"}`
     );
     safeSetText(
         "os-tensor-active-readout",
-        `Đang kích hoạt lát cắt t${idx + 1}/${deck.length} · Khung #${cur.frame_idx || 0} · ${cur.time_str || "00:00"} · 17 khớp GPU`
+        `Đang gom cửa sổ ${winCount} khung [${frameSpanIds}] từ Bounded Buffer để tính đạo hàm chuyển động Δv tại t${idx + 1}/${deck.length}`
+    );
+
+    const idsList = formatActiveIdsText(cur.active_ids, cur.persons);
+    safeSetText(
+        "os-modal-static-limit",
+        `Tại riêng Khung #${cur.frame_idx} (${cur.time_str || "00:00"}): Chỉ có tọa độ tĩnh 17 khớp của ${idsList} · Đạo hàm thời gian Δt = 0 ➔ Vận tốc Δv = 0 px/s, không biết hướng di chuyển hay lực va chạm.`
+    );
+    safeSetText(
+        "os-modal-dynamic-gain",
+        `Chồng liên tiếp ${winCount} khung (${frameSpanIds}) từ Bounded Buffer: Tích hợp Δt = ${winCount} mẫu liên tiếp để đo vector dịch chuyển Δv và quỹ đạo tương tác của ${idsList}.`
     );
 
     const dotsEl = document.getElementById("os-flipbook-dots");
@@ -3981,12 +4188,13 @@ function stepFlipbookTick() {
         }
     }
 
-    // Synchronize active highlight on the bottom overlapping 3D tensor slices without rebuilding DOM
+    // 3. Đồng bộ đánh dấu Cửa Sổ Trượt 4 Khung [idx-3 .. idx] trên Ma Trận 10 Cột bên dưới
     const cascadeEl = document.getElementById("os-conveyor-cascade-fan");
     if (cascadeEl) {
         const cards = cascadeEl.querySelectorAll(".os-frame-card");
         cards.forEach((cardEl, cIdx) => {
             cardEl.classList.toggle("flip-active-card", cIdx === idx);
+            cardEl.classList.toggle("in-stack-window", cIdx >= winStart && cIdx <= idx);
         });
     }
 }
@@ -4095,9 +4303,13 @@ function renderLivePipelineModalDOM(st) {
             const activeHighlightIdx = pinnedConveyorFrameIdx !== null
                 ? pinnedConveyorFrameIdx
                 : Math.min(deck.length - 1, Math.max(0, flipbookCursorIdx));
+            const winStart = Math.max(0, activeHighlightIdx - 3);
 
             const fragment = document.createDocumentFragment();
             deck.forEach((f, idx) => {
+                // Pre-warm image cache for smooth multi-frame canvas stacking
+                getCachedDeckImage(f);
+
                 const fKey = String(f.frame_idx);
                 let cardEl = existingMap.get(fKey);
                 if (!cardEl) {
@@ -4108,20 +4320,19 @@ function renderLivePipelineModalDOM(st) {
                     cardEl.innerHTML = `
                         <img src="${src}" alt="Annotated frame ${f.frame_idx}" decoding="async" />
                         <span class="os-frame-card-tag mono">#${f.frame_idx} · ${escapeHtml(f.time_str || '00:00')}</span>
-                        <span class="os-frame-card-step mono">t${idx + 1} / ${deck.length}</span>
+                        <span class="os-frame-card-step mono">t${idx + 1}</span>
                         <div class="os-frame-card-foot mono">
-                            <span>17 khớp · ${f.persons || 0} ID</span>
+                            <span>${f.persons || 0} ID</span>
                         </div>
                     `;
                 } else {
                     cardEl.classList.remove("os-frame-card-enter");
                     const stepSpan = cardEl.querySelector(".os-frame-card-step");
-                    if (stepSpan) stepSpan.textContent = `t${idx + 1} / ${deck.length}`;
+                    if (stepSpan) stepSpan.textContent = `t${idx + 1}`;
                 }
                 cardEl.setAttribute("data-deck-idx", String(idx));
-                cardEl.style.setProperty("--deck-idx", String(idx));
-                cardEl.style.zIndex = String(15 + idx);
                 cardEl.classList.toggle("flip-active-card", idx === activeHighlightIdx);
+                cardEl.classList.toggle("in-stack-window", idx >= winStart && idx <= activeHighlightIdx);
                 cardEl.onmouseenter = () => previewConveyorFrame(idx);
                 cardEl.onmouseleave = () => releaseConveyorFrame();
                 cardEl.onclick = () => previewConveyorFrame(idx);
@@ -4133,8 +4344,8 @@ function renderLivePipelineModalDOM(st) {
 
     if (!flipbookTimer) {
         startFlipbookLoop();
-        stepFlipbookTick();
     }
+    stepFlipbookTick();
 }
 
 function updateLeftSingleFrameInspector(f, st) {
@@ -4160,7 +4371,7 @@ function updateLeftSingleFrameInspector(f, st) {
             rawCompareImg.src = rawSrc;
             rawCompareImg.setAttribute("data-frame-idx", String(f.frame_idx));
         }
-        rawPip.classList.remove("hidden");
+        rawPip.classList.toggle("hidden", leftFrameLayerMode !== "raw");
     }
 
     const totalF = (st && st.total_frames) || f.total_frames || 0;
