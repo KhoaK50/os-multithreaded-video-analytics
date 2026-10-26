@@ -522,11 +522,11 @@ class HierarchicalModelOrchestrator:
                 self.client = genai.Client(
                     api_key=self.api_key,
                     http_options=types.HttpOptions(
-                        timeout=20000,
+                        timeout=14000,
                         retry_options=types.HttpRetryOptions(attempts=1)
                     )
                 )
-                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công (timeout=20s, attempts=1).")
+                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công (timeout=14s, attempts=1).")
             except Exception as e:
                 logger.warning(f"Chưa khởi tạo được genai.Client: {e}")
                 self.client = None
@@ -642,25 +642,23 @@ class HierarchicalModelOrchestrator:
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
-        """Gọi client.models.generate_content ưu tiên model phản hồi nhanh nhất thực tế (gemini-3-flash-preview ~1.6-3.5s)."""
+        """Gọi client.models.generate_content ưu tiên model phản hồi nhanh và ổn định nhất thực tế (gemini-3-flash-preview & gemini-3.1-flash-lite với MINIMAL thinking)."""
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         if is_mock:
             candidates = [model]
         else:
             candidates = [
+                "gemini-3.1-flash-lite",
                 "gemini-3-flash-preview",
-                "gemini-3.5-flash-lite",
-                "gemini-3.5-flash",
-                "gemini-flash-lite-latest",
             ]
-            if model and model not in candidates and not any(dep in model for dep in ["2.5-flash", "2.0-flash", "1.5-flash", "3.8-flash", "3.6-flash", "3.7-flash"]):
+            if model and model not in candidates and not any(dep in model for dep in ["2.5-flash", "2.0-flash", "1.5-flash", "3.8-flash", "3.6-flash", "3.7-flash", "3.5-flash"]):
                 candidates.insert(0, model)
 
         last_err = None
         for m in candidates:
             try:
                 eff_config = config
-                if not is_mock and "gemini-3-" in m:
+                if not is_mock and ("gemini-3-" in m or "gemini-3.1-" in m):
                     try:
                         from google.genai import types
                         if isinstance(config, types.GenerateContentConfig) and getattr(config, "thinking_config", None) is None:
@@ -678,8 +676,7 @@ class HierarchicalModelOrchestrator:
             except Exception as e:
                 last_err = e
                 err_msg = str(e).upper()
-                # Chỉ thử model kế tiếp nếu tên model không tồn tại (404) hoặc máy chủ model đó báo bận tức thời (503)
-                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE", "503", "UNAVAILABLE"]):
+                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE", "503", "UNAVAILABLE", "504", "DEADLINE_EXCEEDED", "TIMEOUT"]):
                     continue
                 raise e
         if last_err:
@@ -760,15 +757,26 @@ class HierarchicalModelOrchestrator:
             self.active_tier = ModelTier.TIER_1_PRIMARY
 
         context_str = self.context_memory.get_context_summary_for_prompt()
-        prompt = f"""Bạn là Chuyên gia Phân tích Hành vi & Công thái học Thời gian thực.
+        prompt = f"""Bạn là Hệ thống Giám sát & Phân tích Hành vi Thông minh.
 {context_str}
 
-Hãy quan sát khung hình camera vừa chụp và phân tích HÀNH VI thực tế của người trong ảnh bằng ngôn ngữ tự nhiên, linh hoạt, giàu chiều sâu (TUYỆT ĐỐI KHÔNG miêu tả máy móc kiểu liệt kê 'đầu ở đâu, vai ở đâu', KHÔNG đưa số đo góc độ kỹ thuật như 87°, KHÔNG dùng dấu nháy đơn). Hãy nhận định người đó đang làm gì, mức độ tập trung, thư giãn hay dấu hiệu mỏi cơ/lệch tư thế ra sao.
-Trả về đúng 1 JSON:
+Hãy quan sát bức ảnh khung hình camera vừa chụp được và phân tích thật chi tiết, khách quan, sâu sắc về hành vi và cử chỉ thực tế của người trong ảnh:
+1. "action": Tên hành vi / cử chỉ cụ thể, rõ ràng người đó đang làm gì (ví dụ: "Nằm ngửa giơ ngón tay cái ra hiệu", "Giơ 4 ngón tay trước ống kính", "Gõ bàn phím làm việc", "Cầm điện thoại nhắn tin", "Chống cằm suy nghĩ", "Chụm tay làm ống nhòm mô phỏng", "Uống nước", "Vắng mặt / Rời vị trí").
+2. "description": Miêu tả chi tiết, tường tận hành vi và ngữ cảnh thực tế: người đó đang ở đâu, tư thế như thế nào, đang làm hành động gì cụ thể (cử chỉ bàn tay, ngón tay cử động cụ thể ra sao, hướng ánh mắt nhìn đi đâu, biểu cảm khuôn mặt, trang phục hoặc vật thể tương tác xung quanh).
+   - Dùng ngôn ngữ tiếng Việt tự nhiên, chuẩn mực, sinh động, tập trung 100% vào sự chi tiết của hành vi và cử chỉ.
+   - TUYỆT ĐỐI KHÔNG nói lan man kiểu khám sức khỏe, chăm sóc hay kiểm tra an toàn (như "không có dấu hiệu mệt mỏi", "không căng thẳng cơ bắp", "không có gì bất thường hay nguy hiểm").
+   - TUYỆT ĐỐI KHÔNG đưa số đo góc độ kỹ thuật khô khan (như 87°) và KHÔNG dùng dấu nháy đơn.
+3. "prediction_next_4s": Dự đoán cụ thể xu hướng hành động trong 4 giây tiếp theo dựa trên cử chỉ, hướng nhìn và biểu cảm hiện tại.
+4. "severity":
+   - "safe": Hoạt động học tập, làm việc, nghỉ ngơi, ra hiệu cử chỉ bình thường.
+   - "warning": Sai lệch tư thế rõ rệt kéo dài hoặc mất tập trung.
+   - "danger": Té ngã, gục xỉu, bất tỉnh hoặc va chạm mạnh.
+
+Trả về định dạng JSON thuần:
 {{
-    "action": "Nhận định ngắn gọn hành vi/trạng thái chính (4-8 từ, tự nhiên)",
-    "description": "Phân tích tự nhiên hành vi, mục đích cử chỉ, mức độ tập trung hoặc dấu hiệu mỏi/thư giãn của chủ thể (1-2 câu sắc sảo, không dùng thuật ngữ kỹ thuật)",
-    "prediction_next_4s": "Dự báo tự nhiên diễn biến hành vi trong 4 giây tới (1 câu)",
+    "action": "Tên hành vi / cử chỉ cụ thể chuẩn mực",
+    "description": "Miêu tả chi tiết, tường tận hành vi, cử chỉ tay/ngón tay, hướng nhìn và ngữ cảnh thực tế",
+    "prediction_next_4s": "Dự đoán hành động cụ thể trong 4 giây tiếp theo",
     "severity": "safe" | "warning" | "danger"
 }}
 """
@@ -859,10 +867,8 @@ Trả về đúng 1 JSON:
             return None, ModelTier.TIER_3_HEURISTIC
 
         cloud_candidates = [
+            "gemini-3.1-flash-lite",
             "gemini-3-flash-preview",
-            "gemini-3.5-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-flash-lite-latest",
             self.tier2_model,
         ]
         dedup_candidates = []
@@ -877,7 +883,7 @@ Trả về đúng 1 JSON:
         for idx_m, m_cand in enumerate(dedup_candidates):
             try:
                 eff_config = config
-                if not is_mock and "gemini-3-" in m_cand:
+                if not is_mock and ("gemini-3-" in m_cand or "gemini-3.1-" in m_cand):
                     try:
                         from google.genai import types
                         if isinstance(config, types.GenerateContentConfig) and getattr(config, "thinking_config", None) is None:

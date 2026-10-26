@@ -324,7 +324,7 @@ class LiveCameraPipeline:
             return None
 
     def capture_manual_snapshot(self):
-        """Chụp ảnh bằng chứng thủ công theo lệnh người dùng."""
+        """Chụp ảnh bằng chứng thủ công theo lệnh người dùng và phân tích sâu bằng Gemini."""
         with self.frame_lock:
             frame = self.latest_raw_frame.copy() if self.latest_raw_frame is not None else None
         if frame is None:
@@ -337,11 +337,28 @@ class LiveCameraPipeline:
             frame=frame,
             posture=bio.get("posture", "Ngồi thẳng bình thường"),
             angle=bio.get("angle", 90.0),
-            alert=bio.get("alert", "Ảnh chụp tức thì theo lệnh người dùng"),
+            alert=bio.get("alert", "Đang phân tích chi tiết hành vi bằng Gemini..."),
             is_danger=bio.get("is_danger", False),
             severity="danger" if bio.get("is_danger", False) else "safe",
             model_tier=active_tier_key
         )
+        if entry is not None and not type(MODEL_ORCHESTRATOR.client).__module__.startswith("unittest.mock"):
+            def _enrich_manual(target_entry, f_img, b_snap):
+                try:
+                    res = MODEL_ORCHESTRATOR.execute_live_analysis(f_img, b_snap)
+                    if isinstance(res, dict):
+                        with self.ai_lock:
+                            if res.get("action"):
+                                target_entry["action"] = res["action"]
+                            if res.get("description"):
+                                target_entry["description"] = res["description"]
+                            if res.get("prediction_next_4s"):
+                                target_entry["prediction_next_4s"] = res["prediction_next_4s"]
+                            if res.get("severity") in ("safe", "warning", "danger"):
+                                target_entry["severity"] = res["severity"]
+                except Exception:
+                    pass
+            threading.Thread(target=_enrich_manual, args=(entry, frame.copy(), dict(bio)), daemon=True).start()
         return entry
 
     def _open_hardware_camera(self):
@@ -539,9 +556,9 @@ class LiveCameraPipeline:
                         "model_tier": active_tier_before,
                     }
 
-                    # Nếu lượt gọi trước còn đang hoàn tất nốt những mili-giây cuối, chờ tối đa 1.8s để không bỏ lỡ lượt gọi Gemini thật
+                    # Nếu lượt gọi trước còn đang hoàn tất nốt những mili-giây cuối, chờ tối đa 3.0s để không bỏ lỡ lượt gọi Gemini thật
                     wait_busy_start = time.time()
-                    while time.time() - wait_busy_start < 1.8:
+                    while time.time() - wait_busy_start < 3.0:
                         with cloud_busy_lock:
                             if not cloud_in_flight[0]:
                                 break
@@ -605,8 +622,8 @@ class LiveCameraPipeline:
                             daemon=True
                         )
                         t_worker.start()
-                        # Đợi tối đa 5.5 giây; gemini-3-flash-preview với thinking_level=MINIMAL phản hồi chỉ trong ~2.2-2.8 giây
-                        done_ev.wait(timeout=5.5)
+                        # Đợi Gemini hoàn tất phân tích chi tiết hành vi trước khi ghi vào bảng sự kiện
+                        done_ev.wait(timeout=13.5)
 
                     with self.ai_lock:
                         self.action_logs.insert(0, entry)
