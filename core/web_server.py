@@ -497,7 +497,6 @@ class LiveCameraPipeline:
                     continue
 
                 with self.ai_lock:
-                    has_person = len(self.latest_boxes) > 0 or len(self.latest_kpts) > 0
                     logs_empty = len(self.action_logs) == 0
                     bio = dict(self.biomechanics)
 
@@ -524,12 +523,9 @@ class LiveCameraPipeline:
                     except Exception:
                         pass
 
-                if not has_person and not logs_empty:
-                    time.sleep(1.0)
-                    continue
-
                 try:
                     self.action_counter += 1
+                    snap_time_str = time.strftime("%H:%M:%S")
                     snap_name = f"snap_gemini_{self.action_counter:04d}_{int(t_start)}.jpg"
                     snap_path = os.path.join(self.snapshots_dir, snap_name)
                     cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -569,7 +565,7 @@ class LiveCameraPipeline:
 
                     entry = {
                         "id": f"#{self.action_counter:03d}",
-                        "timestamp": time.strftime("%H:%M:%S"),
+                        "timestamp": snap_time_str,
                         "code": f"{code_prefix}-{self.action_counter:02d}",
                         "action": action_name,
                         "description": desc_name,
@@ -722,7 +718,7 @@ class LiveCameraPipeline:
                         conf = float(box.conf[0].item())
                         x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
                         # Lọc box nhỏ / bóng phản chiếu
-                        if (x2 - x1) * (y2 - y1) < (raw.shape[0] * raw.shape[1] * 0.04):
+                        if (x2 - x1) * (y2 - y1) < (raw.shape[0] * raw.shape[1] * 0.015):
                             continue
                         boxes_list.append((x1, y1, x2, y2, f"ID #{i+1:02d}", conf))
 

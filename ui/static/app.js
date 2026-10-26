@@ -3525,6 +3525,13 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
         zLatencyMs = capVal <= 16 ? Math.round(capVal * 33.3 * 0.25) : Math.round(33 + (capVal - 16) * 14.5);
         zLagSlots = capVal <= 16 ? 0 : Math.min(36, Math.round((capVal - 16) * 0.65));
         zSkipStride = capVal >= 8 ? 1 : 2;
+    } else if (pol === "block_fifo" && capVal >= 32 && delayVal <= 40) {
+        // Kịch bản Dư Bộ Nhớ (Bufferbloat): Hàng đợi FIFO lớn giữ toàn bộ khung hình trong RAM (0% rơi khung tức thì) nhưng tích lũy độ trễ hàng đợi lớn
+        zFps = Number((1000.0 / (33.3 + delayVal)).toFixed(1));
+        zDropPct = 0.0;
+        zLatencyMs = Math.round(capVal * (33.3 + delayVal) * 0.45);
+        zLagSlots = Math.min(44, Math.max(6, Math.round((capVal / 64.0) * 30)));
+        zSkipStride = Math.max(1, Math.min(4, Math.round(30.0 / Math.max(5.0, zFps))));
     } else {
         zFps = Number((1000.0 / (33.3 + delayVal)).toFixed(1));
         zDropPct = Number(((delayVal / (33.3 + delayVal)) * 100.0).toFixed(1));
@@ -3572,14 +3579,14 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
 
     if (capVal === 16 && delayVal === 0 && pol === "drop_oldest") {
         // Optimal
-    } else if (capVal > 16 && delayVal === 0 && pol === "drop_oldest") {
-        sweetTitle = `Cấp Phát Dư Thừa · ${ramRatio}x RAM`;
+    } else if (capVal > 16 && delayVal <= 40) {
+        sweetTitle = `Phình Bộ Đệm · Dư ${ramRatio}x RAM · Trễ +${zLatencyMs}ms`;
         sweetClass = "badge-warning";
-        sweetVerdict = `Cấp phát bộ đệm lớn gấp ${ramRatio}x mức khuyến nghị nhưng tốc độ đầu ra không vượt trần 30.0 FPS và tạo độ trễ hàng đợi ~${zLatencyMs} ms.`;
+        sweetVerdict = `Cấp phát bộ đệm lớn gấp ${ramRatio}x mức khuyến nghị (${ramZ} MB RAM) gây tích lũy hàng đợi ~${zLatencyMs} ms mà không làm tăng chất lượng nhận diện AI.`;
     } else {
-        sweetTitle = isStall ? "Quá Tải Hàng Đợi · Ngắt Mạch Bảo Vệ" : "Cấu Hình Lệch Chuẩn · Suy Giảm Chất Lượng AI";
+        sweetTitle = isStall ? "Quá Tải Hàng Đợi · Ngắt Mạch Bảo Vệ" : "Cấu Hình Lệch Chuẩn · Suy Giảm Tần Suất Lấy Mẫu";
         sweetClass = isStall ? "badge-danger" : "badge-warning";
-        sweetVerdict = `Bộ đệm N=${capVal}, độ trễ ${delayVal}ms làm tốc độ sụt giảm còn ~${zFps} FPS và rơi ${zDropPct}% khung hình.`;
+        sweetVerdict = `Bộ đệm N=${capVal}, độ trễ ${delayVal}ms làm tốc độ luồng giảm còn ~${zFps} FPS và rơi ${zDropPct}% khung hình.`;
     }
 
     if (sweetBadge) {
@@ -3855,6 +3862,27 @@ function toggleFlipbookOnionSkin() {
     stepFlipbookTick();
 }
 
+function setXraySplitPct(val) {
+    const pct = Math.max(0, Math.min(100, Number(val) || 36));
+    const stage = document.getElementById("os-xray-stage");
+    if (stage) {
+        stage.style.setProperty("--xray-split", `${pct}%`);
+    }
+}
+
+function setTensorStackMode(mode) {
+    const cascadeEl = document.getElementById("os-conveyor-cascade-fan");
+    const btnIso = document.getElementById("btn-stack-iso");
+    const btnDeck = document.getElementById("btn-stack-deck");
+    const isChrono = mode === "chronodeck";
+    if (cascadeEl) {
+        cascadeEl.classList.toggle("mode-isometric", !isChrono);
+        cascadeEl.classList.toggle("mode-chronodeck", isChrono);
+    }
+    if (btnIso) btnIso.classList.toggle("active", !isChrono);
+    if (btnDeck) btnDeck.classList.toggle("active", isChrono);
+}
+
 function stepFlipbookTick() {
     const modal = document.getElementById("os-live-pipeline-modal");
     if (!modal || modal.classList.contains("hidden")) return;
@@ -3933,7 +3961,11 @@ function stepFlipbookTick() {
     const modeSuffix = latestPipelineLiveState.is_completed ? " · Phát lại chuỗi 10 khung" : " · Dòng thời gian thực";
     safeSetText(
         "os-flipbook-step-label",
-        `Tờ ${idx + 1}/${deck.length} · Khung #${cur.frame_idx || 0} · ${cur.time_str || "00:00"}${modeSuffix}`
+        `Lát t${idx + 1}/${deck.length} · Khung #${cur.frame_idx || 0} · ${cur.time_str || "00:00"}${modeSuffix}`
+    );
+    safeSetText(
+        "os-tensor-active-readout",
+        `Đang kích hoạt lát cắt t${idx + 1}/${deck.length} · Khung #${cur.frame_idx || 0} · ${cur.time_str || "00:00"} · 17 khớp GPU`
     );
 
     const dotsEl = document.getElementById("os-flipbook-dots");
@@ -3949,7 +3981,7 @@ function stepFlipbookTick() {
         }
     }
 
-    // Synchronize active highlight on the bottom overlapping filmstrip cards without rebuilding DOM
+    // Synchronize active highlight on the bottom overlapping 3D tensor slices without rebuilding DOM
     const cascadeEl = document.getElementById("os-conveyor-cascade-fan");
     if (cascadeEl) {
         const cards = cascadeEl.querySelectorAll(".os-frame-card");
@@ -4075,19 +4107,19 @@ function renderLivePipelineModalDOM(st) {
                     const src = formatImgDataUrl(f.pose_b64 || f.raw_b64);
                     cardEl.innerHTML = `
                         <img src="${src}" alt="Annotated frame ${f.frame_idx}" decoding="async" />
-                        <span class="os-frame-card-tag mono">Khung #${f.frame_idx}</span>
-                        <span class="os-frame-card-step mono">Tờ ${idx + 1}/${deck.length}</span>
+                        <span class="os-frame-card-tag mono">#${f.frame_idx} · ${escapeHtml(f.time_str || '00:00')}</span>
+                        <span class="os-frame-card-step mono">t${idx + 1} / ${deck.length}</span>
                         <div class="os-frame-card-foot mono">
-                            <span>${escapeHtml(f.time_str || '00:00')}</span>
                             <span>17 khớp · ${f.persons || 0} ID</span>
                         </div>
                     `;
                 } else {
                     cardEl.classList.remove("os-frame-card-enter");
                     const stepSpan = cardEl.querySelector(".os-frame-card-step");
-                    if (stepSpan) stepSpan.textContent = `Tờ ${idx + 1}/${deck.length}`;
+                    if (stepSpan) stepSpan.textContent = `t${idx + 1} / ${deck.length}`;
                 }
                 cardEl.setAttribute("data-deck-idx", String(idx));
+                cardEl.style.setProperty("--deck-idx", String(idx));
                 cardEl.style.zIndex = String(15 + idx);
                 cardEl.classList.toggle("flip-active-card", idx === activeHighlightIdx);
                 cardEl.onmouseenter = () => previewConveyorFrame(idx);
@@ -4688,7 +4720,7 @@ function updateLiveParallelReportsAndLogs() {
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     const polText = st.policy === "drop_oldest" ? "Priority" : "Block-FIFO";
     const isOptimal = (st.cap === 16 && st.delay === 0 && st.policy === "drop_oldest");
-    const isOverProvisioned = (st.cap > 16 && st.delay === 0 && st.policy === "drop_oldest");
+    const isOverProvisioned = (st.cap > 16 && st.delay <= 40 && !st.isStall);
 
     safeSetText("live-split-z-config-text", `N = ${st.cap} · ${ramMb} MB · ${st.delay} ms · ${polText}`);
     safeSetText("live-split-z-fps", `${st.zFps} FPS`);
@@ -4705,12 +4737,12 @@ function updateLiveParallelReportsAndLogs() {
     } else if (isOverProvisioned) {
         const ratio = (st.cap / 16.0).toFixed(1);
         if (zThreatEl) {
-            zThreatEl.textContent = `DƯ ${ratio}x RAM · TRỄ +${st.zLatencyMs}ms`;
+            zThreatEl.textContent = `PHÌNH ĐỆM ${ratio}x RAM · TRỄ +${st.zLatencyMs}ms`;
             zThreatEl.className = "badge badge-warning";
         }
     } else {
         if (zThreatEl) {
-            zThreatEl.textContent = st.isStall ? "NGẮT MẠCH · LỆCH MẪU" : `SAI LỆCH · RƠI ${st.zDropPct}%`;
+            zThreatEl.textContent = st.isStall ? `NGHẼN HÀNG ĐỢI · +${st.zLatencyMs}ms` : `GIẢM MẪU · RƠI ${st.zDropPct}%`;
             zThreatEl.className = st.isStall ? "badge badge-danger" : "badge badge-warning";
         }
     }
@@ -4788,7 +4820,7 @@ function updateLiveParallelReportsAndLogs() {
         }).join("");
     }
 
-    // Render Bảng 7 cột trên Cột Phải
+    // Render Bảng 7 cột trên Cột Phải (Giữ nguyên tầng mô hình thực tế của hệ thống, chỉ phản ánh tác động hàng đợi HĐH)
     let zSafe = 0, zWarn = 0, zDanger = 0;
     if (zList) {
         zList.innerHTML = sourceLogs.map((item, idx) => {
@@ -4838,13 +4870,13 @@ function updateLiveParallelReportsAndLogs() {
                 return `
                     <tr class="${isDanger ? "row-danger" : ""}">
                         <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
-                        <td class="mono">${escapeHtml(item.timestamp || "--:--:--")} · <span class="text-muted">+${st.zLatencyMs}ms</span></td>
+                        <td class="mono">${escapeHtml(item.timestamp || "--:--:--")} · <span style="color: var(--accent-amber);">+${st.zLatencyMs}ms</span></td>
                         <td>${getModelTierBadge(item.model_tier)}</td>
                         <td><span class="badge ${badgeClass}">${escapeHtml(item.action)}</span></td>
-                        <td class="desc-cell">${escapeHtml(item.description)} <span style="color: var(--accent-amber);">· Tốn ${ramMb} MB RAM</span></td>
+                        <td class="desc-cell">${escapeHtml(item.description)} <span style="color: var(--accent-amber);">· Đệm N=${st.cap} ngốn ${ramMb} MB RAM, gây trễ hàng đợi +${st.zLatencyMs}ms</span></td>
                         <td class="prediction-cell">
                             <div class="prediction-badge">
-                                <span class="pred-text">${escapeHtml(predText)} · +${st.zLatencyMs}ms</span>
+                                <span class="pred-text">${escapeHtml(predText)} · Trễ +${st.zLatencyMs}ms</span>
                             </div>
                         </td>
                         <td style="text-align: center;">${snapHtml}</td>
@@ -4852,26 +4884,25 @@ function updateLiveParallelReportsAndLogs() {
                 `;
             }
 
-            // Trường hợp cấu hình tài nguyên sai lệch (isDegraded)
+            // Trường hợp cấu hình tài nguyên thiếu hụt hoặc độ trễ xử lý cao (N < 16 hoặc delay > 40ms)
             let zSev = item.severity;
             let zAction = item.action;
             let zDesc = item.description;
-            let zPred = item.prediction_next_4s || "";
+            let zPred = item.prediction_next_4s || "Duy trì ổn định 4s tới";
 
             if (item.severity === "danger" || item.severity === "warning") {
                 zSev = "safe";
                 zAction = st.policy === "block_fifo"
-                    ? "An toàn giả tạo · Trôi khung FIFO"
+                    ? "Trễ phát hiện · Nghẽn hàng đợi FIFO"
                     : `Bỏ sót biến cố · Rơi ${st.zDropPct}% khung`;
-                zDesc = `Mất khung biến cố do N=${st.cap}, trễ ${st.delay}ms · ${polText}; AI chỉ nhận khung tĩnh cũ.`;
-                zPred = `Sai lệch dự báo · +${st.zLatencyMs}ms`;
+                zDesc = `Biến cố bị trễ hoặc rơi mẫu do bộ đệm N=${st.cap}, trễ ${st.delay}ms · ${polText}; luồng xử lý chỉ nhận được khung tĩnh trước đó.`;
+                zPred = `Dự báo trễ nhịp · +${st.zLatencyMs}ms`;
             } else {
-                zSev = st.isStall ? "danger" : "warning";
-                zAction = st.isStall
-                    ? "Đình trệ hàng đợi"
-                    : "Nhiễu góc nghiêng cột sống";
-                zDesc = `Tụt còn ~${st.zFps} FPS · Rơi ${st.zDropPct}% khung làm đứt quãng chuỗi khớp xương.`;
-                zPred = `Thiếu mẫu liên tiếp · +${st.zLatencyMs}ms`;
+                // Khi chủ thể đang ngồi đúng tư thế an toàn: không biến thành Nguy Hiểm giả tạo, chỉ ghi nhận độ trễ / giảm mẫu của HĐH
+                zSev = "warning";
+                zAction = `${item.action} · Trễ +${st.zLatencyMs}ms`;
+                zDesc = `${item.description} · Tốc độ luồng giảm còn ~${st.zFps} FPS, rơi ${st.zDropPct}% khung trung gian do N=${st.cap}, trễ ${st.delay}ms.`;
+                zPred = `${zPred} · Trễ +${st.zLatencyMs}ms`;
             }
 
             if (zSev === "danger") zDanger += 1;
@@ -4882,14 +4913,14 @@ function updateLiveParallelReportsAndLogs() {
             const laggedItem = sourceLogs[Math.min(sourceLogs.length - 1, idx + 1)] || item;
             const snapUrl = laggedItem.snapshot_url || item.snapshot_url;
             const snapHtml = snapUrl
-                ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(zAction)}" class="snapshot-thumb" style="filter: contrast(0.92) sepia(0.18); border: 1px solid var(--accent-amber);" loading="lazy" onclick="openSnapshotModal('${escapeHtml(snapUrl)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(zAction)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(zDesc)}', '${escapeHtml(zPred)}')" title="Khung hình trễ +${st.zLatencyMs}ms" />`
+                ? `<img src="${escapeHtml(snapUrl)}" alt="${escapeHtml(zAction)}" class="snapshot-thumb" style="filter: contrast(0.94); border: 1px solid var(--accent-amber);" loading="lazy" onclick="openSnapshotModal('${escapeHtml(snapUrl)}', '${escapeHtml(item.id || item.code)}', '${escapeHtml(zAction)}', '${escapeHtml(item.timestamp)}', '${escapeHtml(zDesc)}', '${escapeHtml(zPred)}')" title="Khung hình trễ +${st.zLatencyMs}ms" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
                 <tr class="${zSev === "danger" ? "row-danger" : ""}">
                     <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
                     <td class="mono">${escapeHtml(item.timestamp || "--:--:--")} <span style="color: var(--accent-amber);">+${st.zLatencyMs}ms</span></td>
-                    <td>${getModelTierBadge("local_heuristic")}</td>
+                    <td>${getModelTierBadge(item.model_tier)}</td>
                     <td><span class="badge ${badgeClass}">${escapeHtml(zAction)}</span></td>
                     <td class="desc-cell">${escapeHtml(zDesc)}</td>
                     <td class="prediction-cell">

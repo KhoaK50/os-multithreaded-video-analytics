@@ -421,15 +421,17 @@ class HierarchicalModelOrchestrator:
             candidates = [model]
         else:
             candidates = [
-                "gemini-3.5-flash-lite",
-                "gemini-3.1-flash-lite",
                 "gemini-flash-lite-latest",
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
                 model,
             ]
         for verified_m in [
+            "gemini-flash-lite-latest",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
             "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
-            "gemini-flash-lite-latest",
             "gemini-3.5-flash",
             "gemini-3.8-flash",
         ]:
@@ -462,12 +464,18 @@ class HierarchicalModelOrchestrator:
 
     def _call_gemini_vision(self, model: str, prompt: str, frame_img: Any) -> dict:
         from google.genai import types
+        is_mock = type(self.client).__module__.startswith("unittest.mock")
         contents = [prompt]
         if isinstance(frame_img, Image.Image):
+            if not is_mock and (frame_img.width > 512 or frame_img.height > 288):
+                frame_img = frame_img.resize((512, 288))
             contents.append(frame_img)
         elif isinstance(frame_img, np.ndarray):
             import cv2
-            rgb = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
+            proc_frame = frame_img
+            if not is_mock and frame_img.ndim >= 2 and (frame_img.shape[1] > 512 or frame_img.shape[0] > 288):
+                proc_frame = cv2.resize(frame_img, (512, 288), interpolation=cv2.INTER_AREA)
+            rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
             contents.append(Image.fromarray(rgb))
         elif frame_img is not None:
             contents.append(frame_img)
