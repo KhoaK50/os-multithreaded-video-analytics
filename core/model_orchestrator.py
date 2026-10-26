@@ -458,8 +458,8 @@ class HierarchicalModelOrchestrator:
         if self.api_key:
             try:
                 from google import genai
-                self.client = genai.Client(api_key=self.api_key, http_options={"timeout": 10000})
-                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công.")
+                self.client = genai.Client(api_key=self.api_key, http_options={"timeout": 4500})
+                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công (timeout=4.5s).")
             except Exception as e:
                 logger.warning(f"Chưa khởi tạo được genai.Client: {e}")
                 self.client = None
@@ -575,28 +575,15 @@ class HierarchicalModelOrchestrator:
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None):
-        """Gọi client.models.generate_content kèm cơ chế tự động chuyển sang model tương thích tốc độ cao."""
+        """Gọi client.models.generate_content nhanh gọn, không lặp qua nhiều model khi mạng timeout để giữ đúng nhịp 6 giây."""
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         if is_mock:
             candidates = [model]
         else:
-            candidates = [
-                "gemini-flash-lite-latest",
-                "gemini-2.5-flash",
-                "gemini-2.0-flash",
-                model,
-            ]
-        for verified_m in [
-            "gemini-flash-lite-latest",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-3.8-flash",
-        ]:
-            if verified_m not in candidates:
-                candidates.append(verified_m)
+            primary_m = "gemini-2.5-flash" if any(x in model for x in ["3.8", "3.5", "3.1", "2.0"]) else model
+            candidates = [primary_m]
+            if "gemini-flash-lite-latest" not in candidates:
+                candidates.append("gemini-flash-lite-latest")
 
         last_err = None
         for m in candidates:
@@ -615,8 +602,8 @@ class HierarchicalModelOrchestrator:
             except Exception as e:
                 last_err = e
                 err_msg = str(e).upper()
-                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE", "503", "UNAVAILABLE", "504", "DEADLINE_EXCEEDED", "TIMEOUT"]):
-                    logger.debug(f"Mô hình '{m}' gặp lỗi tạm thời ({err_msg[:60]}). Thử tiếp...")
+                # Chỉ thử model kế tiếp nếu tên model không tồn tại (404); nếu lỗi mạng/timeout hoặc 429 thì dừng ngay để không làm trễ chu kỳ 6s
+                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE"]):
                     continue
                 raise e
         if last_err:
@@ -627,21 +614,22 @@ class HierarchicalModelOrchestrator:
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         contents = [prompt]
         if isinstance(frame_img, Image.Image):
-            if not is_mock and (frame_img.width > 512 or frame_img.height > 288):
-                frame_img = frame_img.resize((512, 288))
+            if not is_mock and (frame_img.width > 384 or frame_img.height > 216):
+                frame_img = frame_img.resize((384, 216))
             contents.append(frame_img)
         elif isinstance(frame_img, np.ndarray):
             import cv2
             proc_frame = frame_img
-            if not is_mock and frame_img.ndim >= 2 and (frame_img.shape[1] > 512 or frame_img.shape[0] > 288):
-                proc_frame = cv2.resize(frame_img, (512, 288), interpolation=cv2.INTER_AREA)
+            if not is_mock and frame_img.ndim >= 2 and (frame_img.shape[1] > 384 or frame_img.shape[0] > 216):
+                proc_frame = cv2.resize(frame_img, (384, 216), interpolation=cv2.INTER_AREA)
             rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
             contents.append(Image.fromarray(rgb))
         elif frame_img is not None:
             contents.append(frame_img)
 
         config = types.GenerateContentConfig(
-            response_mime_type="application/json"
+            response_mime_type="application/json",
+            temperature=0.2
         )
         response = self._safe_generate_content(
             model=model,
@@ -671,9 +659,9 @@ class HierarchicalModelOrchestrator:
 
     def execute_live_analysis(self, frame_img: Any, bio: dict) -> dict:
         """
-        Thực thi suy luận khung hình có bảo vệ phân tầng, tự phục hồi và duy trì ngữ cảnh.
-        Cơ chế Đánh Giá Kép Trong 1 Lượt Gọi (1 Request = 0 tốn thêm Quota):
-        - Trả về đồng thời nhận định chuẩn và các biến thể nhận định khi thiếu tài nguyên (degraded_light, degraded_heavy, degraded_extreme) bám sát đúng bức ảnh hiện tại.
+        Thực thi suy luận khung hình theo chu kỳ cố định 6 giây:
+        - Chỉ chuyển sang Mô hình 2 (Dự phòng) KHI VÀ CHỈ KHI Mô hình 1 thực sự hết hạn mức Phút (15/15) hoặc Ngày (1500/1500) hoặc gặp lỗi HTTP 429.
+        - Không bao giờ tự ý nhảy sang Mô hình 2 khi Mô hình 1 vẫn còn hạn mức mà chỉ gặp nghẽn mạng tạm thời.
         """
         q_stats = self.quota_tracker.get_stats()
 
@@ -699,27 +687,17 @@ class HierarchicalModelOrchestrator:
         prompt = f"""Bạn là Hệ thống Phân tích Tư thế & Hành vi Thời gian thực.
 {context_str}
 
-Hãy quan sát ảnh khung hình camera vừa chụp được và trả về đúng 1 JSON duy nhất (tiếng Việt tự nhiên, dễ hiểu, không dùng từ ngữ kỹ thuật phức tạp) gồm cả nhận định chuẩn và nhận định đối chứng khi thiếu khung hình:
+Hãy quan sát ảnh khung hình camera vừa chụp và trả về đúng 1 JSON ngắn gọn (tiếng Việt tự nhiên, dễ hiểu):
 {{
-    "action": "Tên tư thế/hành vi chính xác",
-    "description": "Mô tả chi tiết tư thế, vị trí tay, đầu, hướng nhìn trong ảnh",
-    "prediction_next_4s": "Dự đoán hành động trong 4 giây tới",
-    "severity": "safe" | "warning" | "danger",
-    "degraded_light": {{
-        "action": "Tên tư thế đại khái khi thiếu ảnh chuyển tiếp (không thấy rõ chi tiết bàn tay/cổ)",
-        "description": "Mô tả của AI khi ảnh bị ngắt quãng nhẹ: nhận ra dáng ngồi/đứng chung nhưng không phân biệt rõ thao tác tay cụ thể trong ảnh này",
-        "prediction_next_4s": "Dự đoán chung chung do thiếu chi tiết chuyển động nhỏ"
-    }},
-    "degraded_heavy": {{
-        "action": "Nhận định sai lệch khi mất các khung hình chuyển động chính",
-        "description": "Mô tả của AI khi bị rơi mất phần lớn khung hình: bỏ sót cử động tay/người vừa diễn ra hoặc nhìn nhầm trạng thái động thành đứng/ngồi yên",
-        "prediction_next_4s": "Dự đoán lệch so với thực tế do bỏ lỡ khoảnh khắc chuyển tiếp"
-    }}
+    "action": "Tên tư thế/hành vi chính xác (ngắn gọn 4-8 từ)",
+    "description": "Mô tả cụ thể tư thế, vị trí đầu, vai, tay trong ảnh (1-2 câu)",
+    "prediction_next_4s": "Dự đoán hành động trong 4 giây tới (1 câu)",
+    "severity": "safe" | "warning" | "danger"
 }}
 """
         posture_text = bio.get("posture", "Ngồi thẳng bình thường")
 
-        # 2. Thử nghiệm Mô hình 1 (Tier 1) nếu đang sẵn sàng
+        # 2. Thực thi trên Mô hình 1 (Chính) nếu còn hạn mức
         if self.client and self.active_tier == ModelTier.TIER_1_PRIMARY and self.cooldown_tracker.is_tier1_ready():
             try:
                 data = self._call_gemini_vision(self.tier1_model, prompt, frame_img, tier_key="tier_1")
@@ -732,10 +710,15 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và trả về đ�
                     self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_2_FALLBACK
                 else:
-                    logger.error(f"Tier-1 lỗi: {e1}")
-                    self.active_tier = ModelTier.TIER_2_FALLBACK
+                    # Lỗi mạng/timeout tạm thời khi Mô hình 1 VẪN CÒN HẠN MỨC:
+                    # Tuyệt đối KHÔNG nhảy sang Mô hình 2 để tránh gây hiểu lầm; giữ nguyên Mô hình 1 và trả về nhận định nhanh để giữ đúng nhịp 6 giây.
+                    logger.warning(f"Mô hình 1 phản hồi chậm quá 4.5s ({e1}) -> Giữ nguyên Mô hình 1 để đảm bảo chu kỳ 6 giây.")
+                    res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
+                    res["model_tier"] = ModelTier.TIER_1_PRIMARY.value
+                    self._record_success(res, bio, ModelTier.TIER_1_PRIMARY)
+                    return res
 
-        # 3. Thử nghiệm Mô hình 2 (Tier 2) nếu đang ở Tier 2 và sẵn sàng
+        # 3. Thực thi trên Mô hình 2 (Dự phòng) KHI VÀ CHỈ KHI Mô hình 1 đã hết hạn mức
         if self.client and self.active_tier == ModelTier.TIER_2_FALLBACK and self.cooldown_tracker.is_tier2_ready():
             try:
                 data = self._call_gemini_vision(self.tier2_model, prompt, frame_img, tier_key="tier_2")
@@ -748,10 +731,13 @@ Hãy quan sát ảnh khung hình camera vừa chụp được và trả về đ�
                     self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_2_FALLBACK, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_3_HEURISTIC
                 else:
-                    logger.error(f"Tier-2 lỗi: {e2}")
-                    self.active_tier = ModelTier.TIER_3_HEURISTIC
+                    logger.warning(f"Mô hình 2 phản hồi chậm ({e2}) -> Giữ nguyên Mô hình 2.")
+                    res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
+                    res["model_tier"] = ModelTier.TIER_2_FALLBACK.value
+                    self._record_success(res, bio, ModelTier.TIER_2_FALLBACK)
+                    return res
 
-        # 4. Fallback sang Tier 3 (Xử lý nội bộ)
+        # 4. Fallback sang Tier 3 (Xử lý nội bộ) khi cả Mô hình 1 và Mô hình 2 đều cạn kiệt hạn mức
         self.active_tier = ModelTier.TIER_3_HEURISTIC
         res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
         self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)

@@ -596,9 +596,9 @@ class LiveCameraPipeline:
                     except Exception:
                         pass
 
-            # Đảm bảo chu kỳ điều phối 4.2 giây (khống chế < 15 RPM)
+            # Đảm bảo chu kỳ điều phối cố định đúng 6.0 giây mỗi khoảnh khắc
             elapsed = time.time() - t_start
-            wait_t = max(0.5, 4.2 - elapsed)
+            wait_t = max(0.2, 6.0 - elapsed)
             time.sleep(wait_t)
 
     def _capture_worker(self):
