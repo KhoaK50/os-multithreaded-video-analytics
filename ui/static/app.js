@@ -102,7 +102,7 @@ let currentVideoData = null; // { video_path, stream_url, duration, filename }
 let currentJobId = null;
 let jobPollInterval = null;
 let cachedLogs = [];
-let cameraSettings = { mirror: true, anti_glare: true, denoise: true };
+let cameraSettings = { mirror: true, anti_glare: false, denoise: false };
 let isServerOnline = true;
 
 // Video Analytics & Timeline Segmenter State
@@ -297,7 +297,6 @@ async function fetchTelemetry() {
         const angleDeg = Math.round(bio.angle || 90);
         safeSetText("live-angle-badge", `${angleDeg}°`);
         safeSetText("live-posture-text", bio.posture || "Ngồi thẳng");
-        safeSetText("live-alert-text", bio.alert || "Khu vực an toàn");
         safeSetText("sidebar-posture-text", bio.posture || "Ngồi thẳng bình thường");
         safeSetText("sidebar-alert-text", bio.alert || "Khu vực an toàn");
         safeSetText("sidebar-angle-text", `${angleDeg}°`);
@@ -328,6 +327,7 @@ async function fetchTelemetry() {
         const offlineOverlay = document.getElementById("cam-offline-overlay");
         const toggleBtn = document.getElementById("btn-toggle-cam");
         const statusDot = document.getElementById("live-stream-status-dot");
+        const splitStatusDot = document.getElementById("split-live-stream-status-dot");
 
         if (data.camera_running || isStreamingBrowserCam) {
             if (offlineOverlay) offlineOverlay.classList.add("hidden");
@@ -343,7 +343,13 @@ async function fetchTelemetry() {
                 statusDot.style.background = "var(--accent-emerald)";
                 statusDot.style.boxShadow = "none";
             }
-            safeSetText("live-stream-status-text", `TRỰC TIẾP — ${Math.round(data.fps || 30)} FPS`);
+            if (splitStatusDot) {
+                splitStatusDot.style.background = "var(--accent-emerald)";
+                splitStatusDot.style.boxShadow = "none";
+            }
+            const activeStatusLabel = `ĐANG BẬT CAMERA · ${Math.round(data.fps || 30)} FPS`;
+            safeSetText("live-stream-status-text", activeStatusLabel);
+            safeSetText("split-live-stream-status-text", activeStatusLabel);
         } else {
             if (offlineOverlay) offlineOverlay.classList.remove("hidden");
             if (toggleBtn) {
@@ -354,7 +360,12 @@ async function fetchTelemetry() {
                 statusDot.style.background = "var(--accent-crimson)";
                 statusDot.style.boxShadow = "none";
             }
+            if (splitStatusDot) {
+                splitStatusDot.style.background = "var(--accent-crimson)";
+                splitStatusDot.style.boxShadow = "none";
+            }
             safeSetText("live-stream-status-text", "ĐÃ TẮT CAMERA");
+            safeSetText("split-live-stream-status-text", "ĐÃ TẮT CAMERA");
         }
     } catch (e) {
         if (isServerOnline) {
@@ -589,18 +600,114 @@ function updateEnhancerButtonsUI() {
     const mirrorBtn = document.getElementById("btn-toggle-mirror");
     const glareBtn = document.getElementById("btn-toggle-glare");
     const denoiseBtn = document.getElementById("btn-toggle-denoise");
+    const splitMirrorBtn = document.getElementById("btn-split-toggle-mirror");
+    const splitGlareBtn = document.getElementById("btn-split-toggle-glare");
+    const splitDenoiseBtn = document.getElementById("btn-split-toggle-denoise");
+
+    const mirrorStateText = cameraSettings.mirror ? "Đang bật" : "Đang tắt";
+    const glareStateText = cameraSettings.anti_glare ? "Đang bật" : "Đang tắt";
+    const denoiseStateText = cameraSettings.denoise ? "Đang bật" : "Đang tắt";
 
     if (mirrorBtn) {
-        mirrorBtn.innerHTML = `${ICONS.mirror}<span>Lật gương: ${cameraSettings.mirror ? "BẬT" : "TẮT"}</span>`;
+        mirrorBtn.innerHTML = `${ICONS.mirror}<span>Lật gương: ${mirrorStateText}</span>`;
         mirrorBtn.classList.toggle("active-toggle", !!cameraSettings.mirror);
+        mirrorBtn.title = cameraSettings.mirror ? "Đang bật lật gương — Nhấn để tắt" : "Đang tắt lật gương — Nhấn để bật";
     }
     if (glareBtn) {
-        glareBtn.innerHTML = `${ICONS.lightbulb}<span>Chống chói: ${cameraSettings.anti_glare ? "BẬT" : "TẮT"}</span>`;
+        glareBtn.innerHTML = `${ICONS.lightbulb}<span>Chống chói: ${glareStateText}</span>`;
         glareBtn.classList.toggle("active-toggle", !!cameraSettings.anti_glare);
+        glareBtn.title = cameraSettings.anti_glare ? "Đang bật chống chói — Nhấn để tắt" : "Đang tắt chống chói — Nhấn để bật";
     }
     if (denoiseBtn) {
-        denoiseBtn.innerHTML = `${ICONS.filter}<span>Khử nhiễu: ${cameraSettings.denoise ? "BẬT" : "TẮT"}</span>`;
+        denoiseBtn.innerHTML = `${ICONS.filter}<span>Khử nhiễu: ${denoiseStateText}</span>`;
         denoiseBtn.classList.toggle("active-toggle", !!cameraSettings.denoise);
+        denoiseBtn.title = cameraSettings.denoise ? "Đang bật khử nhiễu — Nhấn để tắt" : "Đang tắt khử nhiễu — Nhấn để bật";
+    }
+    if (splitMirrorBtn) {
+        splitMirrorBtn.innerHTML = `<span>Lật gương: ${mirrorStateText}</span>`;
+        splitMirrorBtn.classList.toggle("active-toggle", !!cameraSettings.mirror);
+        splitMirrorBtn.title = cameraSettings.mirror ? "Đang bật lật gương — Nhấn để tắt" : "Đang tắt lật gương — Nhấn để bật";
+    }
+    if (splitGlareBtn) {
+        splitGlareBtn.innerHTML = `<span>Chống chói: ${glareStateText}</span>`;
+        splitGlareBtn.classList.toggle("active-toggle", !!cameraSettings.anti_glare);
+        splitGlareBtn.title = cameraSettings.anti_glare ? "Đang bật chống chói — Nhấn để tắt" : "Đang tắt chống chói — Nhấn để bật";
+    }
+    if (splitDenoiseBtn) {
+        splitDenoiseBtn.innerHTML = `<span>Khử nhiễu: ${denoiseStateText}</span>`;
+        splitDenoiseBtn.classList.toggle("active-toggle", !!cameraSettings.denoise);
+        splitDenoiseBtn.title = cameraSettings.denoise ? "Đang bật khử nhiễu — Nhấn để tắt" : "Đang tắt khử nhiễu — Nhấn để bật";
+    }
+}
+
+// ==============================================================================
+// GIỮ CHỖ DÒNG KHI CÓ ẢNH MỚI & ĐỒNG BỘ TƯƠNG TÁC SONG SONG (Y <-> Z)
+// ==============================================================================
+function captureTableScrollAnchor(wrapperId, tbodyEl) {
+    const wrapper = document.getElementById(wrapperId) || (tbodyEl ? tbodyEl.closest(".log-table-wrapper, .split-table-wrapper") : null);
+    if (!wrapper || !tbodyEl) return null;
+    const prevScrollTop = wrapper.scrollTop;
+    const prevScrollLeft = wrapper.scrollLeft;
+    const prevScrollHeight = wrapper.scrollHeight;
+    const isHovered = wrapper.matches(":hover");
+    if (prevScrollTop <= 4 && !isHovered) {
+        return {
+            wrapper,
+            prevScrollTop: 0,
+            prevScrollLeft,
+            prevScrollHeight,
+            rowKey: null,
+            offsetInWrapper: 0,
+            shouldAnchor: false
+        };
+    }
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const rows = Array.from(tbodyEl.querySelectorAll("tr[data-row-key]"));
+    let anchorRow = null;
+    let offsetInWrapper = 0;
+    for (const r of rows) {
+        const rect = r.getBoundingClientRect();
+        if (rect.bottom > wrapperRect.top + 32) {
+            anchorRow = r;
+            offsetInWrapper = rect.top - wrapperRect.top;
+            break;
+        }
+    }
+    return {
+        wrapper,
+        prevScrollTop,
+        prevScrollLeft,
+        prevScrollHeight,
+        rowKey: anchorRow ? anchorRow.getAttribute("data-row-key") : null,
+        offsetInWrapper,
+        shouldAnchor: true
+    };
+}
+
+function restoreTableScrollAnchor(anchor) {
+    if (!anchor || !anchor.wrapper) return;
+    const wrapper = anchor.wrapper;
+    wrapper.scrollLeft = anchor.prevScrollLeft;
+    if (!anchor.shouldAnchor) return;
+    if (anchor.rowKey) {
+        const safeSelectorKey = anchor.rowKey.replace(/["\\]/g, "\\$&");
+        const matchingRow = wrapper.querySelector(`tr[data-row-key="${safeSelectorKey}"]`);
+        if (matchingRow) {
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const newRect = matchingRow.getBoundingClientRect();
+            const currentOffset = newRect.top - wrapperRect.top;
+            const delta = currentOffset - anchor.offsetInWrapper;
+            if (Math.abs(delta) > 0.5) {
+                wrapper.scrollTop = Math.max(0, wrapper.scrollTop + delta);
+            }
+            return;
+        }
+    }
+    const heightDelta = wrapper.scrollHeight - anchor.prevScrollHeight;
+    if (anchor.prevScrollTop > 4 && heightDelta > 0) {
+        wrapper.scrollTop = anchor.prevScrollTop + heightDelta;
+    } else {
+        wrapper.scrollTop = anchor.prevScrollTop;
     }
 }
 
@@ -668,6 +775,9 @@ function renderBehaviorTable(logs) {
     if (!tbody) return;
 
     if (!logs || logs.length === 0) {
+        safeSetText("session-safe-count", "0");
+        safeSetText("session-warn-count", "0");
+        safeSetText("session-danger-count", "0");
         tbody.innerHTML = `
             <tr class="empty-row">
                 <td colspan="7" class="empty-cell">
@@ -682,17 +792,24 @@ function renderBehaviorTable(logs) {
         return;
     }
 
+    const scrollAnchor = captureTableScrollAnchor("normal-live-table-wrapper", tbody);
+    let safeCount = 0, warnCount = 0, dangerCount = 0;
     let html = "";
     logs.forEach((rawItem, idx) => {
         const item = humanizeBehaviorRecord(rawItem, idx);
         const isDanger = item.severity === "danger";
         const isWarn = item.severity === "warning";
+        if (isDanger) dangerCount += 1;
+        else if (isWarn) warnCount += 1;
+        else safeCount += 1;
+
         const badgeClass = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
         const rowClass = isDanger ? "row-danger" : "";
         const predText = item.prediction_next_4s || "Duy trì trạng thái trong 4s tới";
+        const rowKey = item.code || item.id || `row-${idx}`;
 
         html += `
-            <tr class="${rowClass}">
+            <tr class="${rowClass}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
                 <td>
                     <span class="log-code-badge">${escapeHtml(item.code || item.id)}</span>
                 </td>
@@ -721,7 +838,11 @@ function renderBehaviorTable(logs) {
             </tr>
         `;
     });
+    safeSetText("session-safe-count", String(safeCount));
+    safeSetText("session-warn-count", String(warnCount));
+    safeSetText("session-danger-count", String(dangerCount));
     tbody.innerHTML = html;
+    restoreTableScrollAnchor(scrollAnchor);
 }
 
 async function captureManualSnapshot() {
@@ -5701,20 +5822,24 @@ function updateLiveParallelReportsAndLogs() {
     const shouldRebuildDOM = (currentSig !== lastLiveParallelTableSig) || !yList || !zList || yList.children.length === 0 || zList.children.length === 0;
     lastLiveParallelTableSig = currentSig;
 
+    const yAnchor = shouldRebuildDOM ? captureTableScrollAnchor("live-y-table-wrapper", yList) : null;
+    const zAnchor = shouldRebuildDOM ? captureTableScrollAnchor("live-z-table-wrapper", zList) : null;
+
     // Render Bảng 7 cột chuẩn trên Cột Trái
     if (yList && shouldRebuildDOM) {
-        yList.innerHTML = sourceLogs.map(item => {
+        yList.innerHTML = sourceLogs.map((item, idx) => {
             const isDanger = item.severity === "danger";
             const isWarn = item.severity === "warning";
             const badgeClass = isDanger ? "badge-danger" : (isWarn ? "badge-warning" : "badge-safe");
             const rowClass = isDanger ? "row-danger" : "";
             const predText = item.prediction_next_4s || "Duy trì ổn định 4s tới";
+            const rowKey = item.code || item.id || `row-${idx}`;
             const snapHtml = item.snapshot_url
                 ? `<img src="${escapeHtml(item.snapshot_url)}" alt="${escapeHtml(item.action)}" class="snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(item.snapshot_url)}', '${escapeJsArg(item.id || item.code)}', '${escapeJsArg(item.action)}', '${escapeJsArg(item.timestamp)}', '${escapeJsArg(item.description)}', '${escapeJsArg(predText)}', '${escapeJsArg(item.model_tier || 'tier_1')}')" title="Nhấn để phóng to ảnh và xem chi tiết" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr class="${rowClass}">
+                <tr class="${rowClass}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
                     <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
                     <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                     <td>${getModelTierBadge(item.model_tier)}</td>
@@ -5729,11 +5854,13 @@ function updateLiveParallelReportsAndLogs() {
                 </tr>
             `;
         }).join("");
+        restoreTableScrollAnchor(yAnchor);
     }
 
     // Render Bảng 7 cột trên Cột Phải: Chỉ hiển thị thuần túy ngôn ngữ phân tích hành vi của AI (không gắn số đo độ trễ/RAM vào văn bản AI)
     let zSafe = 0, zWarn = 0, zDanger = 0;
     const zRowsHtml = sourceLogs.map((item, idx) => {
+        const rowKey = item.code || item.id || `row-${idx}`;
         if (isOptimal) {
             if (item.severity === "danger") zDanger += 1;
             else if (item.severity === "warning") zWarn += 1;
@@ -5748,7 +5875,7 @@ function updateLiveParallelReportsAndLogs() {
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr class="${isDanger ? "row-danger" : ""}">
+                <tr class="${isDanger ? "row-danger" : ""}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
                     <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
                     <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                     <td>${getModelTierBadge(item.model_tier)}</td>
@@ -5786,7 +5913,7 @@ function updateLiveParallelReportsAndLogs() {
             : `<span class="mono text-muted">--</span>`;
 
         return `
-            <tr class="${narr.sev === "danger" ? "row-danger" : ""}">
+            <tr class="${narr.sev === "danger" ? "row-danger" : ""}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
                 <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
                 <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                 <td>${getModelTierBadge(item.model_tier)}</td>
@@ -5804,6 +5931,7 @@ function updateLiveParallelReportsAndLogs() {
 
     if (zList && shouldRebuildDOM) {
         zList.innerHTML = zRowsHtml;
+        restoreTableScrollAnchor(zAnchor);
     }
 
     safeSetText("live-z-safe-count", String(zSafe));
@@ -5880,6 +6008,8 @@ function enterLiveParallelSplit() {
     lastLiveZCanvasFrame = null;
     lastLiveParallelTableSig = "";
     liveTickCounter = 0;
+    initParallelInteractionSync();
+    updateEnhancerButtonsUI();
     syncAllOSLabControls(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
     updateDualModeEvaluation(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
     updateLiveParallelReportsAndLogs();
@@ -6007,8 +6137,9 @@ function populateVideoParallelSplitView() {
 
     // Render Bảng 4 cột chuẩn trên Cột Trái (#split-y-segments-list) đồng bộ 100% thông tin với Bảng Chính trước khi đối chiếu
     const ySegContainer = document.getElementById("split-y-segments-list");
+    const ySegAnchor = captureTableScrollAnchor("split-vid-y-table-wrapper", ySegContainer);
     if (ySegContainer) {
-        ySegContainer.innerHTML = segs.map(s => {
+        ySegContainer.innerHTML = segs.map((s, idx) => {
             const numScore = parseFloat(s.danger_score || 0);
             const isDanger = numScore >= 8.0 || s.severity === "danger";
             const isWarn = !isDanger && (numScore >= 4.0 || s.severity === "warning");
@@ -6018,12 +6149,14 @@ function populateVideoParallelSplitView() {
             const summaryText = stripMachineTokens(s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn.");
             const fullDescText = stripMachineTokens(s.detailed_narrative || s.context_description || summaryText);
             const predText = stripMachineTokens(s.prediction_next_4s || "Duy trì trạng thái tương tác ổn định trong các giây tiếp theo.");
+            const rowKey = s.segment_id || `seg-${idx}`;
+            const startSec = parseFloat(s.start_sec || (idx * 4.0));
             const snapHtml = s.snapshot_url
                 ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(summaryText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(fullDescText)}', '${escapeJsArg(predText)}')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr>
+                <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
                         <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
@@ -6041,19 +6174,25 @@ function populateVideoParallelSplitView() {
                 </tr>
             `;
         }).join("");
+        restoreTableScrollAnchor(ySegAnchor);
     }
 
     // 4. Render Bảng 4 cột trên Cột Phải (#split-z-segments-list) với thuần túy ngôn ngữ nhận định hành vi của AI
     let droppedHighRiskCount = 0;
     let survivingMaxScore = 0.0;
     const zSegContainer = document.getElementById("split-z-segments-list");
+    const zSegAnchor = captureTableScrollAnchor("split-vid-z-table-wrapper", zSegContainer);
     const calmFallbackSnap = segs[segs.length - 1]?.snapshot_url || segs[0]?.snapshot_url || "";
 
     const zSegHtml = segs.map((s, idx) => {
         const numScore = parseFloat(s.danger_score || 0);
         const isDanger = numScore >= 8.0 || s.severity === "danger";
         const isWarn = !isDanger && (numScore >= 4.0 || s.severity === "warning");
-        const summaryText = s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn.";
+        const summaryText = stripMachineTokens(s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn.");
+        const fullDescText = stripMachineTokens(s.detailed_narrative || s.context_description || summaryText);
+        const predText = stripMachineTokens(s.prediction_next_4s || "Duy trì trạng thái tương tác ổn định trong các giây tiếp theo.");
+        const rowKey = s.segment_id || `seg-${idx}`;
+        const startSec = parseFloat(s.start_sec || (idx * 4.0));
 
         if (isOptimal) {
             if (numScore > survivingMaxScore) survivingMaxScore = numScore;
@@ -6061,11 +6200,11 @@ function populateVideoParallelSplitView() {
             const badgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
             const threatPillClass = isDanger ? "threat-pill-danger" : (isWarn ? "threat-pill-warn" : "threat-pill-safe");
             const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeHtml(s.snapshot_url)}', '${escapeHtml(s.segment_id)}', '${escapeHtml(summaryText)}', '${escapeHtml(s.time_range)}', '${escapeHtml(summaryText)}', '')" />`
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(summaryText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(fullDescText)}', '${escapeJsArg(predText)}')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr>
+                <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
                         <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
@@ -6102,7 +6241,7 @@ function populateVideoParallelSplitView() {
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr>
+                <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
                         <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
@@ -6135,7 +6274,7 @@ function populateVideoParallelSplitView() {
                     : `<span class="mono text-muted">--</span>`;
 
                 return `
-                    <tr>
+                    <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                         <td>
                             <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
                             <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
@@ -6165,7 +6304,7 @@ function populateVideoParallelSplitView() {
                 : `<span class="mono text-muted">--</span>`;
 
             return `
-                <tr>
+                <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
                         <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
@@ -6199,7 +6338,7 @@ function populateVideoParallelSplitView() {
             : `<span class="mono text-muted">--</span>`;
 
         return `
-            <tr>
+            <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                 <td>
                     <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
                     <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
@@ -6218,7 +6357,10 @@ function populateVideoParallelSplitView() {
         `;
     }).join("");
 
-    if (zSegContainer) zSegContainer.innerHTML = zSegHtml;
+    if (zSegContainer) {
+        zSegContainer.innerHTML = zSegHtml;
+        restoreTableScrollAnchor(zSegAnchor);
+    }
 
     const zThreatBadge = document.getElementById("split-z-rep-threat");
     const isDropOldest = st.policy === "drop_oldest";
@@ -6340,6 +6482,7 @@ function enterVideoParallelSplit() {
     isVideoParallelActive = true;
     videoRingBuffer = [];
     videoTickCounter = 0;
+    initParallelInteractionSync();
     updateDualModeEvaluation(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
     populateVideoParallelSplitView();
 
@@ -6396,6 +6539,169 @@ function renderHeatmapZTrack(heatmapData, totalDuration) {
     const zBar = document.getElementById("timeline-heatmap-bar-z");
     if (!zBar) return;
     zBar.innerHTML = "";
+}
+
+// ==============================================================================
+// ĐỒNG BỘ TƯƠNG TÁC CUỘN BẢNG & RÊ CHUỘT GIỮA HAI CỘT SONG SONG (TRÁI <-> PHẢI)
+// (Không đồng bộ mở modal xem ảnh để người dùng xem độc lập từng ảnh chứng cứ)
+// ==============================================================================
+let isSyncingParallelScroll = false;
+
+function syncParallelTableScroll(srcWrapper, dstWrapper, srcTbodyId, dstTbodyId) {
+    if (!srcWrapper || !dstWrapper || isSyncingParallelScroll) return;
+    isSyncingParallelScroll = true;
+    try {
+        dstWrapper.scrollLeft = srcWrapper.scrollLeft;
+
+        const maxSrcScroll = Math.max(0, srcWrapper.scrollHeight - srcWrapper.clientHeight);
+        const maxDstScroll = Math.max(0, dstWrapper.scrollHeight - dstWrapper.clientHeight);
+        if (maxSrcScroll <= 1 || maxDstScroll <= 1) {
+            dstWrapper.scrollTop = srcWrapper.scrollTop;
+            return;
+        }
+        if (srcWrapper.scrollTop <= 2) {
+            dstWrapper.scrollTop = 0;
+            return;
+        }
+        if (srcWrapper.scrollTop >= maxSrcScroll - 2) {
+            dstWrapper.scrollTop = maxDstScroll;
+            return;
+        }
+
+        const srcTbody = document.getElementById(srcTbodyId);
+        const dstTbody = document.getElementById(dstTbodyId);
+        if (srcTbody && dstTbody && srcTbody.children.length > 0 && srcTbody.children.length === dstTbody.children.length) {
+            const srcRows = srcTbody.children;
+            const dstRows = dstTbody.children;
+            const firstSrcTop = srcRows[0].offsetTop;
+            const firstDstTop = dstRows[0].offsetTop;
+            const targetY = srcWrapper.scrollTop + firstSrcTop;
+
+            for (let i = 0; i < srcRows.length; i++) {
+                const rSrc = srcRows[i];
+                const rTop = rSrc.offsetTop;
+                const rHeight = Math.max(1, rSrc.offsetHeight);
+                if (targetY <= rTop + rHeight || i === srcRows.length - 1) {
+                    const ratio = Math.max(0, Math.min(1, (targetY - rTop) / rHeight));
+                    const rDst = dstRows[i];
+                    const dstTargetTop = (rDst.offsetTop - firstDstTop) + ratio * Math.max(1, rDst.offsetHeight);
+                    dstWrapper.scrollTop = Math.max(0, Math.min(maxDstScroll, dstTargetTop));
+                    return;
+                }
+            }
+        }
+
+        const pct = srcWrapper.scrollTop / maxSrcScroll;
+        dstWrapper.scrollTop = pct * maxDstScroll;
+    } finally {
+        requestAnimationFrame(() => {
+            isSyncingParallelScroll = false;
+        });
+    }
+}
+
+function bindParallelPairSync(leftWrapId, rightWrapId, leftTbodyId, rightTbodyId, enableVideoRowSeek = false) {
+    const leftWrap = document.getElementById(leftWrapId);
+    const rightWrap = document.getElementById(rightWrapId);
+    if (leftWrap && rightWrap && !leftWrap.dataset.syncBound) {
+        leftWrap.dataset.syncBound = "1";
+        rightWrap.dataset.syncBound = "1";
+
+        leftWrap.addEventListener("scroll", () => {
+            syncParallelTableScroll(leftWrap, rightWrap, leftTbodyId, rightTbodyId);
+        }, { passive: true });
+
+        rightWrap.addEventListener("scroll", () => {
+            syncParallelTableScroll(rightWrap, leftWrap, rightTbodyId, leftTbodyId);
+        }, { passive: true });
+    }
+
+    const leftTbody = document.getElementById(leftTbodyId);
+    const rightTbody = document.getElementById(rightTbodyId);
+    if (leftTbody && rightTbody && !leftTbody.dataset.hoverSyncBound) {
+        leftTbody.dataset.hoverSyncBound = "1";
+        rightTbody.dataset.hoverSyncBound = "1";
+
+        const setPairHover = (idxStr, active) => {
+            if (idxStr === null || idxStr === undefined) return;
+            const lRow = leftTbody.querySelector(`tr[data-row-idx="${idxStr}"]`);
+            const rRow = rightTbody.querySelector(`tr[data-row-idx="${idxStr}"]`);
+            if (lRow) lRow.classList.toggle("split-row-synced-hover", active);
+            if (rRow) rRow.classList.toggle("split-row-synced-hover", active);
+        };
+
+        const handleOver = (e) => {
+            const tr = e.target.closest("tr[data-row-idx]");
+            if (tr) setPairHover(tr.getAttribute("data-row-idx"), true);
+        };
+        const handleOut = (e) => {
+            const tr = e.target.closest("tr[data-row-idx]");
+            if (tr) setPairHover(tr.getAttribute("data-row-idx"), false);
+        };
+
+        leftTbody.addEventListener("mouseover", handleOver);
+        leftTbody.addEventListener("mouseout", handleOut);
+        rightTbody.addEventListener("mouseover", handleOver);
+        rightTbody.addEventListener("mouseout", handleOut);
+
+        if (enableVideoRowSeek) {
+            const handleRowClick = (e) => {
+                // Giữ độc lập hoàn toàn việc bấm xem ảnh chứng cứ (không đồng bộ mở modal ảnh)
+                if (e.target.closest("img.seg-snapshot-thumb, img.snapshot-thumb, button, a")) {
+                    return;
+                }
+                const tr = e.target.closest("tr[data-row-idx]");
+                if (!tr) return;
+                const idxStr = tr.getAttribute("data-row-idx");
+                const startSec = parseFloat(tr.getAttribute("data-start-sec") || "0");
+
+                leftTbody.querySelectorAll("tr.split-row-active-focus").forEach(el => el.classList.remove("split-row-active-focus"));
+                rightTbody.querySelectorAll("tr.split-row-active-focus").forEach(el => el.classList.remove("split-row-active-focus"));
+
+                const lRow = leftTbody.querySelector(`tr[data-row-idx="${idxStr}"]`);
+                const rRow = rightTbody.querySelector(`tr[data-row-idx="${idxStr}"]`);
+                if (lRow) lRow.classList.add("split-row-active-focus");
+                if (rRow) rRow.classList.add("split-row-active-focus");
+
+                const yPlayer = document.getElementById("split-vid-y-player");
+                if (yPlayer && !isNaN(startSec)) {
+                    yPlayer.currentTime = startSec;
+                }
+            };
+            leftTbody.addEventListener("click", handleRowClick);
+            rightTbody.addEventListener("click", handleRowClick);
+        }
+    }
+}
+
+function initParallelInteractionSync() {
+    bindParallelPairSync("live-y-table-wrapper", "live-z-table-wrapper", "live-y-log-list", "live-z-log-list", false);
+    bindParallelPairSync("split-vid-y-table-wrapper", "split-vid-z-table-wrapper", "split-y-segments-list", "split-z-segments-list", true);
+
+    const yStatsBar = document.getElementById("live-y-stats-bar");
+    const zStatsBar = document.getElementById("live-z-stats-bar");
+    if (yStatsBar && zStatsBar && !yStatsBar.dataset.syncBound) {
+        yStatsBar.dataset.syncBound = "1";
+        zStatsBar.dataset.syncBound = "1";
+        yStatsBar.addEventListener("scroll", () => {
+            if (isSyncingParallelScroll) return;
+            isSyncingParallelScroll = true;
+            zStatsBar.scrollLeft = yStatsBar.scrollLeft;
+            requestAnimationFrame(() => { isSyncingParallelScroll = false; });
+        }, { passive: true });
+        zStatsBar.addEventListener("scroll", () => {
+            if (isSyncingParallelScroll) return;
+            isSyncingParallelScroll = true;
+            yStatsBar.scrollLeft = zStatsBar.scrollLeft;
+            requestAnimationFrame(() => { isSyncingParallelScroll = false; });
+        }, { passive: true });
+    }
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initParallelInteractionSync);
+} else {
+    initParallelInteractionSync();
 }
 
 // ==============================================================================

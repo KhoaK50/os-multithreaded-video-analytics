@@ -1078,14 +1078,6 @@ h1, .brand-title {
     background: var(--accent-amber-bg);
     color: var(--accent-amber-text);
     border: 1px solid var(--accent-amber);
-    font-weight: 600;
-}
-
-[data-theme="light"] .badge-warning {
-    background: #fffbeb;
-    color: #b45309;
-    border-color: #f59e0b;
-    box-shadow: 0 1px 2px rgba(245, 158, 11, 0.08);
 }
 
 .badge-danger {
@@ -2874,13 +2866,36 @@ tr.active-segment-row {
 .session-stat-pill {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     padding: 5px 12px;
     border-radius: var(--radius-full);
     font-size: 0.8rem;
     font-weight: 500;
     border: 1px solid var(--border-subtle);
     background: var(--bg-surface);
+}
+
+.session-stat-pill .stat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.session-stat-pill .stat-dot.dot-safe,
+.session-stat-pill .stat-dot.safe-dot {
+    background: var(--accent-emerald);
+}
+
+.session-stat-pill .stat-dot.dot-warn,
+.session-stat-pill .stat-dot.warn-dot {
+    background: var(--accent-amber);
+}
+
+.session-stat-pill .stat-dot.dot-danger,
+.session-stat-pill .stat-dot.danger-dot {
+    background: var(--accent-crimson);
 }
 
 .session-stat-pill .stat-label {
@@ -2893,6 +2908,7 @@ tr.active-segment-row {
 }
 
 .session-stat-pill.pill-safe {
+    background: var(--bg-surface);
     border-color: var(--accent-emerald);
 }
 .session-stat-pill.pill-safe strong {
@@ -2900,21 +2916,15 @@ tr.active-segment-row {
 }
 
 .session-stat-pill.pill-warn {
+    background: var(--bg-surface);
     border-color: var(--accent-amber);
-    background: var(--accent-amber-bg);
 }
 .session-stat-pill.pill-warn strong {
     color: var(--accent-amber-text);
 }
-[data-theme="light"] .session-stat-pill.pill-warn {
-    background: #fffbeb;
-    border-color: #f59e0b;
-}
-[data-theme="light"] .session-stat-pill.pill-warn strong {
-    color: #b45309;
-}
 
 .session-stat-pill.pill-danger {
+    background: var(--bg-surface);
     border-color: var(--accent-crimson);
 }
 .session-stat-pill.pill-danger strong {
@@ -2922,6 +2932,7 @@ tr.active-segment-row {
 }
 
 .session-stat-pill.pill-ergo {
+    background: var(--bg-surface);
     border-color: var(--border-subtle);
 }
 .session-stat-pill.pill-ergo strong {
@@ -7595,6 +7606,14 @@ tr.active-segment-row {
     font-size: 11.5px;
     padding: 8px 10px;
     vertical-align: middle;
+}
+
+.split-table-wrapper tr.split-row-synced-hover td {
+    background: var(--bg-subtle);
+}
+
+.split-table-wrapper tr.split-row-active-focus td {
+    background: var(--accent-primary-bg);
 }
 
 @media (max-width: 1100px) {

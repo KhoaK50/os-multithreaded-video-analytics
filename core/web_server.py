@@ -144,7 +144,7 @@ class LiveCameraPipeline:
 
         self.hud_renderer = CyberHUDRenderer()
         self.yolo_model = None
-        self.enhancer = CameraEnhancer(mirror=True, anti_glare=True, denoise=True)
+        self.enhancer = CameraEnhancer(mirror=True, anti_glare=False, denoise=False)
 
         # Nhật ký hành vi thời gian thực (Behavior Event Log)
         self.action_logs = []

@@ -53,15 +53,13 @@
                 <div class="app-card stream-card">
                     <div class="card-header">
                         <div class="card-title">
-                            <span class="indicator-pulse"></span>
-                            <span>Luồng Camera Thời Gian Thực · 1280×720 HD</span>
+                            <span>Camera trực tiếp · 1280×720 HD</span>
                         </div>
                         <div class="header-status-badge">
                             <span class="badge badge-neutral mono" style="display: inline-flex; align-items: center; gap: 6px;">
                                 <span id="live-stream-status-dot" class="stream-status-dot" style="background: var(--accent-crimson); box-shadow: none;"></span>
                                 <span id="live-stream-status-text">ĐÃ TẮT CAMERA</span>
                             </span>
-                            <span id="live-alert-text" class="badge badge-safe mono">Trạng thái: An toàn</span>
                         </div>
                     </div>
 
@@ -88,14 +86,14 @@
                             <button class="btn btn-sm btn-outline" id="btn-manual-snap" onclick="captureManualSnapshot()" title="Chụp lại khung hình ngay lập tức và lưu vào nhật ký">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> <span>Chụp Snapshot</span>
                             </button>
-                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-mirror" onclick="toggleCameraEnhancer('mirror')" title="Lật gương để chiều cử động tay tự nhiên">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg> <span>Lật gương: BẬT</span>
+                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-mirror" onclick="toggleCameraEnhancer('mirror')" title="Đang bật lật gương — Nhấn để tắt">
+                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg> <span>Lật gương: Đang bật</span>
                             </button>
-                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-glare" onclick="toggleCameraEnhancer('anti_glare')" title="Cân bằng dải sáng chống lóa bóng đèn trần">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg> <span>Chống chói: BẬT</span>
+                            <button class="btn btn-sm btn-outline" id="btn-toggle-glare" onclick="toggleCameraEnhancer('anti_glare')" title="Đang tắt chống chói — Nhấn để bật">
+                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg> <span>Chống chói: Đang tắt</span>
                             </button>
-                            <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-denoise" onclick="toggleCameraEnhancer('denoise')" title="Khử nhiễu hạt khi thiếu sáng">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> <span>Khử nhiễu: BẬT</span>
+                            <button class="btn btn-sm btn-outline" id="btn-toggle-denoise" onclick="toggleCameraEnhancer('denoise')" title="Đang tắt khử nhiễu — Nhấn để bật">
+                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> <span>Khử nhiễu: Đang tắt</span>
                             </button>
                             <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-telemetry" onclick="toggleInlineTelemetryPanel()" title="Ẩn hoặc hiện Bảng Điều Khiển Thông Số Vận Hành Hệ Điều Hành">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg> <span>Thông Số Vận Hành</span> <span class="badge badge-safe mono" id="btn-telemetry-status" style="font-size: 10px; padding: 1px 5px; margin-left: 3px;">HIỂN THỊ</span>
@@ -310,7 +308,7 @@
                         </div>
                     </div>
 
-                    <div class="log-table-wrapper">
+                    <div class="log-table-wrapper" id="normal-live-table-wrapper">
                         <table class="behavior-table">
                             <thead>
                                 <tr>
@@ -346,10 +344,22 @@
             <div id="live-parallel-workspace" class="parallel-split-workspace hidden">
                 <div class="parallel-top-bar">
                     <div class="ptb-left">
-                        <span class="indicator-pulse"></span>
-                        <strong class="ptb-title">So Sánh Song Song · Camera Trực Tiếp</strong>
+                        <strong class="ptb-title">Camera trực tiếp · 1280×720 HD — Đối Chiếu Song Song</strong>
+                        <span class="badge badge-neutral mono" style="display: inline-flex; align-items: center; gap: 6px; margin-left: 6px;">
+                            <span id="split-live-stream-status-dot" class="stream-status-dot" style="background: var(--accent-crimson); box-shadow: none;"></span>
+                            <span id="split-live-stream-status-text">ĐÃ TẮT CAMERA</span>
+                        </span>
                     </div>
                     <div class="ptb-right">
+                        <button class="btn btn-xs btn-outline active-toggle" id="btn-split-toggle-mirror" onclick="toggleCameraEnhancer('mirror')" title="Đang bật lật gương — Nhấn để tắt">
+                            <span>Lật gương: Đang bật</span>
+                        </button>
+                        <button class="btn btn-xs btn-outline" id="btn-split-toggle-glare" onclick="toggleCameraEnhancer('anti_glare')" title="Đang tắt chống chói — Nhấn để bật">
+                            <span>Chống chói: Đang tắt</span>
+                        </button>
+                        <button class="btn btn-xs btn-outline" id="btn-split-toggle-denoise" onclick="toggleCameraEnhancer('denoise')" title="Đang tắt khử nhiễu — Nhấn để bật">
+                            <span>Khử nhiễu: Đang tắt</span>
+                        </button>
                         <button class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Đặt lại mặc định</button>
                         <button class="btn btn-xs btn-outline" onclick="captureManualSnapshot()">Chụp Snapshot</button>
                         <button class="btn btn-xs btn-outline" id="btn-split-toggle-cam" onclick="toggleCamera()">Bật / Tắt Camera</button>
@@ -454,7 +464,7 @@
                                 </div>
                             </div>
 
-                            <div class="live-session-stats-bar">
+                            <div class="live-session-stats-bar" id="live-y-stats-bar">
                                 <div class="session-stat-pill pill-safe">
                                     <span class="stat-dot dot-safe"></span>
                                     <span class="stat-label">An Toàn:</span>
@@ -476,7 +486,7 @@
                                 </div>
                             </div>
 
-                            <div class="log-table-wrapper split-table-wrapper">
+                            <div class="log-table-wrapper split-table-wrapper" id="live-y-table-wrapper">
                                 <table class="behavior-table">
                                     <thead>
                                         <tr>
@@ -532,7 +542,7 @@
                                 </div>
                             </div>
 
-                            <div class="live-session-stats-bar">
+                            <div class="live-session-stats-bar" id="live-z-stats-bar">
                                 <div class="session-stat-pill pill-safe">
                                     <span class="stat-dot dot-safe"></span>
                                     <span class="stat-label">An Toàn:</span>
@@ -554,7 +564,7 @@
                                 </div>
                             </div>
 
-                            <div class="log-table-wrapper split-table-wrapper">
+                            <div class="log-table-wrapper split-table-wrapper" id="live-z-table-wrapper">
                                 <table class="behavior-table">
                                     <thead>
                                         <tr>
@@ -1191,8 +1201,7 @@
             <div id="video-parallel-workspace" class="parallel-split-workspace hidden">
                 <div class="parallel-top-bar">
                     <div class="ptb-left">
-                        <span class="indicator-pulse"></span>
-                        <strong class="ptb-title">So Sánh Song Song · Phân Tích Video</strong>
+                        <strong class="ptb-title">Phân Tích Video — Đối Chiếu Song Song</strong>
                     </div>
                     <div class="ptb-right">
                         <button class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Đặt lại mặc định</button>
@@ -1315,7 +1324,7 @@
                             <div class="segments-header">
                                 <div class="subcard-title">Danh Sách Phân Đoạn Hành Vi — Luồng Chuẩn</div>
                             </div>
-                            <div class="table-responsive split-table-wrapper">
+                            <div class="table-responsive split-table-wrapper" id="split-vid-y-table-wrapper">
                                 <table class="app-table timeline-table">
                                     <thead>
                                         <tr>
@@ -1384,7 +1393,7 @@
                             <div class="segments-header">
                                 <div class="subcard-title">Danh Sách Phân Đoạn Hành Vi — Luồng Tùy Chỉnh</div>
                             </div>
-                            <div class="table-responsive split-table-wrapper">
+                            <div class="table-responsive split-table-wrapper" id="split-vid-z-table-wrapper">
                                 <table class="app-table timeline-table">
                                     <thead>
                                         <tr>
