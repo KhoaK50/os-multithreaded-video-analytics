@@ -360,18 +360,18 @@
                     </div>
                 </div>
 
-                <!-- THANH CHỈNH TÀI NGUYÊN NGANG TOÀN MÀN HÌNH (GIỮ 2 CỘT BÊN DƯỚI CÂN XỨNG 100%) -->
+                <!-- THANH CHỈNH TÀI NGUYÊN HỆ ĐIỀU HÀNH NGANG TOÀN MÀN HÌNH -->
                 <div class="split-inline-tuner">
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">Dung lượng bộ đệm</span>
+                                <span class="sit-ctrl-label">1. Bộ nhớ Đệm RAM · Bounded-Buffer N</span>
                                 <strong class="sit-ctrl-val mono" id="os-lab-cap-display">16 khung · 42.19 MB</strong>
                             </div>
                             <input type="range" id="os-lab-cap-slider" class="os-lab-slider" min="1" max="128" step="1" value="16" style="--slider-pct: 11.8%;" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(false)" />
                             <div class="slider-scale-ticks mono">
-                                <span>1 khung</span>
-                                <span>Chuẩn: 16</span>
+                                <span>1 khung · 2.6 MB</span>
+                                <span>Chuẩn: 16 · 42.2 MB</span>
                                 <span>64 khung</span>
                                 <span>128 khung</span>
                             </div>
@@ -379,26 +379,26 @@
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">Độ trễ luồng xử lý</span>
-                                <strong class="sit-ctrl-val mono" id="os-lab-delay-display">0 ms</strong>
+                                <span class="sit-ctrl-label">2. Hạn ngạch CPU Consumer · CPU Share</span>
+                                <strong class="sit-ctrl-val mono" id="os-lab-delay-display">100% CPU · 0 ms</strong>
                             </div>
                             <input type="range" id="os-lab-delay-slider" class="os-lab-slider" min="0" max="500" step="5" value="0" style="--slider-pct: 0%;" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(true)" />
                             <div class="slider-scale-ticks mono">
-                                <span>0 ms</span>
-                                <span>150 ms</span>
-                                <span>300 ms</span>
-                                <span>500 ms</span>
+                                <span>100% CPU · 0 ms</span>
+                                <span>25% CPU · +75 ms</span>
+                                <span>12% CPU · +180 ms</span>
+                                <span>5% CPU · +500 ms</span>
                             </div>
                         </div>
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">Chính sách bộ nhớ đệm</span>
+                                <span class="sit-ctrl-label">3. Cơ chế Thay thế Đệm · Buffer Policy</span>
                                 <span class="sit-ctrl-hint" id="os-lab-policy-display">Bám sát thực tế</span>
                             </div>
                             <select id="os-lab-policy-select" class="os-lab-select" onchange="onOSLabPolicyChange()">
-                                <option value="drop_oldest" selected>Ưu tiên khung mới (Xóa ảnh cũ, nhảy cóc khi trễ)</option>
-                                <option value="block_fifo">Giữ tuần tự FIFO (Xếp hàng ảnh cũ, trễ pha quá khứ)</option>
+                                <option value="drop_oldest" selected>Ưu tiên khung mới · Ghi đè ảnh cũ khi tràn đệm</option>
+                                <option value="block_fifo">Giữ tuần tự FIFO · Chờ tuần tự gây trễ pha</option>
                             </select>
                         </div>
                     </div>
@@ -726,6 +726,61 @@
                             </div>
                         </div>
                     </label>
+                </div>
+
+                <!-- Cấu hình Tài nguyên Thế giới Song song ngay từ bước chuẩn bị Video -->
+                <div class="split-inline-tuner" id="video-preflight-os-tuner" style="margin-top: 12px; margin-bottom: 14px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span class="badge badge-warning mono">THẾ GIỚI SONG SONG</span>
+                            <strong style="font-size: 13px;">Cấu Hình Tài Nguyên Nhánh Đối Chứng Ngay Từ Khi Nạp Video</strong>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-ideal" onclick="selectPreflightZPreset('ideal', 16, 0, 'drop_oldest')">Chuẩn Lý Tưởng · 16 khung · 100% CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-starve" onclick="selectPreflightZPreset('starve', 2, 180, 'drop_oldest')">Thiếu CPU &amp; Đệm Hẹp · 2 khung · 12% CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-bloat" onclick="selectPreflightZPreset('bloat', 64, 150, 'block_fifo')">Phình Đệm FIFO · 64 khung · 14% CPU</button>
+                        </div>
+                    </div>
+                    <div class="sit-controls-grid">
+                        <div class="sit-control-box">
+                            <div class="sit-ctrl-head">
+                                <span class="sit-ctrl-label">1. Bộ nhớ Đệm RAM · Bounded-Buffer N</span>
+                                <strong class="sit-ctrl-val mono" id="pf-z-cap-val">16 khung · 42.19 MB</strong>
+                            </div>
+                            <input type="range" id="pf-z-cap-slider" class="os-lab-slider" min="1" max="128" step="1" value="16" style="--slider-pct: 11.8%;" oninput="onPreflightZControlInput()" />
+                            <div class="slider-scale-ticks mono">
+                                <span>1 khung · 2.6 MB</span>
+                                <span>Chuẩn: 16 · 42.2 MB</span>
+                                <span>64 khung</span>
+                                <span>128 khung</span>
+                            </div>
+                        </div>
+
+                        <div class="sit-control-box">
+                            <div class="sit-ctrl-head">
+                                <span class="sit-ctrl-label">2. Hạn ngạch CPU Consumer · CPU Share</span>
+                                <strong class="sit-ctrl-val mono" id="pf-z-delay-val">100% CPU · 0 ms</strong>
+                            </div>
+                            <input type="range" id="pf-z-delay-slider" class="os-lab-slider" min="0" max="500" step="5" value="0" style="--slider-pct: 0%;" oninput="onPreflightZControlInput()" />
+                            <div class="slider-scale-ticks mono">
+                                <span>100% CPU · 0 ms</span>
+                                <span>25% CPU · +75 ms</span>
+                                <span>12% CPU · +180 ms</span>
+                                <span>5% CPU · +500 ms</span>
+                            </div>
+                        </div>
+
+                        <div class="sit-control-box">
+                            <div class="sit-ctrl-head">
+                                <span class="sit-ctrl-label">3. Cơ chế Thay thế Đệm · Buffer Policy</span>
+                                <span class="sit-ctrl-hint" id="pf-z-policy-hint">Bám sát thực tế</span>
+                            </div>
+                            <select id="pf-z-policy-select" class="os-lab-select" onchange="onPreflightZControlInput()">
+                                <option value="drop_oldest" selected>Ưu tiên khung mới · Ghi đè ảnh cũ khi tràn đệm</option>
+                                <option value="block_fifo">Giữ tuần tự FIFO · Chờ tuần tự gây trễ pha</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Action Button -->
@@ -1136,18 +1191,18 @@
                     </div>
                 </div>
 
-                <!-- THANH CHỈNH TÀI NGUYÊN NGANG TOÀN MÀN HÌNH (GIỮ 2 CỘT VIDEO BÊN DƯỚI CÂN XỨNG 100%) -->
+                <!-- THANH CHỈNH TÀI NGUYÊN HỆ ĐIỀU HÀNH NGANG TOÀN MÀN HÌNH -->
                 <div class="split-inline-tuner" id="video-os-setup-box">
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">Dung lượng bộ đệm</span>
+                                <span class="sit-ctrl-label">1. Bộ nhớ Đệm RAM · Bounded-Buffer N</span>
                                 <strong class="sit-ctrl-val mono" id="vid-z-cap-val">16 khung · 42.19 MB</strong>
                             </div>
                             <input type="range" id="vid-z-cap-slider" class="os-lab-slider" min="1" max="128" step="1" value="16" style="--slider-pct: 11.8%;" oninput="onVideoZControlInput()" />
                             <div class="slider-scale-ticks mono">
-                                <span>1 khung</span>
-                                <span>Chuẩn: 16</span>
+                                <span>1 khung · 2.6 MB</span>
+                                <span>Chuẩn: 16 · 42.2 MB</span>
                                 <span>64 khung</span>
                                 <span>128 khung</span>
                             </div>
@@ -1155,26 +1210,26 @@
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">Độ trễ luồng xử lý</span>
-                                <strong class="sit-ctrl-val mono" id="vid-z-delay-val">0 ms</strong>
+                                <span class="sit-ctrl-label">2. Hạn ngạch CPU Consumer · CPU Share</span>
+                                <strong class="sit-ctrl-val mono" id="vid-z-delay-val">100% CPU · 0 ms</strong>
                             </div>
                             <input type="range" id="vid-z-delay-slider" class="os-lab-slider" min="0" max="500" step="5" value="0" style="--slider-pct: 0%;" oninput="onVideoZControlInput()" />
                             <div class="slider-scale-ticks mono">
-                                <span>0 ms</span>
-                                <span>150 ms</span>
-                                <span>300 ms</span>
-                                <span>500 ms</span>
+                                <span>100% CPU · 0 ms</span>
+                                <span>25% CPU · +75 ms</span>
+                                <span>12% CPU · +180 ms</span>
+                                <span>5% CPU · +500 ms</span>
                             </div>
                         </div>
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">Chính sách bộ nhớ đệm</span>
+                                <span class="sit-ctrl-label">3. Cơ chế Thay thế Đệm · Buffer Policy</span>
                                 <span class="sit-ctrl-hint" id="vid-z-policy-hint">Bám sát thực tế</span>
                             </div>
                             <select id="vid-z-policy-select" class="os-lab-select" onchange="onVideoZControlInput()">
-                                <option value="drop_oldest" selected>Ưu tiên khung mới (Xóa ảnh cũ, nhảy cóc khi trễ)</option>
-                                <option value="block_fifo">Giữ tuần tự FIFO (Xếp hàng ảnh cũ, trễ pha quá khứ)</option>
+                                <option value="drop_oldest" selected>Ưu tiên khung mới · Ghi đè ảnh cũ khi tràn đệm</option>
+                                <option value="block_fifo">Giữ tuần tự FIFO · Chờ tuần tự gây trễ pha</option>
                             </select>
                         </div>
                     </div>

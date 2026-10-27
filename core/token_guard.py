@@ -556,7 +556,9 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
       "threat_score": 5.0,
       "threat_level": "NGUY HIỂM" | "CẢNH BÁO" | "AN TOÀN",
       "context_description": "Ghi giống detailed_narrative (2-3 câu cốt lõi, không lặp lại)",
-      "prediction_next_4s": "Dự đoán ngắn gọn 1 câu về xu hướng hành vi trong 4 giây tiếp theo"
+      "prediction_next_4s": "Dự đoán ngắn gọn 1 câu về xu hướng hành vi trong 4 giây tiếp theo",
+      "degraded_action": "Cụm từ ngắn (4-8 từ) mô tả hành vi bị biến dị/sơ sài ở nhánh suy giảm tài nguyên Z (khi lỡ mất khung hình đỉnh cử chỉ)",
+      "degraded_narrative": "Mô tả hành vi bị biến dị ở nhánh Z khi thiếu hụt tài nguyên làm lỡ mất khoảnh khắc đỉnh của cử chỉ (ví dụ: nhánh chuẩn thấy rõ giơ tay vẫy hoặc va chạm đỉnh điểm, còn nhánh Z chỉ thấy hơi nhấc nhẹ tay rồi bỏ xuống liền hoặc lướt qua). Chỉ viết ngôn ngữ hành vi tự nhiên, tuyệt đối không giải thích kỹ thuật."
     }}
   ]
 }}

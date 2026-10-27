@@ -152,9 +152,11 @@ class LiveCameraPipeline:
         self.last_logged_action = ""
         self.last_log_time = 0.0
         self.window_candidates = []
+        self.last_candidate_ts = 0.0
+        self.buffer_policy = "drop_oldest"
         self.snapshots_dir = os.path.join(RECORDINGS_DIR, "snapshots")
         # Cloud AI: Hierarchical Model Orchestrator (Tier 1 -> Tier 2 -> Tier 3 Failover)
-        self.gemini_model = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.8-flash")
+        self.gemini_model = getattr(CONFIG, "GEMINI_TIER1_MODEL", "gemini-3.1-flash-lite")
         self.gemini_client = MODEL_ORCHESTRATOR.client
         self.gemini_status = "active" if MODEL_ORCHESTRATOR.client is not None else "heuristic_offline"
         print(f"[+] LiveCameraPipeline: Ket noi Model Orchestrator ({self.gemini_model}) - Trang thai: {self.gemini_status}")
@@ -163,19 +165,23 @@ class LiveCameraPipeline:
         self,
         buffer_capacity: Optional[int] = None,
         consumer_delay_ms: Optional[int] = None,
+        buffer_policy: Optional[str] = None,
         reset_counters: bool = False,
         trigger_burst: bool = False
     ) -> Dict[str, Any]:
         """
-        Cập nhật tham số Thực nghiệm Hệ Điều Hành (Bounded-Buffer Lab):
-        - buffer_capacity: Dung lượng hàng đợi giới hạn N (2 -> 64 frames).
-        - consumer_delay_ms: Độ trễ xử lý giả lập trên luồng Consumer (0 -> 200 ms).
+        Cập nhật tham số Thực nghiệm Hệ Điều Hành (Bounded-Buffer & CPU Time Share Lab - Silberschatz Ch. 3, 5, 9):
+        - buffer_capacity: Dung lượng Bộ nhớ Đệm RAM (Bounded-Buffer Size N: 2 -> 64 frames).
+        - consumer_delay_ms: Hệ quả độ trễ từ Hạn ngạch Chu kỳ CPU cấp cho Consumer (CPU Time Share % -> 0..500 ms).
+        - buffer_policy: Cơ chế thay thế khung khi đầy đệm ('drop_oldest' | 'fifo').
         - reset_counters: Đặt lại bộ đếm thống kê đồng bộ hóa.
         """
         if buffer_capacity is not None and hasattr(self, "frame_buffer"):
             self.frame_buffer.resize_capacity(int(buffer_capacity))
         if consumer_delay_ms is not None:
             self.consumer_delay_ms = max(0, min(500, int(consumer_delay_ms)))
+        if buffer_policy in ("drop_oldest", "fifo"):
+            self.buffer_policy = buffer_policy
         if reset_counters and hasattr(self, "frame_buffer"):
             with self.frame_buffer.lock:
                 self.frame_buffer.total_produced = 0
@@ -192,9 +198,12 @@ class LiveCameraPipeline:
             threading.Thread(target=self._os_lab_burst_worker, name="OSLabBurstSim", daemon=True).start()
 
         stats = self.frame_buffer.get_stats() if hasattr(self, "frame_buffer") else {}
+        cpu_share_pct = max(10, round(100.0 * 15.0 / (15.0 + float(self.consumer_delay_ms))))
         return {
             "buffer_capacity": stats.get("capacity", 16),
             "consumer_delay_ms": self.consumer_delay_ms,
+            "cpu_share_pct": cpu_share_pct,
+            "buffer_policy": self.buffer_policy,
             "ram_ceiling_mb": stats.get("ram_ceiling_mb", 42.19),
             "stats": stats
         }
@@ -489,13 +498,131 @@ class LiveCameraPipeline:
             context_memory=MODEL_ORCHESTRATOR.context_memory
         )
 
+    @staticmethod
+    def extract_kinematic_quad(candidates: list) -> tuple:
+        """
+        Thuật toán Trích xuất Đỉnh Động học 4 Pha (4-Phase Kinematic Extrema Sampling):
+        Được trang bị CÔNG BẰNG 100% cho cả Nhánh Lý Tưởng (Y) và Nhánh Lệch Chuẩn Tài Nguyên (Z).
+        Từ tập khung hình ứng viên F = [(ts, score, frame, bio), ...]:
+        - Tìm Đỉnh Động học Toàn cục (Global Kinematic Peak): idx_peak = argmax_{t in F} S(t)
+          để lấy Ảnh Snapshot Đại diện (peak_frame) và thông số sinh cơ học (peak_bio).
+        - Chọn 4 mốc thời gian biên độ động học nối tiếp (T1 Khởi phát -> T2 Cao trào phụ -> T3 Đỉnh cực đại -> T4 Kết thúc)
+          sắp xếp theo đúng trật tự thời gian nhằm tái hiện trọn vẹn động năng liên tục của cử chỉ.
+        """
+        if not candidates:
+            return [], None, {}
+        n = len(candidates)
+        t0 = float(candidates[0][0])
+        peak_idx = max(range(n), key=lambda i: float(candidates[i][1]))
+        peak_frame = candidates[peak_idx][2]
+        peak_bio = dict(candidates[peak_idx][3]) if isinstance(candidates[peak_idx][3], dict) else {}
+
+        if n >= 4:
+            chosen = {0, n - 1, peak_idx}
+            min_gap = max(1, n // 6)
+            scored_indices = sorted(range(1, n - 1), key=lambda i: float(candidates[i][1]), reverse=True)
+            for idx in scored_indices:
+                if len(chosen) >= 4:
+                    break
+                if all(abs(idx - c) >= min_gap for c in chosen):
+                    chosen.add(idx)
+            for idx in scored_indices:
+                if len(chosen) >= 4:
+                    break
+                chosen.add(idx)
+            for idx in range(n):
+                if len(chosen) >= 4:
+                    break
+                chosen.add(idx)
+            sorted_idx = sorted(list(chosen))[:4]
+        else:
+            sorted_idx = [min(i, n - 1) for i in range(4)]
+
+        quad_items = []
+        for pos, idx in enumerate(sorted_idx):
+            ts_val, sc_val, frm_val, _ = candidates[idx]
+            is_pk = (idx == peak_idx)
+            rel_t = max(0.0, float(ts_val) - t0)
+            lbl = f"T{pos + 1}-PEAK" if is_pk else f"T{pos + 1}"
+            quad_items.append((lbl, rel_t, float(sc_val), frm_val, is_pk))
+
+        return quad_items, peak_frame, peak_bio
+
+    @staticmethod
+    def filter_surviving_candidates_for_z(
+        candidates: list,
+        cap: int,
+        delay_ms: int,
+        policy: str = "drop_oldest"
+    ) -> list:
+        """
+        Mô phỏng Tập khung hình sống sót F_Z qua Bộ nhớ Đệm Giới hạn (Bounded-Buffer) và Hạn ngạch CPU (CPU Time Share)
+        trước khi đưa vào cùng hàm extract_kinematic_quad(F_Z):
+        - Khi tài nguyên bị cấu hình lệch chuẩn (CPU Share thấp -> delay_ms cao, hoặc Buffer N quá hẹp/quá phình),
+          các khung hình ở giữa chu kỳ (nơi cử chỉ vẫy tay / giơ ngón cái đạt đỉnh S(t)) bị ghi đè (Drop-Oldest)
+          hoặc bị nghẽn hàng đợi (FIFO), khiến F_Z chỉ còn giữ được các khung hình biên (lúc mới nhấc tay hoặc đã hạ tay).
+        """
+        if not candidates or len(candidates) <= 2:
+            return list(candidates)
+        n = len(candidates)
+        # Luôn trích xuất tập ứng viên suy giảm F_Z đại diện cho trạng thái thiếu hụt tài nguyên
+        # để khi người dùng kéo thanh trượt đối chứng bất kỳ lúc nào cũng có sẵn ảnh lệch đỉnh (Off-Peak Snapshot) thực tế.
+        eff_delay = delay_ms if delay_ms > 0 else 180
+        eff_cap = cap if cap != 16 else 4
+        severity_ratio = min(0.85, (eff_delay / 350.0) + (abs(eff_cap - 16) / 64.0))
+        keep_edge = max(1, int(round(n * max(0.14, 0.35 - 0.22 * severity_ratio))))
+
+        if policy == "fifo":
+            # Cơ chế FIFO chặn luồng: Consumer bị kẹt ở các khung hình đầu chu kỳ (T1), lỡ mất pha đỉnh ở giữa
+            surviving = candidates[:max(2, keep_edge * 2)]
+        else:
+            # Cơ chế Drop-Oldest khi tràn đệm: Chỉ giữ khung đầu tiên trước khi đệm đầy và các khung cuối sau khi cử chỉ đã kết thúc
+            surviving = candidates[:max(1, keep_edge)] + candidates[max(1, n - keep_edge):]
+
+        return surviving if surviving else [candidates[0], candidates[-1]]
+
+    @staticmethod
+    def build_temporal_quad_image(quad_items: list, fallback_frame: np.ndarray) -> np.ndarray:
+        """
+        Ghép 4 pha động học (T1 -> T2 -> T3-PEAK -> T4) thành bảng ảnh 2x2 cùng kích thước (H, W, 3)
+        để Gemini quan sát toàn bộ diễn biến chuyển động liên tục trong 1 lượt gọi duy nhất.
+        """
+        if fallback_frame is None or len(quad_items) < 4:
+            return fallback_frame
+        # Nếu chỉ có 1 khung hình tĩnh duy nhất được lặp lại 4 lần, giữ nguyên khung hình gốc
+        if all(item[3] is quad_items[0][3] for item in quad_items):
+            return fallback_frame
+
+        h, w = fallback_frame.shape[:2]
+        hw, hh = max(1, w // 2), max(1, h // 2)
+        grid = np.zeros((hh * 2, hw * 2, 3), dtype=np.uint8)
+
+        positions = [(0, 0), (0, hw), (hh, 0), (hh, hw)]
+        for idx, (lbl, rel_t, sc_val, frm, is_pk) in enumerate(quad_items[:4]):
+            y0, x0 = positions[idx]
+            tile = cv2.resize(frm, (hw, hh), interpolation=cv2.INTER_AREA)
+            badge_txt = f"{lbl} (+{rel_t:.1f}s)"
+            bg_color = (16, 85, 24) if is_pk else (28, 32, 42)
+            border_color = (74, 222, 128) if is_pk else (148, 163, 184)
+            cv2.rectangle(tile, (6, 6), (min(hw - 6, 175), 30), bg_color, -1)
+            cv2.rectangle(tile, (6, 6), (min(hw - 6, 175), 30), border_color, 1)
+            cv2.putText(
+                tile, badge_txt, (12, 23),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA
+            )
+            grid[y0:y0 + hh, x0:x0 + hw] = tile
+
+        if grid.shape[0] != h or grid.shape[1] != w:
+            grid = cv2.resize(grid, (w, h), interpolation=cv2.INTER_LINEAR)
+        return grid
+
     def _gemini_worker(self):
         """
         Luồng Consumer AI Cloud & Heuristic Arbiter (Hierarchical Model Orchestrator):
-        - Chu kỳ nhịp đồng hồ cố định nghiêm ngặt: Đúng 6.0 giây sinh 1 bản ghi mới (không bao giờ bị treo 15-40 giây khi mạng Cloud chậm).
-        - Nếu Gemini Cloud phản hồi trong <= 4.8 giây: hiển thị trực tiếp kết quả Gemini.
-        - Nếu máy chủ Google phản hồi chậm (> 4.8 giây): chốt ngay bản ghi đúng mốc 6.0 giây để bảng không bị trễ nhịp, và tự động cập nhật nội dung phân tích của Gemini vào đúng dòng đó ngay khi Cloud trả kết quả về.
-        - Không bao giờ chồng lấp 2 lượt gọi Cloud cùng lúc (bảo toàn tuyệt đối hạn mức 15 lượt/phút).
+        - Chu kỳ nhịp đồng hồ cố định nghiêm ngặt: Đúng 6.0 giây sinh 1 bản ghi mới.
+        - Cả Nhánh Lý tưởng (Y) và Nhánh Suy giảm Tài nguyên (Z) cùng chạy thuật toán extract_kinematic_quad(F).
+        - Ghép 4 pha (T1 -> T2 -> T3-PEAK -> T4) thành ảnh 2x2 gửi cho Gemini để nhận diện trọn vẹn chuỗi cử chỉ động
+          và sinh đồng thời biến dị hành vi (X = Y + Z) trong 1 lượt gọi.
         """
         time.sleep(0.6)
         cloud_busy_lock = threading.Lock()
@@ -515,9 +642,13 @@ class LiveCameraPipeline:
             t_start = time.time()
 
             frame = None
+            candidates_y = []
             with self.frame_lock:
                 if self.latest_raw_frame is not None:
                     frame = self.latest_raw_frame.copy()
+                if self.window_candidates:
+                    candidates_y = list(self.window_candidates)
+                    self.window_candidates.clear()
 
             if frame is not None and frame.size > 0:
                 mean_brightness = float(np.mean(frame))
@@ -529,16 +660,48 @@ class LiveCameraPipeline:
                     self.action_counter += 1
                     cur_idx = self.action_counter
                     snap_time_str = time.strftime("%H:%M:%S")
-                    snap_name = f"snap_gemini_{cur_idx:04d}_{int(t_start)}.jpg"
-                    snap_path = os.path.join(self.snapshots_dir, snap_name)
-                    cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
                     with self.ai_lock:
                         bio = dict(self.biomechanics)
 
+                    if not candidates_y:
+                        candidates_y = [(t_start, 1.0, frame, bio)]
+
+                    # 1. Nhánh Lý tưởng (Y): Chạy extract_kinematic_quad trên toàn bộ tập khung hình chuẩn F_Y
+                    quad_y, peak_frame_y, peak_bio_y = self.extract_kinematic_quad(candidates_y)
+                    if peak_frame_y is None:
+                        peak_frame_y = frame
+                    if not peak_bio_y:
+                        peak_bio_y = bio
+
+                    snap_name = f"snap_gemini_{cur_idx:04d}_{int(t_start)}.jpg"
+                    snap_path = os.path.join(self.snapshots_dir, snap_name)
+                    cv2.imwrite(snap_path, peak_frame_y, [cv2.IMWRITE_JPEG_QUALITY, 95])
+
+                    # 2. Nhánh Suy giảm Tài nguyên (Z): Lọc tập khung hình sống sót F_Z qua Bounded-Buffer & CPU Share,
+                    # sau đó chạy CÙNG thuật toán extract_kinematic_quad(F_Z) để lấy ảnh đại diện nhánh Z (Off-Peak Snapshot)
+                    buf_cap = self.frame_buffer.capacity if hasattr(self, "frame_buffer") else 16
+                    candidates_z = self.filter_surviving_candidates_for_z(
+                        candidates_y,
+                        cap=buf_cap,
+                        delay_ms=self.consumer_delay_ms,
+                        policy=getattr(self, "buffer_policy", "drop_oldest")
+                    )
+                    _, peak_frame_z, _ = self.extract_kinematic_quad(candidates_z)
+                    if peak_frame_z is None:
+                        peak_frame_z = frame
+                    snap_z_name = f"snap_z_{cur_idx:04d}_{int(t_start)}.jpg"
+                    snap_z_path = os.path.join(self.snapshots_dir, snap_z_name)
+                    cv2.imwrite(snap_z_path, peak_frame_z, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+                    # 3. Ghép bảng 4 pha (T1 -> T2 -> T3-PEAK -> T4) để Gemini thấy diễn biến động học liên tục
+                    composite_2x2 = self.build_temporal_quad_image(quad_y, peak_frame_y)
+
                     tier_info_before = MODEL_ORCHESTRATOR.get_active_tier_info()
                     active_tier_before = tier_info_before.get("active_tier", "tier_1")
-                    heur_fallback = self._synthesize_heuristic_action(bio.get("posture", "Ngồi thẳng bình thường"), bio)
+                    heur_fallback = self._synthesize_heuristic_action(
+                        peak_bio_y.get("posture", "Ngồi thẳng bình thường"), peak_bio_y
+                    )
                     init_sev = heur_fallback.get("severity", "safe")
                     if init_sev not in ("safe", "warning", "danger"):
                         init_sev = "safe"
@@ -551,7 +714,10 @@ class LiveCameraPipeline:
                         "action": heur_fallback.get("action", "Ngồi thẳng bình thường"),
                         "description": heur_fallback.get("description", "Người dùng đang giữ tư thế ổn định trước camera."),
                         "prediction_next_4s": heur_fallback.get("prediction_next_4s", "Tiếp tục giữ nguyên tư thế trong 4 giây tới."),
+                        "degraded_light": heur_fallback.get("degraded_light"),
+                        "degraded_heavy": heur_fallback.get("degraded_heavy"),
                         "snapshot_url": f"/api/snapshots/{snap_name}",
+                        "degraded_snapshot_url": f"/api/snapshots/{snap_z_name}",
                         "severity": init_sev,
                         "model_tier": active_tier_before,
                     }
@@ -590,6 +756,8 @@ class LiveCameraPipeline:
                                 act_val = res.get("action") or target_entry["action"]
                                 desc_val = res.get("description") or target_entry["description"]
                                 pred_val = res.get("prediction_next_4s") or target_entry["prediction_next_4s"]
+                                deg_light = res.get("degraded_light") or target_entry.get("degraded_light")
+                                deg_heavy = res.get("degraded_heavy") or target_entry.get("degraded_heavy")
                                 sev_val = res.get("severity", "safe")
                                 if sev_val not in ("safe", "warning", "danger"):
                                     sev_val = "safe"
@@ -601,6 +769,8 @@ class LiveCameraPipeline:
                                     target_entry["action"] = act_val
                                     target_entry["description"] = desc_val
                                     target_entry["prediction_next_4s"] = pred_val
+                                    target_entry["degraded_light"] = deg_light
+                                    target_entry["degraded_heavy"] = deg_heavy
                                     target_entry["severity"] = sev_val
                                     target_entry["model_tier"] = t_key
                                     self.biomechanics["posture"] = act_val
@@ -618,7 +788,7 @@ class LiveCameraPipeline:
 
                         t_worker = threading.Thread(
                             target=_cloud_task,
-                            args=(entry, frame.copy(), dict(bio), cur_idx),
+                            args=(entry, composite_2x2.copy(), dict(peak_bio_y), cur_idx),
                             daemon=True
                         )
                         t_worker.start()
@@ -752,6 +922,8 @@ class LiveCameraPipeline:
             }
             severity = "safe"
             clarity_score = 0.5
+            wrist_speed = 0.0
+            hand_elev_bonus = 0.0
 
             if results and len(results) > 0:
                 res = results[0]
@@ -799,14 +971,39 @@ class LiveCameraPipeline:
 
                         bio_state["angle"] = torso_angle
 
-                        # Vận tốc cổ tay (Wrist velocity)
-                        curr_wrist = (float(r_wrist[0]), float(r_wrist[1])) if r_wrist[2] > 0.3 else None
+                        # Vận tốc cổ tay hai bên (Left & Right Wrist Velocity) + Độ nâng cao bàn tay (Hand Elevation)
+                        curr_r = (float(r_wrist[0]), float(r_wrist[1])) if r_wrist[2] > 0.3 else None
+                        curr_l = (float(l_wrist[0]), float(l_wrist[1])) if l_wrist[2] > 0.3 else None
                         wrist_speed = 0.0
-                        if curr_wrist and self.prev_wrists:
-                            dist = math.hypot(curr_wrist[0] - self.prev_wrists[0], curr_wrist[1] - self.prev_wrists[1])
+                        if isinstance(self.prev_wrists, dict):
+                            if curr_r and self.prev_wrists.get("r"):
+                                wrist_speed = max(
+                                    wrist_speed,
+                                    math.hypot(curr_r[0] - self.prev_wrists["r"][0], curr_r[1] - self.prev_wrists["r"][1]) / max(1e-4, dt)
+                                )
+                            if curr_l and self.prev_wrists.get("l"):
+                                wrist_speed = max(
+                                    wrist_speed,
+                                    math.hypot(curr_l[0] - self.prev_wrists["l"][0], curr_l[1] - self.prev_wrists["l"][1]) / max(1e-4, dt)
+                                )
+                        elif isinstance(self.prev_wrists, tuple) and curr_r:
+                            dist = math.hypot(curr_r[0] - self.prev_wrists[0], curr_r[1] - self.prev_wrists[1])
                             wrist_speed = dist / max(1e-4, dt)
-                        if curr_wrist:
-                            self.prev_wrists = curr_wrist
+                        self.prev_wrists = {"r": curr_r, "l": curr_l}
+                        curr_wrist = curr_r or curr_l
+
+                        # Điểm nâng cao bàn tay (Hand Elevation Bonus) để bắt đỉnh cử chỉ vẫy tay / giơ ngón cái / chạm mặt
+                        active_wrist_ys = []
+                        if l_wrist[2] > 0.30:
+                            active_wrist_ys.append(float(l_wrist[1]))
+                        if r_wrist[2] > 0.30:
+                            active_wrist_ys.append(float(r_wrist[1]))
+                        hand_elev_bonus = 0.0
+                        if active_wrist_ys:
+                            min_wy = min(active_wrist_ys)
+                            ref_y = sh_y + 0.40 * sh_w
+                            if min_wy < ref_y:
+                                hand_elev_bonus = min(1.5, max(0.0, (ref_y - min_wy) / max(30.0, sh_w)))
 
                         # Phân loại 11 Hành vi Sinh cơ học chi tiết
                         # 1. Té ngã / Gục xuống bàn
@@ -913,6 +1110,17 @@ class LiveCameraPipeline:
                 self.latest_boxes = boxes_list
                 self.latest_kpts = kpts_list
                 self.biomechanics = bio_state
+
+            # Ghi nhận ứng viên khung hình vào chuỗi động học cửa sổ 6.0 giây (Kinematic Action Score S(t))
+            now_cand_ts = time.time()
+            if now_cand_ts - getattr(self, "last_candidate_ts", 0.0) >= 0.12:
+                self.last_candidate_ts = now_cand_ts
+                torso_dev_bonus = min(0.6, abs(90.0 - float(bio_state.get("angle", 90.0))) / 45.0) if bio_state.get("angle", 0.0) > 0 else 0.0
+                kinematic_score = float(clarity_score + min(1.8, wrist_speed / 220.0) + hand_elev_bonus + torso_dev_bonus)
+                with self.frame_lock:
+                    self.window_candidates.append((now_cand_ts, kinematic_score, raw.copy(), dict(bio_state)))
+                    if len(self.window_candidates) > 60:
+                        self.window_candidates.pop(0)
 
             time.sleep(0.01)
 
@@ -1643,6 +1851,7 @@ def get_telemetry():
 class OSLabConfigPayload(BaseModel):
     buffer_capacity: Optional[int] = None
     consumer_delay_ms: Optional[int] = None
+    buffer_policy: Optional[str] = None
     reset_counters: bool = False
     trigger_burst: bool = False
 
@@ -1650,11 +1859,12 @@ class OSLabConfigPayload(BaseModel):
 @app.post("/api/os_lab/config")
 async def update_os_lab_config(req: OSLabConfigPayload):
     """
-    Điều chỉnh trực tiếp tham số Thực nghiệm Hệ Điều Hành (Bounded-Buffer Capacity N & Consumer Throttling Delay).
+    Điều chỉnh trực tiếp tham số Thực nghiệm Hệ Điều Hành (Bounded-Buffer Capacity N, CPU Time Share & Buffer Policy).
     """
     res = LIVE_CAMERA.configure_os_lab(
         buffer_capacity=req.buffer_capacity,
         consumer_delay_ms=req.consumer_delay_ms,
+        buffer_policy=req.buffer_policy,
         reset_counters=req.reset_counters,
         trigger_burst=req.trigger_burst
     )
@@ -1665,10 +1875,13 @@ async def update_os_lab_config(req: OSLabConfigPayload):
 def get_os_lab_config():
     """Lấy cấu hình hiện tại của bộ Thực nghiệm Hệ Điều Hành."""
     stats = LIVE_CAMERA.frame_buffer.get_stats() if hasattr(LIVE_CAMERA, "frame_buffer") else {}
+    cpu_share_pct = max(10, round(100.0 * 15.0 / (15.0 + float(LIVE_CAMERA.consumer_delay_ms))))
     return {
         "status": "ok",
         "buffer_capacity": stats.get("capacity", 16),
         "consumer_delay_ms": LIVE_CAMERA.consumer_delay_ms,
+        "cpu_share_pct": cpu_share_pct,
+        "buffer_policy": getattr(LIVE_CAMERA, "buffer_policy", "drop_oldest"),
         "ram_ceiling_mb": stats.get("ram_ceiling_mb", 42.19),
         "stats": stats
     }

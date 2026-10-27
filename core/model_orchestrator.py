@@ -369,66 +369,116 @@ class AutonomousHeuristicArbiter:
 
         if "nằm" in p_low:
             obs_variants = [
-                "Chủ thể đang nằm nghỉ ngơi thư giãn, toàn bộ vùng cổ và vai thả lỏng tự nhiên, không có dấu hiệu căng thẳng.",
-                "Chủ thể duy trì trạng thái nằm nghỉ thoải mái, nhịp sinh hoạt tĩnh lặng và ổn định.",
-                "Chủ thể đang thả lỏng cơ thể ở tư thế nằm nghỉ, tinh thần thư thái và chưa có ý định đứng dậy."
+                "Chủ thể đang nằm ngửa nghỉ ngơi, hai tay đặt dọc cơ thể và ánh mắt hướng lên phía trên.",
+                "Chủ thể duy trì tư thế nằm thư giãn tại chỗ, cử động cơ thể chậm và yên tĩnh.",
+                "Chủ thể đang nằm nghỉ trên mặt phẳng, giữ nguyên vị trí và quan sát xung quanh."
             ]
             preds = [
-                "Tiếp tục duy trì trạng thái nằm nghỉ thư giãn trong vài giây tới.",
-                "Chủ thể giữ nguyên tư thế nghỉ ngơi yên tĩnh tại chỗ.",
-                "Chưa có dấu hiệu thay đổi tư thế, tiếp tục nghỉ ngơi ổn định."
+                "Tiếp tục duy trì tư thế nằm nghỉ trong vài giây tới.",
+                "Chủ thể giữ nguyên vị trí nằm yên tĩnh tại chỗ.",
+                "Chưa có dấu hiệu ngồi dậy, tiếp tục giữ tư thế hiện tại."
             ]
+            deg_light = {
+                "action": "Nằm nghỉ tại chỗ",
+                "description": "Chủ thể đang nằm yên tại vị trí, ít cử động tay chân.",
+                "prediction_next_4s": "Tiếp tục nằm tại chỗ."
+            }
+            deg_heavy = {
+                "action": "Nằm bất động ngắn",
+                "description": "Chủ thể nằm ngửa tại chỗ và giữ nguyên tư thế không đổi.",
+                "prediction_next_4s": "Giữ nguyên vị trí hiện tại."
+            }
         elif "vắng" in p_low or "rời" in p_low:
             obs_variants = [
-                "Chủ thể đã tạm thời rời khỏi khu vực làm việc, không gian trước ống kính hiện đang trống.",
-                "Không ghi nhận sự hiện diện của chủ thể tại vị trí ngồi, có thể vừa đứng dậy di chuyển ra ngoài.",
-                "Vị trí quan sát hiện đang bỏ trống, chưa có hoạt động mới trong vùng khung hình."
+                "Chủ thể đã tạm thời rời khỏi khu vực quan sát, khung hình trước ống kính hiện đang trống.",
+                "Không ghi nhận sự hiện diện của chủ thể tại vị trí ngồi, vừa di chuyển ra ngoài vùng quét.",
+                "Vị trí quan sát hiện đang bỏ trống, chưa có chuyển động mới trong khung hình."
             ]
             preds = [
                 "Khu vực tiếp tục trống cho đến khi chủ thể quay lại vị trí.",
                 "Chờ chủ thể trở lại khu vực quan sát trong các nhịp tiếp theo.",
-                "Không gian duy trì trạng thái tĩnh trong 4 giây tới."
+                "Không gian duy trì trạng thái trống trong 4 giây tới."
             ]
+            deg_light = {
+                "action": "Rời vị trí quan sát",
+                "description": "Không thấy chủ thể xuất hiện tại vị trí ghế ngồi trước camera.",
+                "prediction_next_4s": "Khung hình tiếp tục trống."
+            }
+            deg_heavy = {
+                "action": "Khung hình trống",
+                "description": "Chủ thể không có mặt trong vùng quan sát hiện tại.",
+                "prediction_next_4s": "Chưa có người xuất hiện."
+            }
         elif "cúi" in p_low or "nghiêng" in p_low or "gục" in p_low or angle < 65.0:
             obs_variants = [
-                "Chủ thể đang hạ thấp trọng tâm đầu và hướng sát về phía trước để tập trung quan sát gần; nếu giữ lâu dễ gây mỏi cơ vùng gáy.",
-                "Chủ thể có xu hướng chồm người và nghiêng vùng cổ khá sâu khi thao tác, bắt đầu xuất hiện dấu hiệu lệch tư thế công thái học.",
-                "Ghi nhận biểu hiện cúi người làm việc liên tục ở cự ly gần, phần vai hơi thu lại tạo áp lực lên vùng cổ – vai."
+                "Chủ thể đang cúi đầu thấp và chồm người sát về phía mặt bàn để đọc tài liệu hoặc quan sát vật thể ở cự ly gần.",
+                "Chủ thể nghiêng thân trên và hướng ánh nhìn chăm chú xuống phía dưới mặt bàn để thao tác chi tiết.",
+                "Ghi nhận động tác cúi người tập trung xem nội dung bên dưới, hai tay đặt gần mặt bàn hỗ trợ thao tác."
             ]
             preds = [
-                "Chủ thể có thể tiếp tục chăm chú nhìn gần hoặc sớm ngẩng đầu lên để đỡ mỏi cổ.",
-                "Nếu tiếp tục giữ tư thế cúi này thêm vài nhịp, cảm giác căng mỏi vai gáy sẽ tăng lên.",
-                "Dự kiến chủ thể sẽ sớm điều chỉnh lại lưng thẳng sau khi xem xong nội dung."
+                "Chủ thể tiếp tục chăm chú nhìn gần rồi nâng đầu lên vị trí thẳng.",
+                "Tiếp tục quan sát nội dung phía dưới mặt bàn trong vài giây tới.",
+                "Dự kiến chủ thể sẽ sớm ngẩng đầu lên sau khi xem xong tài liệu."
             ]
+            deg_light = {
+                "action": "Hơi cúi đầu xuống dưới",
+                "description": "Chủ thể hơi hạ thấp đầu hướng về phía mặt bàn trước mặt.",
+                "prediction_next_4s": "Tiếp tục nhìn xuống phía dưới."
+            }
+            deg_heavy = {
+                "action": "Ngồi hơi khom người",
+                "description": "Chủ thể chỉ hơi nghiêng nhẹ phần đầu về phía trước rồi giữ yên.",
+                "prediction_next_4s": "Giữ nguyên tư thế ngồi tại chỗ."
+            }
         elif "giơ tay" in p_low or "vẫy" in p_low or "vung" in p_low or "chống cằm" in p_low:
             obs_variants = [
-                "Chủ thể vừa thực hiện cử chỉ đưa tay lên tương tác chủ động, biểu hiện trạng thái tỉnh táo và linh hoạt.",
-                "Ghi nhận động tác tay rõ rệt trong quá trình sinh hoạt, cho thấy chủ thể đang thao tác hoặc ra hiệu trực tiếp.",
-                "Chủ thể kết hợp cử động tay tự nhiên trong lúc theo dõi màn hình, nhịp độ hoạt động diễn ra năng động."
+                "Chủ thể đưa cao cánh tay lên trước ống kính, xòe bàn tay vẫy qua lại nhiều nhịp liên tục rồi từ từ hạ tay xuống.",
+                "Ghi nhận cử chỉ nâng bàn tay lên ngang tầm mặt, thực hiện động tác ra hiệu rõ rệt trước camera rồi thu tay về.",
+                "Chủ thể chủ động giơ tay lên cao thực hiện chuỗi cử chỉ tương tác trực tiếp với hướng nhìn tập trung vào ống kính."
             ]
             preds = [
-                "Chủ thể hoàn tất thao tác tay và quay về tư thế làm việc tập trung.",
-                "Tiếp tục tương tác linh hoạt tại vị trí trong vài giây tới.",
-                "Sau cử chỉ tay, chủ thể sẽ ổn định lại tư thế ngồi."
+                "Chủ thể hoàn tất động tác vẫy tay và hạ tay về vị trí nghỉ.",
+                "Tiếp tục giữ cử chỉ tay thêm một nhịp ngắn trước khi thu tay xuống.",
+                "Sau khi ra hiệu bằng tay, chủ thể ổn định lại tư thế ngồi."
             ]
+            deg_light = {
+                "action": "Giơ tay lên trước mặt",
+                "description": "Chủ thể đưa cánh tay lên cao ngang vai nhưng không thấy rõ nhịp vẫy bàn tay liên tục.",
+                "prediction_next_4s": "Chủ thể chuẩn bị hạ cánh tay xuống."
+            }
+            deg_heavy = {
+                "action": "Nhấc nhẹ tay rồi hạ xuống",
+                "description": "Chủ thể chỉ hơi nhấc cánh tay lên thấp gần ngực rồi bỏ xuống liền.",
+                "prediction_next_4s": "Hai tay đặt yên tại chỗ."
+            }
         else:
             if changed and ("cúi" in prev_act.lower() or "nghiêng" in prev_act.lower()):
                 obs_variants = [
-                    "Sau vài nhịp cúi nhìn gần, chủ thể đã chủ động điều chỉnh lại tư thế ngồi ngay ngắn để giải tỏa áp lực cho vùng cổ và lưng.",
-                    "Chủ thể vừa lấy lại thăng bằng cơ thể, thẳng lưng và hướng ánh nhìn tập trung ổn định về phía trước.",
-                    "Tác phong làm việc đã trở lại trạng thái cân bằng, chủ thể ngồi điềm tĩnh và tập trung theo dõi công việc."
+                    "Sau nhịp cúi nhìn gần, chủ thể đã nâng đầu lên và ngồi thẳng trở lại, hướng ánh mắt trực diện vào màn hình.",
+                    "Chủ thể vừa chuyển từ tư thế cúi sang ngồi ngay ngắn, hai vai cân bằng và tập trung quan sát phía trước.",
+                    "Chủ thể đã thu người về tư thế ngồi thẳng ổn định và tiếp tục theo dõi nội dung trên màn hình."
                 ]
             else:
                 obs_variants = [
-                    "Chủ thể duy trì phong thái làm việc tập trung và điềm tĩnh, phần thân trên giữ thăng bằng thoải mái giúp làm việc lâu mà không mỏi.",
-                    "Trạng thái sinh hoạt tại chỗ diễn ra tự nhiên và ổn định; chủ thể đang chú tâm quan sát phía trước với tư thế ngồi thư thái.",
-                    "Nhịp độ làm việc duy trì đều đặn, cơ thể thả lỏng vừa phải và giữ được sự tập trung tốt trong không gian yên tĩnh."
+                    "Chủ thể đang ngồi ngay ngắn trước bàn làm việc, ánh mắt hướng thẳng về phía màn hình và hai tay đặt ổn định.",
+                    "Chủ thể duy trì tư thế ngồi thẳng tự nhiên, chăm chú quan sát nội dung phía trước với biểu cảm điềm tĩnh.",
+                    "Chủ thể ngồi ổn định tại vị trí, hướng nhìn tập trung vào khu vực màn hình chính và thao tác nhẹ nhàng."
                 ]
             preds = [
-                "Tiếp tục duy trì sự tập trung và nhịp làm việc ổn định trong 4 giây tới.",
-                "Chủ thể giữ vững trạng thái làm việc điềm tĩnh, chưa có dấu hiệu xao nhãng.",
-                "Duy trì tư thế ngồi cân bằng và theo dõi nội dung trước mặt."
+                "Tiếp tục duy trì sự tập trung và theo dõi màn hình trong 4 giây tới.",
+                "Chủ thể giữ vững tư thế ngồi quan sát ổn định tại chỗ.",
+                "Tiếp tục làm việc và theo dõi nội dung trước mặt."
             ]
+            deg_light = {
+                "action": "Ngồi nhìn về phía trước",
+                "description": "Chủ thể đang ngồi tại vị trí và hướng mặt về phía màn hình.",
+                "prediction_next_4s": "Tiếp tục ngồi tại chỗ."
+            }
+            deg_heavy = {
+                "action": "Ngồi tĩnh tại chỗ",
+                "description": "Chủ thể ngồi yên một chỗ trước ống kính, ít thấy biến chuyển cử động.",
+                "prediction_next_4s": "Giữ nguyên vị trí ngồi."
+            }
 
         desc = obs_variants[v]
         if changed and prev_act and prev_act not in desc:
@@ -440,6 +490,8 @@ class AutonomousHeuristicArbiter:
             "action": posture_text,
             "description": desc,
             "prediction_next_4s": pred,
+            "degraded_light": deg_light,
+            "degraded_heavy": deg_heavy,
             "severity": severity,
             "model_tier": ModelTier.TIER_3_HEURISTIC.value,
         }
@@ -684,14 +736,14 @@ class HierarchicalModelOrchestrator:
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         contents = [prompt]
         if isinstance(frame_img, Image.Image):
-            if not is_mock and (frame_img.width > 384 or frame_img.height > 216):
-                frame_img = frame_img.resize((384, 216))
+            if not is_mock and (frame_img.width > 640 or frame_img.height > 360):
+                frame_img = frame_img.resize((640, 360))
             contents.append(frame_img)
         elif isinstance(frame_img, np.ndarray):
             import cv2
             proc_frame = frame_img
-            if not is_mock and frame_img.ndim >= 2 and (frame_img.shape[1] > 384 or frame_img.shape[0] > 216):
-                proc_frame = cv2.resize(frame_img, (384, 216), interpolation=cv2.INTER_AREA)
+            if not is_mock and frame_img.ndim >= 2 and (frame_img.shape[1] > 640 or frame_img.shape[0] > 360):
+                proc_frame = cv2.resize(frame_img, (640, 360), interpolation=cv2.INTER_AREA)
             rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
             contents.append(Image.fromarray(rgb))
         elif frame_img is not None:
@@ -758,23 +810,40 @@ class HierarchicalModelOrchestrator:
         prompt = f"""Bạn là Hệ thống Giám sát & Phân tích Hành vi Thông minh.
 {context_str}
 
-Hãy quan sát bức ảnh khung hình camera vừa chụp được và phân tích thật chi tiết, khách quan, sâu sắc về hành vi và cử chỉ thực tế của người trong ảnh:
-1. "action": Tên hành vi / cử chỉ cụ thể, rõ ràng người đó đang làm gì (ví dụ: "Nằm ngửa giơ ngón tay cái ra hiệu", "Giơ 4 ngón tay trước ống kính", "Gõ bàn phím làm việc", "Cầm điện thoại nhắn tin", "Chống cằm suy nghĩ", "Chụm tay làm ống nhòm mô phỏng", "Uống nước", "Vắng mặt / Rời vị trí").
-2. "description": Miêu tả chi tiết, tường tận hành vi và ngữ cảnh thực tế: người đó đang ở đâu, tư thế như thế nào, đang làm hành động gì cụ thể (cử chỉ bàn tay, ngón tay cử động cụ thể ra sao, hướng ánh mắt nhìn đi đâu, biểu cảm khuôn mặt, trang phục hoặc vật thể tương tác xung quanh).
-   - Dùng ngôn ngữ tiếng Việt tự nhiên, chuẩn mực, sinh động, tập trung 100% vào sự chi tiết của hành vi và cử chỉ.
-   - TUYỆT ĐỐI KHÔNG nói lan man kiểu khám sức khỏe, chăm sóc hay kiểm tra an toàn (như "không có dấu hiệu mệt mỏi", "không căng thẳng cơ bắp", "không có gì bất thường hay nguy hiểm").
-   - TUYỆT ĐỐI KHÔNG đưa số đo góc độ kỹ thuật khô khan (như 87°) và KHÔNG dùng dấu nháy đơn.
-3. "prediction_next_4s": Dự đoán cụ thể xu hướng hành động trong 4 giây tiếp theo dựa trên cử chỉ, hướng nhìn và biểu cảm hiện tại.
-4. "severity":
-   - "safe": Hoạt động học tập, làm việc, nghỉ ngơi, ra hiệu cử chỉ bình thường.
-   - "warning": Sai lệch tư thế rõ rệt kéo dài hoặc mất tập trung.
-   - "danger": Té ngã, gục xỉu, bất tỉnh hoặc va chạm mạnh.
+Bức ảnh gửi kèm có thể là bảng 4 pha thời gian liên tiếp (T1 Khởi phát -> T2 Cao trào phụ -> T3-PEAK Đỉnh động học -> T4 Kết thúc) hoặc 1 khung hình đơn. Hãy quan sát kỹ toàn bộ diễn biến chuyển động từ T1 đến T4 và trả về kết quả theo cơ chế đối chứng song song (X = Y + Z):
 
-Trả về định dạng JSON thuần:
+1. NHÁNH LÝ TƯỞNG Y ("action", "description", "prediction_next_4s") — Khi hệ thống có đủ 100% tài nguyên nên quan sát trọn vẹn cả 4 pha T1 -> T2 -> T3-PEAK -> T4:
+   - "action": Tên hành vi / cử chỉ cụ thể, rõ ràng theo đúng toàn bộ chuỗi động tác (ví dụ: "Giơ cao tay phải vẫy chào liên tục rồi hạ xuống", "Nằm ngửa giơ ngón tay cái ra hiệu", "Giơ 4 ngón tay trước ống kính", "Gõ bàn phím làm việc", "Cầm điện thoại nhắn tin").
+   - "description": Miêu tả chi tiết, sống động toàn bộ diễn biến hành vi từ lúc bắt đầu (T1), đạt đỉnh cử chỉ (T2, T3-PEAK: bàn tay, ngón tay cử động hay vẫy qua lại ra sao, ánh mắt nhìn đi đâu, biểu cảm khuôn mặt, vật thể tương tác) đến lúc kết thúc (T4).
+   - "prediction_next_4s": Dự đoán cụ thể hành động trong 4 giây tiếp theo.
+
+2. NHÁNH SUY GIẢM NHẸ Z1 ("degraded_light": {{"action", "description", "prediction_next_4s"}}) — Biến dị câu chữ hành vi khi thiếu hụt tài nguyên nhẹ làm rơi mất pha dao động trung gian (T2):
+   - Viết như một quan sát viên chỉ nhìn thấy động tác giơ tay hoặc tư thế tĩnh ở T1 và T3 nhưng KHÔNG bắt được chuyển động lắc/vẫy qua lại hay thao tác ngón tay liên tục giữa chừng (ví dụ: Y thấy "Đưa tay cao lên vẫy chào liên tục rồi hạ xuống" thì degraded_light chỉ thấy "Giơ tay phải lên ngang vai rồi giữ yên trước mặt").
+
+3. NHÁNH SUY GIẢM NẶNG Z2 ("degraded_heavy": {{"action", "description", "prediction_next_4s"}}) — Biến dị câu chữ hành vi khi cạn kiệt tài nguyên làm rơi mất hoàn toàn các khung hình đỉnh cử chỉ (mất T2, T3-PEAK), chỉ còn nhìn thấy khung đầu T1 và khung cuối T4:
+   - Viết như một quan sát viên bị bỏ lỡ hoàn toàn đỉnh hành vi, chỉ thấy cử động chớp nhoáng lúc mới nhấc tay hoặc vừa bỏ tay xuống (ví dụ: Y thấy "Giơ tay cao lên vẫy rồi buông xuống" thì degraded_heavy viết "Chủ thể chỉ hơi nhấc nhẹ cánh tay lên rồi bỏ xuống liền").
+
+QUY TẮC BẮT BUỘC CHO CẢ Y VÀ Z:
+- Chỉ viết ngôn ngữ miêu tả hành vi tự nhiên của con người.
+- TUYỆT ĐỐI KHÔNG giải thích lý do kỹ thuật trong câu văn (CẤM viết "do mất khung hình", "do thiếu CPU", "do tràn bộ đệm").
+- TUYỆT ĐỐI KHÔNG nói lan man kiểu khám sức khỏe, công thái học hay kiểm tra an toàn (CẤM viết "không có dấu hiệu mệt mỏi", "không căng thẳng cơ bắp", "không có gì bất thường").
+- TUYỆT ĐỐI KHÔNG đưa số đo góc độ kỹ thuật (như 87°) và KHÔNG dùng dấu nháy đơn.
+
+Trả về đúng định dạng JSON thuần:
 {{
-    "action": "Tên hành vi / cử chỉ cụ thể chuẩn mực",
-    "description": "Miêu tả chi tiết, tường tận hành vi, cử chỉ tay/ngón tay, hướng nhìn và ngữ cảnh thực tế",
-    "prediction_next_4s": "Dự đoán hành động cụ thể trong 4 giây tiếp theo",
+    "action": "Tên hành vi đầy đủ ở nhánh lý tưởng Y",
+    "description": "Miêu tả chi tiết, sống động trọn vẹn diễn biến cử chỉ, ngón tay, ánh mắt ở nhánh lý tưởng Y",
+    "prediction_next_4s": "Dự đoán hành động 4 giây tới ở nhánh Y",
+    "degraded_light": {{
+        "action": "Tên hành vi bị thiếu chi tiết dao động trung gian",
+        "description": "Miêu tả hành vi khi không bắt được nhịp chuyển động liên tục giữa chừng",
+        "prediction_next_4s": "Dự đoán ngắn gọn"
+    }},
+    "degraded_heavy": {{
+        "action": "Tên hành vi sơ sài do lỡ mất đỉnh cử chỉ",
+        "description": "Miêu tả hành vi bị biến dị khi chỉ bắt được khoảnh khắc đầu và cuối (ví dụ: hơi nhấc tay lên rồi bỏ xuống liền)",
+        "prediction_next_4s": "Dự đoán ngắn gọn"
+    }},
     "severity": "safe" | "warning" | "danger"
 }}
 """

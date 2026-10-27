@@ -3196,6 +3196,28 @@ class VideoAnnotatorEngine:
                 dummy = np.zeros((orig_h, orig_w, 3), dtype=np.uint8)
                 cv2.imwrite(snap_path, dummy, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
+            # Trích xuất ảnh đại diện Nhánh Z (Off-Peak Snapshot khi thiếu hụt tài nguyên làm rơi mất khung hình giữa phân đoạn)
+            pf_dict = s_data.get("phase_frames") or {}
+            z_candidates = []
+            if burst_list and len(burst_list) >= 3:
+                edge_k = max(1, len(burst_list) // 4)
+                z_candidates = burst_list[:edge_k] + burst_list[-edge_k:]
+            z_frame = None
+            if z_candidates:
+                top_z = max(z_candidates, key=lambda x: float(x.get("threat_score", 0.0)))
+                z_frame = top_z.get("frame")
+            if z_frame is None:
+                z_frame = pf_dict.get("phase_start") if pf_dict.get("phase_start") is not None else (
+                    pf_dict.get("phase_end") if pf_dict.get("phase_end") is not None else s_data["peak_frame"]
+                )
+            snap_z_filename = f"snap_seg_z_{now_ts}_{idx+1:02d}.jpg"
+            snap_z_path = os.path.join(snapshots_dir, snap_z_filename)
+            if z_frame is not None:
+                cv2.imwrite(snap_z_path, z_frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            else:
+                dummy_z = np.zeros((orig_h, orig_w, 3), dtype=np.uint8)
+                cv2.imwrite(snap_z_path, dummy_z, [cv2.IMWRITE_JPEG_QUALITY, 82])
+
             seg_frame_count = max(1, int((s_data["end_sec"] - s_data["start_sec"]) * input_fps))
             min_presence_frames = max(3, int(0.12 * seg_frame_count))
             danger_frame_th = max(8, min(18, int(0.08 * seg_frame_count)))
@@ -3587,7 +3609,8 @@ class VideoAnnotatorEngine:
                 "severity": seg_severity,
                 "danger_score": final_threat_score,
                 "telemetry_breakdown": telemetry_breakdown,
-                "snapshot_url": f"/api/snapshots/{snap_filename}"
+                "snapshot_url": f"/api/snapshots/{snap_filename}",
+                "degraded_snapshot_url": f"/api/snapshots/{snap_z_filename}"
             })
 
         # Mảng mẫu Heatmap & Đường cong Rủi ro: Bảo toàn đỉnh nhọn va chạm/đòn đánh (Peak-Preserving Smoothing)
@@ -4124,6 +4147,10 @@ class VideoAnnotatorEngine:
                         seg["focal_actors_desc"] = ga.get("focal_actors_desc")
                     if ga.get("prediction_next_4s"):
                         seg["prediction_next_4s"] = ga["prediction_next_4s"]
+                    if ga.get("degraded_action"):
+                        seg["degraded_action"] = ga["degraded_action"]
+                    if ga.get("degraded_narrative"):
+                        seg["degraded_narrative"] = ga["degraded_narrative"]
 
                     # Nhận diện Vũ khí / Hung khí từ Gemini Vision
                     if has_w_det:

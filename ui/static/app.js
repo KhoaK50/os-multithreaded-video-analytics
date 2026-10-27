@@ -1200,43 +1200,43 @@ function humanizeBehaviorRecord(item, idx = 0) {
         cleanPred = preds[v];
     } else if (pLow.includes("cúi") || pLow.includes("nghiêng") || pLow.includes("gục")) {
         const descs = [
-            "Chủ thể đang hạ thấp trọng tâm đầu và hướng sát về phía trước để tập trung quan sát gần; nếu giữ lâu dễ gây mỏi cơ vùng gáy.",
-            "Chủ thể có xu hướng chồm người và nghiêng vùng cổ khá sâu khi thao tác, bắt đầu xuất hiện dấu hiệu lệch tư thế công thái học.",
-            "Ghi nhận biểu hiện cúi người làm việc liên tục ở cự ly gần, phần vai hơi thu lại tạo áp lực lên vùng cổ – vai."
+            "Chủ thể hạ thấp đầu và chồm nhẹ thân trên về phía trước để quan sát kỹ nội dung ở cự ly gần, hai tay đặt ổn định trên mặt bàn.",
+            "Chủ thể nghiêng nhẹ đầu và hướng ánh nhìn tập trung vào khu vực trung tâm màn hình, giữ nguyên vị trí ngồi tại bàn.",
+            "Chủ thể cúi đầu nhìn xuống khu vực bàn làm việc và kết hợp thao tác tay nhẹ nhàng tại chỗ."
         ];
         const preds = [
-            "Chủ thể có thể tiếp tục chăm chú nhìn gần hoặc sớm ngẩng đầu lên để đỡ mỏi cổ.",
-            "Nếu giữ tư thế cúi này thêm vài nhịp, cảm giác căng mỏi vai gáy sẽ tăng lên.",
-            "Dự kiến chủ thể sẽ sớm điều chỉnh lại lưng thẳng sau khi xem xong nội dung."
+            "Chủ thể tiếp tục quan sát gần hoặc sớm nâng đầu về lại vị trí thẳng.",
+            "Tiếp tục theo dõi nội dung trước mặt trong vài giây tới.",
+            "Dự kiến chủ thể sẽ sớm ngồi thẳng lưng lại sau khi xem xong nội dung."
         ];
         cleanDesc = descs[v];
         cleanPred = preds[v];
     } else if (pLow.includes("giơ tay") || pLow.includes("vẫy") || pLow.includes("chống cằm")) {
         const descs = [
-            "Chủ thể vừa thực hiện cử chỉ đưa tay lên tương tác chủ động, biểu hiện trạng thái tỉnh táo và linh hoạt.",
-            "Ghi nhận động tác tay rõ rệt trong quá trình sinh hoạt, cho thấy chủ thể đang thao tác hoặc ra hiệu trực tiếp.",
-            "Chủ thể kết hợp cử động tay tự nhiên trong lúc theo dõi màn hình, nhịp độ hoạt động diễn ra năng động."
+            "Chủ thể nhấc cánh tay đưa lên cao thực hiện cử chỉ tương tác rõ rệt trước ống kính rồi từ từ hạ tay xuống.",
+            "Chủ thể đưa bàn tay lên ngang tầm vai để ra hiệu trực tiếp, ánh mắt hướng thẳng về phía trước.",
+            "Chủ thể thực hiện cử động tay linh hoạt trong lúc theo dõi màn hình, sau đó đưa tay trở về mặt bàn."
         ];
         const preds = [
-            "Chủ thể hoàn tất thao tác tay và quay về tư thế làm việc tập trung.",
-            "Tiếp tục tương tác linh hoạt tại vị trí trong vài giây tới.",
-            "Sau cử chỉ tay, chủ thể sẽ ổn định lại tư thế ngồi."
+            "Chủ thể hoàn tất cử chỉ tay và quay về tư thế ngồi tập trung.",
+            "Tiếp tục tương tác tại vị trí trong vài giây tới.",
+            "Sau cử chỉ tay, chủ thể ổn định lại tư thế ngồi."
         ];
         cleanDesc = descs[v];
         cleanPred = preds[v];
     } else {
         if (hadLeanTransition) {
             const descs = [
-                "Sau vài nhịp cúi nhìn gần, chủ thể đã chủ động điều chỉnh lại tư thế ngồi ngay ngắn để giải tỏa áp lực cho vùng cổ và lưng.",
-                "Chủ thể vừa lấy lại thăng bằng cơ thể, thẳng lưng và hướng ánh nhìn tập trung ổn định về phía trước.",
-                "Tác phong làm việc đã trở lại trạng thái cân bằng, chủ thể ngồi điềm tĩnh và tập trung theo dõi công việc."
+                "Sau vài nhịp cúi nhìn gần, chủ thể đã nâng đầu và ngồi thẳng lưng trở lại vị trí ngay ngắn trước màn hình.",
+                "Chủ thể vừa điều chỉnh lại thân trên thẳng đứng, hướng ánh nhìn tập trung ổn định về phía trước.",
+                "Chủ thể trở lại tư thế ngồi cân bằng trên ghế và tiếp tục theo dõi công việc."
             ];
             cleanDesc = descs[v];
         } else {
             const descs = [
-                "Chủ thể duy trì phong thái làm việc tập trung và điềm tĩnh, phần thân trên giữ thăng bằng thoải mái giúp làm việc lâu mà không mỏi.",
-                "Trạng thái sinh hoạt tại chỗ diễn ra tự nhiên và ổn định; chủ thể đang chú tâm quan sát phía trước với tư thế ngồi thư thái.",
-                "Nhịp độ làm việc duy trì đều đặn, cơ thể thả lỏng vừa phải và giữ được sự tập trung tốt trong không gian yên tĩnh."
+                "Chủ thể ngồi thẳng lưng ngay ngắn trên ghế, ánh mắt hướng về phía trước và hai tay đặt tự nhiên trên mặt bàn.",
+                "Chủ thể duy trì tư thế ngồi ổn định tại chỗ, tập trung quan sát màn hình với nhịp độ sinh hoạt điềm tĩnh.",
+                "Chủ thể giữ nguyên vị trí ngồi cân bằng trước bàn làm việc, hai vai mở tự nhiên và thao tác nhẹ nhàng."
             ];
             cleanDesc = descs[v];
         }
@@ -3541,12 +3541,19 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
     if (d2 && parseInt(d2.value, 10) !== delayVal) d2.value = delayVal;
     if (p2 && p2.value !== policyVal) p2.value = policyVal;
 
+    const c3 = document.getElementById("pf-z-cap-slider");
+    const d3 = document.getElementById("pf-z-delay-slider");
+    const p3 = document.getElementById("pf-z-policy-select");
+    if (c3 && parseInt(c3.value, 10) !== capVal) c3.value = capVal;
+    if (d3 && parseInt(d3.value, 10) !== delayVal) d3.value = delayVal;
+    if (p3 && p3.value !== policyVal) p3.value = policyVal;
+
     const capPct = Math.max(0, Math.min(100, ((capVal - 1) / 127) * 100));
     const delayPct = Math.max(0, Math.min(100, (delayVal / 500) * 100));
-    [c1, c2].forEach(el => {
+    [c1, c2, c3].forEach(el => {
         if (el) el.style.setProperty("--slider-pct", `${capPct.toFixed(1)}%`);
     });
-    [d1, d2].forEach(el => {
+    [d1, d2, d3].forEach(el => {
         if (el) el.style.setProperty("--slider-pct", `${delayPct.toFixed(1)}%`);
     });
 
@@ -3566,17 +3573,23 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
     }
 
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
+    const cpuSharePct = delayVal <= 0 ? 100 : Math.max(5, Math.round((100 * 25) / (25 + delayVal)));
+    const cpuDelayLabel = delayVal <= 0 ? "100% CPU (0 ms)" : `${cpuSharePct}% CPU (+${delayVal} ms)`;
     const polHint = policyVal === "drop_oldest"
         ? "Bám sát hiện tại · Nhảy cóc nếu trễ"
         : "Xếp hàng tuần tự · Trễ pha quá khứ";
 
     safeSetText("os-lab-cap-display", `${capVal} khung · ${ramMb} MB`);
-    safeSetText("os-lab-delay-display", `${delayVal} ms`);
+    safeSetText("os-lab-delay-display", cpuDelayLabel);
     safeSetText("os-lab-policy-display", polHint);
 
     safeSetText("vid-z-cap-val", `${capVal} khung · ${ramMb} MB`);
-    safeSetText("vid-z-delay-val", `${delayVal} ms`);
+    safeSetText("vid-z-delay-val", cpuDelayLabel);
     safeSetText("vid-z-policy-hint", polHint);
+
+    safeSetText("pf-z-cap-val", `${capVal} khung · ${ramMb} MB`);
+    safeSetText("pf-z-delay-val", cpuDelayLabel);
+    safeSetText("pf-z-policy-hint", polHint);
 }
 
 function applySplitResourcePreset(capVal, delayVal, policyVal) {
@@ -3600,15 +3613,29 @@ function selectPreflightZPreset(presetKey, capVal, delayVal, policyVal) {
     applySplitResourcePreset(capVal, delayVal, policyVal);
 }
 
+function onPreflightZControlInput() {
+    const capSlider = document.getElementById("pf-z-cap-slider");
+    const delaySlider = document.getElementById("pf-z-delay-slider");
+    const policySelect = document.getElementById("pf-z-policy-select");
+    const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
+    const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+    const policyVal = policySelect ? policySelect.value : "drop_oldest";
+
+    document.querySelectorAll(".preflight-z-btn").forEach(btn => btn.classList.remove("active"));
+    syncAllOSLabControls(capVal, delayVal, policyVal);
+    updateDualModeEvaluation(capVal, delayVal, policyVal);
+    commitOSLabConfig(false);
+}
+
 function syncPreflightZInputs(showNotification = false) {
-    const pfBuf = document.getElementById("pf-z-buf");
-    const pfDelay = document.getElementById("pf-z-delay");
-    const pfPolicy = document.getElementById("pf-z-policy");
+    const pfBuf = document.getElementById("pf-z-buf") || document.getElementById("pf-z-cap-slider");
+    const pfDelay = document.getElementById("pf-z-delay") || document.getElementById("pf-z-delay-slider");
+    const pfPolicy = document.getElementById("pf-z-policy") || document.getElementById("pf-z-policy-select");
     if (!pfBuf || !pfDelay || !pfPolicy) return;
 
     const capVal = parseInt(pfBuf.value, 10) || 4;
-    const delayVal = parseInt(pfDelay.value, 10) || 25;
-    const policyVal = pfPolicy.value || "block_fifo";
+    const delayVal = parseInt(pfDelay.value, 10) || 0;
+    const policyVal = pfPolicy.value || "drop_oldest";
 
     syncAllOSLabControls(capVal, delayVal, policyVal);
     updateDualModeEvaluation(capVal, delayVal, policyVal);
@@ -3852,8 +3879,10 @@ async function runOSLiveBenchmark() {
 async function commitOSLabConfig(triggerBurst = false) {
     const capSlider = document.getElementById("os-lab-cap-slider");
     const delaySlider = document.getElementById("os-lab-delay-slider");
+    const policySelect = document.getElementById("os-lab-policy-select");
     const capVal = capSlider ? parseInt(capSlider.value, 10) : 16;
     const delayVal = delaySlider ? parseInt(delaySlider.value, 10) : 0;
+    const policyVal = policySelect ? policySelect.value : "drop_oldest";
 
     try {
         await fetch("/api/os_lab/config", {
@@ -3862,6 +3891,7 @@ async function commitOSLabConfig(triggerBurst = false) {
             body: JSON.stringify({
                 buffer_capacity: capVal,
                 consumer_delay_ms: delayVal,
+                buffer_policy: policyVal === "block_fifo" ? "fifo" : "drop_oldest",
                 reset_counters: false,
                 trigger_burst: triggerBurst
             })
@@ -5219,8 +5249,25 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
     const v = idx % 3;
 
     if (isDropOldest) {
-        // Chính sách 1 (Ưu tiên khung mới - Drop-Oldest):
-        // Mất các khung chuyển tiếp ở giữa -> AI chỉ nhìn khung rời rạc rồi ĐOÁN MÒ ngây ngô theo đúng bối cảnh tư thế (nằm/ngồi/đứng), bỏ sót cử chỉ nhanh hoặc hiểm họa.
+        // Ưu tiên 1: Nếu mô hình X = Y + Z đã trả về trực tiếp biến dị hành vi trong cùng 1 lần gọi (degraded_light / degraded_heavy)
+        if (sev >= 2 && item.degraded_heavy && item.degraded_heavy.action && item.degraded_heavy.description) {
+            return {
+                sev: "safe",
+                action: item.degraded_heavy.action,
+                desc: item.degraded_heavy.description,
+                pred: item.degraded_heavy.prediction_next_4s || "Duy trì tư thế hiện tại trong 4 giây tới."
+            };
+        }
+        if (sev === 1 && item.degraded_light && item.degraded_light.action && item.degraded_light.description) {
+            return {
+                sev: item.severity === "danger" ? "warning" : "safe",
+                action: item.degraded_light.action,
+                desc: item.degraded_light.description,
+                pred: item.degraded_light.prediction_next_4s || "Tiếp tục giữ nguyên vị trí trong 4 giây tới."
+            };
+        }
+
+        // Ưu tiên 2: Biến dị hành vi cho các bản ghi lịch sử chưa có trường degraded_light/degraded_heavy
         if (curCtx.isLying) {
             if (sev === 1) {
                 const actions = [
@@ -5229,8 +5276,8 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
                     "Nằm tựa đầu cố định trên mặt gối"
                 ];
                 const descs = [
-                    "Chủ thể đang nằm ngửa nghỉ ngơi trên bề mặt phẳng, đầu kê trên gối ổn định; các cử động nhỏ ở bàn tay giữa chu kỳ không xuất hiện rõ.",
-                    "Chủ thể duy trì tư thế nằm nghỉ thoải mái, đầu và vai giữ nguyên vị trí trên gối mà chưa ghi nhận chuyển động xoay mình đáng kể.",
+                    "Chủ thể đang nằm ngửa nghỉ ngơi trên bề mặt phẳng, đầu kê trên gối ổn định và hai tay đặt nhẹ dọc thân người.",
+                    "Chủ thể duy trì tư thế nằm nghỉ thoải mái, đầu và vai giữ nguyên vị trí trên gối.",
                     "Chủ thể nằm thả lỏng thân trên trên đệm nghỉ, nét mặt bình thản và hai vai giữ nguyên độ mở tự nhiên."
                 ];
                 return {
@@ -5247,9 +5294,9 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
                     "Nằm nghiêng nhẹ thư giãn vùng cổ"
                 ];
                 const descs = [
-                    "Chủ thể có vẻ chỉ đang xoay nhẹ đầu để tìm vị trí kê gối thoải mái hơn, hai tay buông xuôi tự nhiên dọc thân người và không có cử chỉ ra hiệu nào.",
-                    "Chủ thể đang nằm yên nghỉ ngơi với hai tay đặt cố định bên người; toàn bộ động tác giơ tay hay xoay vai nhanh ở giữa chu kỳ đều bị lướt qua.",
-                    "Thân người chủ thể nằm nghiêng nhẹ trên mặt phẳng nghỉ ngơi như đang chuẩn bị ngủ, không thấy biểu hiện cử động tay hay căng cơ."
+                    "Chủ thể chỉ hơi xoay nhẹ đầu để tìm vị trí kê gối thoải mái hơn, hai tay buông xuôi tự nhiên dọc thân người.",
+                    "Chủ thể đang nằm yên nghỉ ngơi với hai tay đặt cố định bên người, không thấy cử chỉ giơ tay hay vẫy tay.",
+                    "Thân người chủ thể nằm nghiêng nhẹ trên mặt phẳng nghỉ ngơi như đang chuẩn bị ngủ, hai tay đặt yên tại chỗ."
                 ];
                 return {
                     sev: "safe",
@@ -5258,22 +5305,58 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
                     pred: "Duy trì trạng thái nằm thư giãn tại chỗ trong 4 giây tới."
                 };
             }
-            // Mức 3 (Cực hạn - Đoán mò hoàn toàn tĩnh khi đang nằm)
             const actions = [
                 "Đang nằm ngủ say bất động trên gối",
                 "Nằm nghỉ tĩnh hoàn toàn tại chỗ",
                 "Nằm yên nhắm mắt thư giãn sâu"
             ];
             const descs = [
-                "Chủ thể đang nằm ngủ say bất động trên gối, toàn thân thả lỏng hoàn toàn và không ghi nhận bất kỳ cử động tay, đầu hay ánh mắt nào.",
-                "Chủ thể nằm bất động tại một vị trí cố định trên giường nghỉ, hoàn toàn không thấy các động tác vẫy tay hay thay đổi tư thế vừa diễn ra.",
-                "Chủ thể giữ nguyên trạng thái nằm nghỉ tĩnh lặng tuyệt đối, hai tay buông nghỉ và không phát sinh bất kỳ tương tác nào trước ống kính."
+                "Chủ thể đang nằm ngủ say bất động trên gối, toàn thân thả lỏng hoàn toàn và hai tay đặt yên dọc thân người.",
+                "Chủ thể nằm bất động tại một vị trí cố định trên giường nghỉ, giữ nguyên tư thế tĩnh lặng.",
+                "Chủ thể giữ nguyên trạng thái nằm nghỉ tĩnh lặng tuyệt đối, hai tay buông nghỉ tự nhiên."
             ];
             return {
                 sev: "safe",
                 action: actions[v],
                 desc: descs[v],
                 pred: "Không có chuyển động mới, chủ thể tiếp tục nằm ngủ tĩnh."
+            };
+        }
+
+        if (curCtx.isGesture) {
+            if (sev === 1) {
+                const actions = [
+                    "Giơ tay lên ngang vai rồi giữ yên",
+                    "Đưa bàn tay lên trước ngực rồi dừng lại",
+                    "Nhấc nhẹ bàn tay lên rồi hạ xuống"
+                ];
+                const descs = [
+                    "Chủ thể đưa bàn tay lên ngang tầm vai giữ yên một nhịp ngắn rồi từ từ hạ tay xuống mặt bàn, không thấy nhịp vẫy cổ tay qua lại.",
+                    "Chủ thể nhấc cẳng tay lên phía trước ngực trong chốc lát rồi đặt tay trở lại vị trí cũ trên bàn.",
+                    "Chủ thể hơi nâng bàn tay lên khỏi mặt bàn một khoảng ngắn rồi thu tay về ngay."
+                ];
+                return {
+                    sev: "safe",
+                    action: actions[v],
+                    desc: descs[v],
+                    pred: "Chủ thể đặt tay lại trên mặt bàn và tiếp tục quan sát."
+                };
+            }
+            const actions = [
+                "Chỉ hơi nhấc nhẹ cánh tay rồi bỏ xuống liền",
+                "Hơi nhích nhẹ khuỷu tay trên mặt bàn",
+                "Đặt lại bàn tay lên mặt bàn rồi ngồi yên"
+            ];
+            const descs = [
+                "Chủ thể chỉ hơi nhấc nhẹ cánh tay lên khỏi mặt bàn một chút rồi bỏ xuống liền, hai vai và thân trên giữ nguyên vị trí tĩnh.",
+                "Chủ thể chỉ hơi dịch chuyển nhẹ khuỷu tay trên mặt bàn rồi lập tức để tay nghỉ yên tại chỗ.",
+                "Chủ thể vừa chạm nhẹ bàn tay xuống mặt bàn và ngồi thẳng lưng nhìn về phía trước, không thấy cử chỉ giơ cao hay vẫy tay."
+            ];
+            return {
+                sev: "safe",
+                action: actions[v],
+                desc: descs[v],
+                pred: "Chủ thể tiếp tục ngồi yên và giữ hai tay trên bàn."
             };
         }
 
@@ -5288,7 +5371,7 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
             };
         }
 
-        // Trường hợp chủ thể đang ngồi / đứng / nghiêng / giơ tay tại bàn làm việc
+        // Trường hợp chủ thể đang ngồi / đứng / nghiêng tại bàn làm việc
         if (sev === 1) {
             if (isRisk || curCtx.isLeaning) {
                 const actions = [
@@ -5297,9 +5380,9 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
                     "Chồm nhẹ người xem giấy tờ trước mặt"
                 ];
                 const descs = [
-                    "Chủ thể hơi nghiêng đầu hướng xuống mặt bàn như đang đọc tài liệu giấy, hai vai giữ nguyên và chưa thấy biểu hiện căng cứng vùng cổ.",
-                    "Chủ thể nghiêng nhẹ đầu sang một bên để nhìn kỹ nội dung trên màn hình, góc lưng thay đổi ít và vẫn trong ngưỡng sinh hoạt bình thường.",
-                    "Chủ thể hơi chồm nhẹ thân trên về phía bàn làm việc để xem tài liệu, động tác diễn ra chậm và chưa tạo áp lực lớn lên cột sống."
+                    "Chủ thể hơi nghiêng đầu hướng xuống mặt bàn như đang đọc tài liệu giấy, hai vai giữ nguyên vị trí cân bằng.",
+                    "Chủ thể nghiêng nhẹ đầu sang một bên để nhìn kỹ nội dung trên màn hình rồi giữ nguyên tư thế.",
+                    "Chủ thể hơi chồm nhẹ thân trên về phía bàn làm việc để xem tài liệu với nhịp độ chậm rãi."
                 ];
                 return {
                     sev: "warning",
@@ -5314,9 +5397,9 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
                 "Ngồi thẳng lưng giữ nguyên vị trí"
             ];
             const descs = [
-                "Chủ thể ngồi yên trên ghế làm việc, hai cẳng tay đặt cố định trên bàn và hầu như không thay đổi góc lưng (bỏ qua các cử chỉ tay ngắn).",
-                "Chủ thể tập trung nhìn màn hình ở tư thế tĩnh, không ghi nhận các chuyển động nhỏ của bàn tay hay ngón tay trong chu kỳ.",
-                "Chủ thể giữ nguyên khung xương thẳng trên ghế, các thao tác phụ nhanh giữa hai khoảnh khắc không xuất hiện trên ảnh thu nhận."
+                "Chủ thể ngồi yên trên ghế làm việc, hai cẳng tay đặt cố định trên bàn và giữ thẳng lưng.",
+                "Chủ thể tập trung nhìn màn hình ở tư thế tĩnh, hai bàn tay đặt nghỉ nhẹ nhàng trên mặt bàn.",
+                "Chủ thể giữ nguyên tư thế ngồi thẳng trên ghế và chăm chú theo dõi nội dung phía trước."
             ];
             return {
                 sev: "safe",
@@ -5329,20 +5412,20 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
         if (sev === 2) {
             if (isRisk || curCtx.isLeaning) {
                 const actions = [
-                    "Đang vươn vai thư giãn cơ lưng tại chỗ",
+                    "Đang vươn vai thư giãn tại chỗ",
                     "Đang cúi nhẹ nhặt bút trên mặt bàn",
                     "Đang xoay vai thả lỏng giữa giờ làm việc"
                 ];
                 const descs = [
-                    "Chủ thể nghiêng thân trên và mở rộng hai vai giống như đang tập động tác vươn vai thư giãn cơ lưng giữa giờ, không có dấu hiệu mệt mỏi hay gục đầu.",
-                    "Chủ thể chủ động cúi nhẹ người xuống mặt bàn để lấy đồ dùng văn phòng phẩm rồi chuẩn bị ngồi thẳng dậy, hoàn toàn bình thường.",
-                    "Chủ thể đang thực hiện động tác xoay nhẹ khớp vai để giảm mỏi cơ khi ngồi lâu, tư thế hoàn toàn chủ động và an toàn."
+                    "Chủ thể hơi nghiêng thân trên và mở rộng hai vai như đang vươn vai thư giãn nhẹ nhàng giữa giờ.",
+                    "Chủ thể chủ động cúi nhẹ người xuống mặt bàn để lấy đồ dùng văn phòng phẩm rồi chuẩn bị ngồi thẳng dậy.",
+                    "Chủ thể thực hiện động tác xoay nhẹ khớp vai tại chỗ rồi lập tức ngồi ngay ngắn trở lại."
                 ];
                 return {
                     sev: "safe",
                     action: actions[v],
                     desc: descs[v],
-                    pred: "Chủ thể hoàn tất động tác thư giãn và làm việc bình thường."
+                    pred: "Chủ thể hoàn tất động tác và tiếp tục làm việc bình thường."
                 };
             }
             const actions = [
@@ -5351,19 +5434,19 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
                 "Đang nghiêng người lấy cốc nước trên bàn"
             ];
             const descs = [
-                "Đầu và vai chủ thể xuất hiện ở vị trí mới trên ghế; có vẻ chủ thể đang với tay tìm kiếm đồ dùng cá nhân ở góc bàn làm việc.",
-                "Vị trí thân người dịch chuyển đột ngột giữa hai khung hình rời rạc, giống như chủ thể vừa xoay ghế để đổi tư thế ngồi.",
-                "Chủ thể đổi hướng vai sang bên cạnh như đang với tay lấy đồ dùng trên bàn mà không thấy rõ quá trình chuyển động trung gian."
+                "Chủ thể hơi xoay vai sang bên cạnh như đang với tay tìm kiếm đồ dùng cá nhân ở góc bàn làm việc.",
+                "Chủ thể vừa dịch chuyển nhẹ vị trí ngồi trên ghế để đổi tư thế thoải mái hơn.",
+                "Chủ thể nghiêng nhẹ vai sang bên cạnh để lấy đồ dùng trên mặt bàn rồi quay lại nhìn màn hình."
             ];
             return {
-                sev: "warning",
+                sev: "safe",
                 action: actions[v],
                 desc: descs[v],
                 pred: "Chủ thể lấy xong đồ vật và quay lại hướng màn hình chính."
             };
         }
 
-        // Mức 3 (Cực hạn - Đoán mò hoàn toàn sai lệch khi đang ngồi/nghiêng)
+        // Mức 3 (Cực hạn - Mất toàn bộ đỉnh hành vi giữa chu kỳ)
         if (isRisk || curCtx.isLeaning) {
             const actions = [
                 "Đang ngả lưng nghỉ ngơi thoải mái trên ghế",
@@ -5371,9 +5454,9 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
                 "Đang thả lỏng toàn thân nghỉ giải lao"
             ];
             const descs = [
-                "Chủ thể đang thả lỏng toàn thân và ngả lưng nghỉ ngơi thoải mái trên ghế, hoàn toàn không có dấu hiệu mỏi cổ hay tư thế làm việc nguy hiểm.",
-                "Chủ thể tựa nhẹ người vào ghế để nghỉ giải lao ngắn tại chỗ, nét mặt và khung vai hoàn toàn thư thái, an toàn tuyệt đối.",
-                "Chủ thể đang ở trạng thái nghỉ ngơi tự nhiên tại bàn làm việc, không phát hiện bất kỳ hiện tượng gục đầu hay sai lệch cột sống nào."
+                "Chủ thể đang thả lỏng toàn thân và ngả lưng nghỉ ngơi thoải mái trên ghế, hai tay đặt yên trên tay vịn.",
+                "Chủ thể tựa nhẹ người vào ghế để nghỉ giải lao ngắn tại chỗ, nét mặt và hai vai hoàn toàn thư thái.",
+                "Chủ thể đang ở trạng thái ngồi nghỉ tự nhiên tại bàn làm việc, giữ nguyên vị trí tĩnh lặng."
             ];
             return {
                 sev: "safe",
@@ -5385,12 +5468,12 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
         const actions = [
             "Ngồi bất động hoàn toàn tại vị trí",
             "Ngồi tĩnh lặng không thao tác tay",
-            "Giữ nguyên tư thế tĩnh như tượng"
+            "Giữ nguyên tư thế ngồi tĩnh tại bàn"
         ];
         const descs = [
-            "Chủ thể ngồi bất động tại vị trí ghế làm việc, hai tay đặt yên và không thực hiện bất kỳ thao tác gõ phím hay cử chỉ nào.",
-            "Chủ thể giữ nguyên một tư thế cố định suốt chu kỳ, hoàn toàn không ghi nhận chuyển động đầu, mắt hay cánh tay.",
-            "Không gian làm việc tĩnh lặng, chủ thể ngồi yên một chỗ mà không phát sinh bất kỳ cử động tương tác nào."
+            "Chủ thể ngồi bất động tại vị trí ghế làm việc, hai tay đặt yên trên bàn và mắt nhìn thẳng.",
+            "Chủ thể giữ nguyên một tư thế ngồi cố định, hai vai cân bằng và không có cử động tay.",
+            "Chủ thể ngồi yên một chỗ trước màn hình, giữ nguyên tư thế tĩnh lặng."
         ];
         return {
             sev: "safe",
@@ -5401,7 +5484,7 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
     }
 
     // Chính sách 2 (Giữ tuần tự FIFO - Block-FIFO):
-    // Hàng đợi ứ đọng ảnh cũ -> AI điềm nhiên phân tích khung hình lịch sử từ nhiều giây trước (laggedItem), tạo độ trễ thời gian thực rõ rệt so với Cột Trái!
+    // Hàng đợi ứ đọng ảnh cũ -> AI phân tích khung hình lịch sử từ nhiều giây trước (laggedItem)
     const hasDistinctLag = Boolean(laggedItem && laggedItem !== item && laggedItem.action);
     const refCtx = hasDistinctLag ? lagCtx : curCtx;
 
@@ -5417,15 +5500,15 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
         if (refCtx.isLying) {
             return {
                 sev: "safe",
-                action: "Nằm thẳng đầu trên gối từ nhịp trước",
-                desc: "Chủ thể đang nằm yên trên gối ở tư thế của nhịp quan sát trước đó, hai tay đặt xuôi và chưa bắt đầu cử động mới.",
+                action: "Nằm thẳng đầu trên gối nghỉ ngơi",
+                desc: "Chủ thể đang nằm yên trên gối, hai tay đặt xuôi dọc thân người và giữ nguyên tư thế nghỉ ngơi.",
                 pred: "Tiếp tục giữ tư thế nằm nghỉ ổn định."
             };
         }
         return {
             sev: "safe",
-            action: "Ngồi thẳng lưng nhìn màn hình từ nhịp trước",
-            desc: "Chủ thể đang ngồi ngay ngắn trước màn hình ở tư thế của vài giây trước, hai tay đặt nhẹ trên bàn và chưa thay đổi góc nghiêng.",
+            action: "Ngồi thẳng lưng nhìn màn hình",
+            desc: "Chủ thể đang ngồi ngay ngắn trước màn hình, hai tay đặt nhẹ trên mặt bàn và ánh mắt hướng thẳng về phía trước.",
             pred: "Duy trì tư thế ngồi thẳng lưng ổn định trong 4 giây tới."
         };
     }
@@ -5433,33 +5516,33 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
     if (sev === 2) {
         if (refCtx.isLying) {
             const actions = [
-                "Nằm ngửa tĩnh trên gối từ các nhịp trước",
-                "Giữ nguyên tư thế nằm nghỉ lúc trước",
-                "Nằm kê đầu cố định trên gối chưa đổi bên"
+                "Nằm ngửa tĩnh trên gối",
+                "Giữ nguyên tư thế nằm nghỉ yên tĩnh",
+                "Nằm kê đầu cố định trên gối"
             ];
             const descs = [
                 hasDistinctLag && laggedItem.description
-                    ? `${laggedItem.description} (Hình ảnh thu nhận vẫn đang ở tư thế nằm của thời điểm trước, chưa xuất hiện cử động giơ tay hay xoay người hiện tại).`
-                    : "Chủ thể vẫn đang nằm ngửa yên lặng trên gối như lúc trước, đầu và hai vai giữ nguyên vị trí cũ và chưa bắt đầu xoay người hay giơ tay.",
-                "Chủ thể duy trì tư thế nằm nghỉ ngơi tĩnh từ chu kỳ trước, hai tay vẫn đặt dọc thân người và chưa ghi nhận động tác mới.",
-                "Trên khung hình đang xử lý, chủ thể vẫn nằm kê đầu cố định trên mặt gối ở vị trí cũ, chưa chuyển sang tư thế hiện tại."
+                    ? laggedItem.description
+                    : "Chủ thể đang nằm ngửa yên lặng trên gối, đầu và hai vai giữ nguyên vị trí ổn định.",
+                "Chủ thể duy trì tư thế nằm nghỉ ngơi tĩnh, hai tay đặt dọc thân người trên mặt phẳng.",
+                "Chủ thể nằm kê đầu cố định trên mặt gối, toàn thân thả lỏng nhẹ nhàng."
             ];
             return {
                 sev: "safe",
                 action: hasDistinctLag ? laggedItem.action : actions[v],
                 desc: descs[v],
-                pred: "Trạng thái nằm nghỉ cũ tiếp tục được duy trì."
+                pred: "Trạng thái nằm nghỉ tiếp tục được duy trì."
             };
         }
         const actions = [
-            "Ngồi thẳng lưng chuẩn mực từ nhịp trước",
-            "Giữ tư thế ngồi yên lúc chưa cúi người",
-            "Ngồi làm việc ngay ngắn từ chu kỳ trước"
+            "Ngồi thẳng lưng chuẩn mực tại bàn",
+            "Giữ tư thế ngồi yên nhìn màn hình",
+            "Ngồi làm việc ngay ngắn trên ghế"
         ];
         const descs = [
-            "Chủ thể vẫn đang ngồi yên lặng ở tư thế chuẩn mực lúc trước, lưng tựa nhẹ vào ghế và mắt hướng thẳng về phía trước, chưa xuất hiện cử động cúi người hay nghiêng cổ.",
-            "Chủ thể duy trì tư thế ngồi ngay ngắn từ thời điểm trước đó, hai vai cân bằng và chưa thấy bất kỳ thay đổi đột ngột nào.",
-            "Trên khung hình đang xử lý, chủ thể vẫn ngồi ổn định ở vị trí ban đầu trước khi thực hiện thao tác mới."
+            "Chủ thể đang ngồi yên lặng ở tư thế thẳng lưng, tựa nhẹ vào ghế và mắt hướng thẳng về phía trước.",
+            "Chủ thể duy trì tư thế ngồi ngay ngắn trước bàn làm việc, hai vai cân bằng và hai tay đặt trên bàn.",
+            "Chủ thể ngồi ổn định ở vị trí làm việc, tập trung quan sát màn hình phía trước."
         ];
         return {
             sev: "safe",
@@ -5472,14 +5555,14 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
     // Mức 3 (FIFO đóng băng sâu ở các khung hình quá khứ đầu tiên trong hàng đợi N=64)
     if (refCtx.isLying || curCtx.isLying) {
         const actions = [
-            "Nằm nghỉ tĩnh từ đầu phiên quan sát",
-            "Giữ nguyên tư thế nằm trên gối lúc ban đầu",
-            "Nằm yên tại vị trí xuất phát ban đầu"
+            "Nằm nghỉ tĩnh trên mặt gối",
+            "Giữ nguyên tư thế nằm ngửa trên gối",
+            "Nằm yên tại vị trí nghỉ ngơi"
         ];
         const descs = [
-            "Chủ thể vẫn đang ở tư thế nằm kê đầu trên gối từ những giây đầu tiên của phiên quan sát, hai tay đặt yên và chưa bắt đầu bất kỳ cử động xoay người hay giơ tay nào.",
-            "Khung hình ghi nhận chủ thể nằm ngửa tĩnh lặng như lúc mới bật camera, đầu đặt cố định trên gối và chưa phát sinh chuyển động mới.",
-            "Chủ thể giữ nguyên vị trí nằm nghỉ ban đầu trên đệm, hoàn toàn chưa xuất hiện các động tác thay đổi tư thế vừa diễn ra ở hiện tại."
+            "Chủ thể đang ở tư thế nằm kê đầu trên gối, hai tay đặt yên dọc thân người và giữ nguyên trạng thái tĩnh.",
+            "Chủ thể nằm ngửa tĩnh lặng trên đệm nghỉ, đầu đặt cố định trên gối và hai vai thả lỏng.",
+            "Chủ thể giữ nguyên vị trí nằm nghỉ trên đệm, không có cử động tay hay xoay đầu."
         ];
         return {
             sev: "safe",
@@ -5490,14 +5573,14 @@ function buildDegradedLiveNarrative(item, laggedItem, sev, st, idx = 0) {
     }
 
     const actions = [
-        "Ngồi nghỉ tĩnh từ thời điểm ban đầu",
-        "Giữ nguyên tư thế ngồi lúc mới vào phiên",
-        "Ngồi yên tại vị trí xuất phát ban đầu"
+        "Ngồi nghỉ tĩnh trước màn hình",
+        "Giữ nguyên tư thế ngồi thẳng trên ghế",
+        "Ngồi yên tại bàn làm việc"
     ];
     const descs = [
-        "Chủ thể giữ nguyên tư thế ngồi thẳng tĩnh lặng từ lúc mới bắt đầu phiên quan sát, hai tay đặt yên và chưa bắt đầu bất kỳ chuyển động mới nào.",
-        "Khung hình vẫn đang ở thời điểm đầu phiên khi chủ thể vừa ngồi ổn định vào ghế, hoàn toàn chưa có cử động nghiêng người hay vẫy tay.",
-        "Chủ thể ngồi ngay ngắn tại vị trí xuất phát từ những giây đầu tiên, chưa xuất hiện các diễn biến hành vi mới."
+        "Chủ thể giữ nguyên tư thế ngồi thẳng tĩnh lặng trên ghế, hai tay đặt yên trên mặt bàn.",
+        "Chủ thể ngồi ổn định vào ghế làm việc, ánh mắt hướng về phía trước và hai tay để nghỉ tự nhiên.",
+        "Chủ thể ngồi ngay ngắn tại vị trí bàn làm việc, giữ nguyên tư thế thẳng đứng."
     ];
     return {
         sev: "safe",
@@ -5512,11 +5595,12 @@ let lastLiveParallelTableSig = "";
 function updateLiveParallelReportsAndLogs() {
     const st = osBranchZState;
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
+    const cpuSharePct = st.delay <= 0 ? 100 : Math.max(5, Math.round((100 * 25) / (25 + st.delay)));
     const polText = st.policy === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)";
     const sev = st.severityTier || 0;
     const isOptimal = (sev === 0);
 
-    safeSetText("live-split-z-config-text", `N = ${st.cap} · ${ramMb} MB · ${st.delay} ms · ${polText}`);
+    safeSetText("live-split-z-config-text", `N = ${st.cap} · ${ramMb} MB · CPU ${cpuSharePct}% (+${st.delay}ms) · ${polText}`);
     safeSetText("live-split-z-fps", `${st.zFps} FPS`);
     safeSetText("live-split-z-lat", `~${st.zLatencyMs} ms`);
     safeSetText("live-split-z-drop", `${st.zDropPct}%`);
@@ -5670,7 +5754,9 @@ function updateLiveParallelReportsAndLogs() {
 
         const badgeClass = narr.sev === "danger" ? "badge-danger" : (narr.sev === "warning" ? "badge-warning" : "badge-safe");
         const isDropOldest = !st || st.policy === "drop_oldest";
-        const snapUrl = isDropOldest ? (item.snapshot_url || laggedItem.snapshot_url) : (laggedItem.snapshot_url || item.snapshot_url);
+        const snapUrl = isDropOldest
+            ? ((sev >= 2 && item.degraded_snapshot_url) ? item.degraded_snapshot_url : (item.snapshot_url || laggedItem.snapshot_url))
+            : (laggedItem.degraded_snapshot_url || laggedItem.snapshot_url || item.snapshot_url);
         const thumbStyle = sev === 3
             ? "filter: blur(1.6px) contrast(0.82) saturate(0.5); border: 1px solid var(--accent-crimson);"
             : (sev === 2 ? "filter: contrast(0.9) saturate(0.8); border: 1px solid var(--accent-amber);" : "");
@@ -5799,11 +5885,12 @@ function exitLiveParallelSplit() {
 function populateVideoParallelSplitView() {
     const st = osBranchZState;
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
+    const cpuSharePct = st.delay <= 0 ? 100 : Math.max(5, Math.round((100 * 25) / (25 + st.delay)));
     const polText = st.policy === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)";
     const sev = st.severityTier || 0;
     const isOptimal = (sev === 0);
 
-    safeSetText("split-vid-z-config-text", `N = ${st.cap} · ${ramMb} MB · ${st.delay} ms · ${polText}`);
+    safeSetText("split-vid-z-config-text", `N = ${st.cap} · ${ramMb} MB · CPU ${cpuSharePct}% (+${st.delay}ms) · ${polText}`);
     safeSetText("split-vid-z-fps", `${st.zFps} FPS`);
     safeSetText("split-vid-z-drop", `${st.zDropPct}%`);
     safeSetText("split-vid-z-ram", `${ramMb} MB`);
@@ -6008,11 +6095,11 @@ function populateVideoParallelSplitView() {
                 const wrongScore = isDropOldest ? 1.8 : 1.5;
                 if (wrongScore > survivingMaxScore) survivingMaxScore = wrongScore;
                 const heavyReason = isDropOldest
-                    ? "Các cá nhân đang đứng đối diện và vung tay trò chuyện sôi nổi, sau đó một người tự cúi xuống nhặt đồ vật trên sàn rồi đứng dậy."
+                    ? (s.degraded_narrative || "Các cá nhân đang đứng đối diện và vung tay trò chuyện sôi nổi, sau đó một người tự cúi xuống nhặt đồ vật trên sàn rồi đứng dậy.")
                     : "Mọi người vẫn đang đứng yên ở vị trí ban đầu và giữ khoảng cách trật tự, hoàn toàn chưa di chuyển lại gần nhau.";
-                const wrongSnap = calmFallbackSnap || s.snapshot_url;
+                const wrongSnap = s.degraded_snapshot_url || calmFallbackSnap || s.snapshot_url;
                 const snapHtml = wrongSnap
-                    ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: contrast(0.88) saturate(0.75); border: 1px solid var(--accent-amber);" onclick="openSnapshotModal('${escapeJsArg(wrongSnap)}', '${escapeJsArg(s.segment_id)}', 'Nhận diện hành vi', '${escapeJsArg(s.time_range)}', '${escapeJsArg(heavyReason)}', '')" />`
+                    ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: contrast(0.88) saturate(0.75); border: 1px solid var(--accent-amber);" onclick="openSnapshotModal('${escapeJsArg(wrongSnap)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(s.degraded_action || "Nhận diện hành vi")}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(heavyReason)}', '')" />`
                     : `<span class="mono text-muted">--</span>`;
 
                 return `
@@ -6038,10 +6125,11 @@ function populateVideoParallelSplitView() {
             const degradedScore = Math.max(1.2, Number((numScore * 0.7).toFixed(1)));
             if (degradedScore > survivingMaxScore) survivingMaxScore = degradedScore;
             const normalHeavyText = isDropOldest
-                ? "Hai người đứng trò chuyện nhẹ nhàng tại chỗ, sau đó đổi hướng đứng sang hai bên hành lang."
+                ? (s.degraded_narrative || "Hai người đứng trò chuyện nhẹ nhàng tại chỗ, sau đó đổi hướng đứng sang hai bên hành lang.")
                 : "Các cá nhân vẫn đứng yên quan sát xung quanh tại vị trí xuất phát ban đầu.";
-            const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(normalHeavyText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(normalHeavyText)}', '')" />`
+            const snapUrlZ = s.degraded_snapshot_url || s.snapshot_url;
+            const snapHtml = snapUrlZ
+                ? `<img src="${escapeHtml(snapUrlZ)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(snapUrlZ)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(normalHeavyText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(normalHeavyText)}', '')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -6069,13 +6157,13 @@ function populateVideoParallelSplitView() {
         const collapseScore = 1.0;
         if (collapseScore > survivingMaxScore) survivingMaxScore = collapseScore;
         const collapseReason = isDropOldest
-            ? ((isDanger || isWarn)
+            ? (s.degraded_narrative || ((isDanger || isWarn)
                 ? "Một người đang nằm duỗi lưng nghỉ ngơi thư giãn dưới sàn nhà trong khi những người xung quanh đứng yên quan sát, không có hoạt động va chạm nào."
-                : "Các bóng người đứng bất động tại chỗ như tượng, không ghi nhận bất kỳ hoạt động di chuyển hay giao tiếp nào.")
+                : "Các bóng người đứng bất động tại chỗ như tượng, không ghi nhận bất kỳ hoạt động di chuyển hay giao tiếp nào."))
             : "Khu vực hành lang đang ở trạng thái tĩnh từ những giây đầu tiên; các cá nhân đứng cố định tại vị trí xuất phát và chưa có bất kỳ tương tác nào.";
-        const wrongSnap = calmFallbackSnap || s.snapshot_url;
+        const wrongSnap = s.degraded_snapshot_url || calmFallbackSnap || s.snapshot_url;
         const snapHtml = wrongSnap
-            ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: blur(1.8px) grayscale(0.55) contrast(0.8); border: 1px solid var(--accent-crimson);" onclick="openSnapshotModal('${escapeJsArg(wrongSnap)}', '${escapeJsArg(s.segment_id)}', 'Nhận diện hành vi', '${escapeJsArg(s.time_range)}', '${escapeJsArg(collapseReason)}', '')" />`
+            ? `<img src="${escapeHtml(wrongSnap)}" class="seg-snapshot-thumb" style="filter: blur(1.8px) grayscale(0.55) contrast(0.8); border: 1px solid var(--accent-crimson);" onclick="openSnapshotModal('${escapeJsArg(wrongSnap)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(s.degraded_action || "Nhận diện hành vi")}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(collapseReason)}', '')" />`
             : `<span class="mono text-muted">--</span>`;
 
         return `
@@ -6363,3 +6451,4 @@ window.restartSplitVideoPlayback = restartSplitVideoPlayback;
 window.populateVideoParallelSplitView = populateVideoParallelSplitView;
 window.selectPreflightZPreset = selectPreflightZPreset;
 window.syncPreflightZInputs = syncPreflightZInputs;
+window.onPreflightZControlInput = onPreflightZControlInput;
