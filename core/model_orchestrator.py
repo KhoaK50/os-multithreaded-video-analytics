@@ -766,7 +766,39 @@ class HierarchicalModelOrchestrator:
         self.quota_tracker.record_request(token_count=toks, tier_key=tier_key)
         return self._parse_gemini_json(raw_text)
 
+    @staticmethod
+    def _clean_human_text(text: Any) -> str:
+        """Làm sạch tuyệt đối mọi ký hiệu kỹ thuật (T1, T2, T3-PEAK, T4, pha, khung hình) để giữ văn phong tự nhiên của con người."""
+        if not text:
+            return ""
+        import re
+        s = str(text).strip()
+        s = re.sub(r'\(\s*T[1-4](?:-PEAK)?(?:\s*[,/→\-]\s*T[1-4](?:-PEAK)?)*\s*\)', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\[\s*T[1-4](?:-PEAK)?(?:\s*[,/→\-]\s*T[1-4](?:-PEAK)?)*\s*\]', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(?:ở|tại|từ|đến|sang|qua|pha|mốc|giai đoạn)?\s*T[1-4](?:-PEAK)?\b', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\s{2,}', ' ', s)
+        s = re.sub(r'\s+([,.;:!?])', r'\1', s)
+        s = re.sub(r'^[,.;:\-\s]+', '', s).strip()
+        if s and s[0].islower():
+            s = s[0].upper() + s[1:]
+        return s
+
+    def _sanitize_analysis_payload(self, data: dict) -> dict:
+        if not isinstance(data, dict):
+            return data
+        for k in ("action", "description", "prediction_next_4s"):
+            if k in data and data[k]:
+                data[k] = self._clean_human_text(data[k])
+        for sub_k in ("degraded_light", "degraded_heavy"):
+            sub = data.get(sub_k)
+            if isinstance(sub, dict):
+                for k in ("action", "description", "prediction_next_4s"):
+                    if k in sub and sub[k]:
+                        sub[k] = self._clean_human_text(sub[k])
+        return data
+
     def _record_success(self, res: dict, bio: dict, tier: ModelTier):
+        self._sanitize_analysis_payload(res)
         entry = ContextMemoryEntry(
             timestamp=time.time(),
             time_str=time.strftime("%H:%M:%S"),
@@ -807,41 +839,42 @@ class HierarchicalModelOrchestrator:
             self.active_tier = ModelTier.TIER_1_PRIMARY
 
         context_str = self.context_memory.get_context_summary_for_prompt()
-        prompt = f"""Bạn là Hệ thống Giám sát & Phân tích Hành vi Thông minh.
+        prompt = f"""Bạn là một chuyên gia phân tích hành vi con người với lối quan sát tinh tế, tự nhiên và giàu sinh khí.
 {context_str}
 
-Bức ảnh gửi kèm có thể là bảng 4 pha thời gian liên tiếp (T1 Khởi phát -> T2 Cao trào phụ -> T3-PEAK Đỉnh động học -> T4 Kết thúc) hoặc 1 khung hình đơn. Hãy quan sát kỹ toàn bộ diễn biến chuyển động từ T1 đến T4 và trả về kết quả theo cơ chế đối chứng song song (X = Y + Z):
+Hãy quan sát người trong ảnh như thể bạn đang trực tiếp nhìn họ ngoài đời thực (nếu ảnh gồm 4 ô nhỏ từ trái qua phải, từ trên xuống dưới thì đó là chuỗi chuyển động liên tiếp của cùng một người trong vài giây vừa qua). Hãy kể lại hành vi của họ bằng ngôn ngữ đời thường, tự nhiên, liền mạch như một con người đang miêu tả lại cho người khác nghe:
 
-1. NHÁNH LÝ TƯỞNG Y ("action", "description", "prediction_next_4s") — Khi hệ thống có đủ 100% tài nguyên nên quan sát trọn vẹn cả 4 pha T1 -> T2 -> T3-PEAK -> T4:
-   - "action": Tên hành vi / cử chỉ cụ thể, rõ ràng theo đúng toàn bộ chuỗi động tác (ví dụ: "Giơ cao tay phải vẫy chào liên tục rồi hạ xuống", "Nằm ngửa giơ ngón tay cái ra hiệu", "Giơ 4 ngón tay trước ống kính", "Gõ bàn phím làm việc", "Cầm điện thoại nhắn tin").
-   - "description": Miêu tả chi tiết, sống động toàn bộ diễn biến hành vi từ lúc bắt đầu (T1), đạt đỉnh cử chỉ (T2, T3-PEAK: bàn tay, ngón tay cử động hay vẫy qua lại ra sao, ánh mắt nhìn đi đâu, biểu cảm khuôn mặt, vật thể tương tác) đến lúc kết thúc (T4).
-   - "prediction_next_4s": Dự đoán cụ thể hành động trong 4 giây tiếp theo.
+1. BẢN QUAN SÁT ĐẦY ĐỦ ("action", "description", "prediction_next_4s"):
+   - "action": Gọi tên hành động / cử chỉ thật cụ thể, tự nhiên (ví dụ: "Giơ cao tay phải vẫy chào rồi buông xuống", "Nằm ngửa giơ ngón tay cái ra hiệu", "Giơ 4 ngón tay trước ống kính", "Gõ bàn phím làm việc tập trung", "Cầm điện thoại xem nội dung").
+   - "description": Kể lại liền mạch, sống động và chi tiết hành động của người đó: tay chân đưa lên hay hạ xuống thế nào, các ngón tay mở ra hay nắm lại, cổ tay có vẫy qua lại không, ánh mắt đang nhìn đi đâu, sắc thái khuôn mặt ra sao.
+   - "prediction_next_4s": Dự đoán tự nhiên hành động tiếp theo trong vài giây tới.
 
-2. NHÁNH SUY GIẢM NHẸ Z1 ("degraded_light": {{"action", "description", "prediction_next_4s"}}) — Biến dị câu chữ hành vi khi thiếu hụt tài nguyên nhẹ làm rơi mất pha dao động trung gian (T2):
-   - Viết như một quan sát viên chỉ nhìn thấy động tác giơ tay hoặc tư thế tĩnh ở T1 và T3 nhưng KHÔNG bắt được chuyển động lắc/vẫy qua lại hay thao tác ngón tay liên tục giữa chừng (ví dụ: Y thấy "Đưa tay cao lên vẫy chào liên tục rồi hạ xuống" thì degraded_light chỉ thấy "Giơ tay phải lên ngang vai rồi giữ yên trước mặt").
+2. BẢN QUAN SÁT KHI THIẾU NHỊP GIỮA ("degraded_light": {{"action", "description", "prediction_next_4s"}}):
+   - Giả sử người quan sát bị lỡ mất nhịp chuyển động lắc/vẫy ở giữa nên chỉ thấy động tác sơ lược (ví dụ: Bản đầy đủ thấy "Giơ tay cao lên vẫy chào liên tục rồi hạ xuống", thì bản này chỉ thấy "Đưa tay phải lên ngang vai giữ yên một thoáng rồi hạ xuống").
 
-3. NHÁNH SUY GIẢM NẶNG Z2 ("degraded_heavy": {{"action", "description", "prediction_next_4s"}}) — Biến dị câu chữ hành vi khi cạn kiệt tài nguyên làm rơi mất hoàn toàn các khung hình đỉnh cử chỉ (mất T2, T3-PEAK), chỉ còn nhìn thấy khung đầu T1 và khung cuối T4:
-   - Viết như một quan sát viên bị bỏ lỡ hoàn toàn đỉnh hành vi, chỉ thấy cử động chớp nhoáng lúc mới nhấc tay hoặc vừa bỏ tay xuống (ví dụ: Y thấy "Giơ tay cao lên vẫy rồi buông xuống" thì degraded_heavy viết "Chủ thể chỉ hơi nhấc nhẹ cánh tay lên rồi bỏ xuống liền").
+3. BẢN QUAN SÁT KHI MẤT KHOẢNH KHẮC ĐỈNH ("degraded_heavy": {{"action", "description", "prediction_next_4s"}}):
+   - Giả sử người quan sát bị lỡ mất hoàn toàn khoảnh khắc cử chỉ lên cao nhất, chỉ thoáng thấy lúc mới nhấc nhẹ tay rồi đã bỏ xuống (ví dụ: Bản đầy đủ thấy "Giơ tay cao lên vẫy rồi buông xuống", thì bản này chỉ thấy "Chủ thể hơi nhấc nhẹ cánh tay lên một chút rồi bỏ xuống liền").
 
-QUY TẮC BẮT BUỘC CHO CẢ Y VÀ Z:
-- Chỉ viết ngôn ngữ miêu tả hành vi tự nhiên của con người.
-- TUYỆT ĐỐI KHÔNG giải thích lý do kỹ thuật trong câu văn (CẤM viết "do mất khung hình", "do thiếu CPU", "do tràn bộ đệm").
-- TUYỆT ĐỐI KHÔNG nói lan man kiểu khám sức khỏe, công thái học hay kiểm tra an toàn (CẤM viết "không có dấu hiệu mệt mỏi", "không căng thẳng cơ bắp", "không có gì bất thường").
-- TUYỆT ĐỐI KHÔNG đưa số đo góc độ kỹ thuật (như 87°) và KHÔNG dùng dấu nháy đơn.
+QUY TẮC BẮT BUỘC:
+- Hãy viết hoàn toàn như một con người đang quan sát con người.
+- CẤM TUYỆT ĐỐI dùng các từ ngữ máy móc, kỹ thuật hoặc chia mốc như: "T1", "T2", "T3", "T4", "PEAK", "pha đầu", "pha cuối", "khung hình", "ô ảnh", "bảng ảnh", "trục lưng", "góc nghiêng".
+- CẤM TUYỆT ĐỐI giải thích lý do kỹ thuật (không viết "do mất khung hình", "do thiếu CPU", "do tràn bộ đệm").
+- CẤM TUYỆT ĐỐI nhận xét kiểu khám sức khỏe hay công thái học (không viết "không mỏi cơ", "không căng thẳng", "không có gì bất thường").
+- KHÔNG dùng dấu nháy đơn trong câu văn.
 
 Trả về đúng định dạng JSON thuần:
 {{
-    "action": "Tên hành vi đầy đủ ở nhánh lý tưởng Y",
-    "description": "Miêu tả chi tiết, sống động trọn vẹn diễn biến cử chỉ, ngón tay, ánh mắt ở nhánh lý tưởng Y",
-    "prediction_next_4s": "Dự đoán hành động 4 giây tới ở nhánh Y",
+    "action": "Tên hành vi cụ thể, tự nhiên",
+    "description": "Câu văn miêu tả hành vi liền mạch, tự nhiên như con người quan sát ngoài đời thực",
+    "prediction_next_4s": "Dự đoán hành động tiếp theo",
     "degraded_light": {{
-        "action": "Tên hành vi bị thiếu chi tiết dao động trung gian",
-        "description": "Miêu tả hành vi khi không bắt được nhịp chuyển động liên tục giữa chừng",
+        "action": "Tên hành vi giản lược khi thiếu nhịp dao động ở giữa",
+        "description": "Câu văn tự nhiên khi chỉ thấy cử chỉ sơ lược mà không thấy nhịp vẫy hay thao tác chi tiết",
         "prediction_next_4s": "Dự đoán ngắn gọn"
     }},
     "degraded_heavy": {{
-        "action": "Tên hành vi sơ sài do lỡ mất đỉnh cử chỉ",
-        "description": "Miêu tả hành vi bị biến dị khi chỉ bắt được khoảnh khắc đầu và cuối (ví dụ: hơi nhấc tay lên rồi bỏ xuống liền)",
+        "action": "Tên hành vi sơ sài khi lỡ mất khoảnh khắc đỉnh",
+        "description": "Câu văn tự nhiên khi chỉ thấy cử động chớp nhoáng lúc đầu và lúc cuối (ví dụ: hơi nhấc nhẹ tay lên rồi bỏ xuống liền)",
         "prediction_next_4s": "Dự đoán ngắn gọn"
     }},
     "severity": "safe" | "warning" | "danger"

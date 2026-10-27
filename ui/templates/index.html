@@ -362,6 +362,18 @@
 
                 <!-- THANH CHỈNH TÀI NGUYÊN HỆ ĐIỀU HÀNH NGANG TOÀN MÀN HÌNH -->
                 <div class="split-inline-tuner">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span class="badge badge-safe mono" id="live-os-case-badge">CASE 1 · CHUẨN LÝ TƯỞNG</span>
+                            <span style="font-size: 12.5px; color: var(--text-secondary);" id="live-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, không rơi khung, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Case 1: Chuẩn Lý Tưởng</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(2, 220, 'drop_oldest')">Case 2: Đệm Hẹp &amp; Thiếu CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 160, 'block_fifo')">Case 3: Phình Đệm &amp; Trễ FIFO</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(128, 0, 'drop_oldest')">Case 4: Thừa RAM 128 Khung</button>
+                        </div>
+                    </div>
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
@@ -736,11 +748,13 @@
                             <strong style="font-size: 13px;">Cấu Hình Tài Nguyên Nhánh Đối Chứng Ngay Từ Khi Nạp Video</strong>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-ideal" onclick="selectPreflightZPreset('ideal', 16, 0, 'drop_oldest')">Chuẩn Lý Tưởng · 16 khung · 100% CPU</button>
-                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-starve" onclick="selectPreflightZPreset('starve', 2, 180, 'drop_oldest')">Thiếu CPU &amp; Đệm Hẹp · 2 khung · 12% CPU</button>
-                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-bloat" onclick="selectPreflightZPreset('bloat', 64, 150, 'block_fifo')">Phình Đệm FIFO · 64 khung · 14% CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-ideal" onclick="selectPreflightZPreset('ideal', 16, 0, 'drop_oldest')">Case 1: Chuẩn Lý Tưởng</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-starve" onclick="selectPreflightZPreset('starve', 2, 220, 'drop_oldest')">Case 2: Đệm Hẹp &amp; Thiếu CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-bloat" onclick="selectPreflightZPreset('bloat', 64, 160, 'block_fifo')">Case 3: Phình Đệm &amp; Trễ FIFO</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-overram" onclick="selectPreflightZPreset('overram', 128, 0, 'drop_oldest')">Case 4: Thừa RAM 128 Khung</button>
                         </div>
                     </div>
+                    <div style="margin-bottom: 10px; font-size: 12.5px; color: var(--text-secondary);" id="pf-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, không rơi khung, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</div>
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
@@ -1193,6 +1207,18 @@
 
                 <!-- THANH CHỈNH TÀI NGUYÊN HỆ ĐIỀU HÀNH NGANG TOÀN MÀN HÌNH -->
                 <div class="split-inline-tuner" id="video-os-setup-box">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span class="badge badge-safe mono" id="vid-os-case-badge">CASE 1 · CHUẨN LÝ TƯỞNG</span>
+                            <span style="font-size: 12.5px; color: var(--text-secondary);" id="vid-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, không rơi khung, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Case 1: Chuẩn Lý Tưởng</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(2, 220, 'drop_oldest')">Case 2: Đệm Hẹp &amp; Thiếu CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 160, 'block_fifo')">Case 3: Phình Đệm &amp; Trễ FIFO</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(128, 0, 'drop_oldest')">Case 4: Thừa RAM 128 Khung</button>
+                        </div>
+                    </div>
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">

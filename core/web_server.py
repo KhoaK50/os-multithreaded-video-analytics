@@ -601,15 +601,6 @@ class LiveCameraPipeline:
         for idx, (lbl, rel_t, sc_val, frm, is_pk) in enumerate(quad_items[:4]):
             y0, x0 = positions[idx]
             tile = cv2.resize(frm, (hw, hh), interpolation=cv2.INTER_AREA)
-            badge_txt = f"{lbl} (+{rel_t:.1f}s)"
-            bg_color = (16, 85, 24) if is_pk else (28, 32, 42)
-            border_color = (74, 222, 128) if is_pk else (148, 163, 184)
-            cv2.rectangle(tile, (6, 6), (min(hw - 6, 175), 30), bg_color, -1)
-            cv2.rectangle(tile, (6, 6), (min(hw - 6, 175), 30), border_color, 1)
-            cv2.putText(
-                tile, badge_txt, (12, 23),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA
-            )
             grid[y0:y0 + hh, x0:x0 + hw] = tile
 
         if grid.shape[0] != h or grid.shape[1] != w:
