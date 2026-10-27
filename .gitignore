@@ -271,3 +271,4 @@ ehthumbs.db
 # Runtime snapshots & cache
 snapshots/
 core/golden_cache.json
+outputs/
