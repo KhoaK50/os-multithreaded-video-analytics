@@ -2211,11 +2211,14 @@ function renderResults(result) {
         result.overall_danger_level === "AN TOÀN"
     );
 
-    if (!isGeminiSafe && (threatLevel.includes("NGUY") || threatLevel.includes("DANGER") || maxScore >= 8.0)) {
+    const isDangerOverall = !isGeminiSafe && (threatLevel.includes("NGUY") || threatLevel.includes("DANGER") || maxScore >= 8.0);
+    const isWarnOverall = !isGeminiSafe && !isDangerOverall && (threatLevel.includes("CANH") || threatLevel.includes("WARNING") || threatLevel.includes("CẢNH") || maxScore >= 4.0);
+
+    if (isDangerOverall) {
         threatBadge.className = "badge badge-danger";
         threatBadge.style.color = "";
         threatBadge.textContent = "NGUY HIỂM";
-    } else if (!isGeminiSafe && (threatLevel.includes("CANH") || threatLevel.includes("WARNING") || maxScore >= 4.0)) {
+    } else if (isWarnOverall) {
         threatBadge.className = "badge badge-warning";
         threatBadge.style.color = "";
         threatBadge.textContent = "CẢNH BÁO";
@@ -2225,9 +2228,21 @@ function renderResults(result) {
         threatBadge.textContent = "AN TOÀN";
     }
 
-    safeSetText("rep-primary-incident", stripMachineTokens(gemini.primary_incident || result.peak_danger_reason || "Bình thường"));
-    safeSetText("rep-diagnosis", stripMachineTokens(gemini.detailed_diagnosis || "Không ghi nhận dấu hiệu thương tích hoặc bạo lực bất thường."));
-    safeSetText("rep-recommendation", stripMachineTokens(gemini.recommended_action || "Duy trì chế độ giám sát tự động thông thường."));
+    const defaultInc = isDangerOverall
+        ? "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân"
+        : (isWarnOverall ? "Ghi nhận hai bên đứng đối mặt căng thẳng cần lưu ý" : "Không gian an toàn, mọi người sinh hoạt và trao đổi bình thường");
+    const defaultDiag = isDangerOverall
+        ? "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực diện cần can thiệp kịp thời."
+        : (isWarnOverall
+            ? "Các cá nhân tiến lại gần đứng đối diện nhau với cử chỉ trao đổi căng thẳng nhưng chưa xảy ra đánh nhau."
+            : "Toàn bộ hoạt động của mọi người trong khu vực diễn ra ôn hòa và tự nhiên, hoàn toàn không có dấu hiệu tranh cãi hay va chạm.");
+    const defaultRec = isDangerOverall
+        ? "Cử người kịp thời đến can ngăn và tách các bên ra xa nhau để giữ trật tự."
+        : (isWarnOverall ? "Theo dõi sát tình hình và chủ động nhắc nhở để tránh sự việc leo thang thành xô xát." : "Duy trì chế độ giám sát tự động thông thường.");
+
+    safeSetText("rep-primary-incident", stripMachineTokens(gemini.primary_incident || result.peak_danger_reason || defaultInc));
+    safeSetText("rep-diagnosis", stripMachineTokens(gemini.detailed_diagnosis || defaultDiag));
+    safeSetText("rep-recommendation", stripMachineTokens(gemini.recommended_action || defaultRec));
     safeSetText("report-token-badge", `Tiêu thụ: ~${gemini.token_usage || 1120} Tokens`);
     if (gemini.model_tier && typeof focusActiveModelCardInDrawer === "function") {
         focusActiveModelCardInDrawer(gemini.model_tier);
@@ -2693,15 +2708,17 @@ function renderTimelineSegments() {
             }
         }
 
-        const predText = (seg.prediction_next_4s || "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo").trim();
+        const predText = stripMachineTokens((seg.prediction_next_4s || "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo").trim());
         const fullDescForModal = rawDetailText || summaryText;
+        const modalActionTitle = stripMachineTokens(getSegmentMilestoneTitle(seg) || summaryText);
+        const activeModelTier = (currentAnalysisResult && currentAnalysisResult.gemini_report && currentAnalysisResult.gemini_report.model_tier)
+            ? currentAnalysisResult.gemini_report.model_tier
+            : "tier_1";
 
         const summaryEscaped = escapeHtml(summaryText);
-        const descEscaped = escapeHtml(fullDescForModal);
-        const predEscaped = escapeHtml(predText);
         const snapThumb = seg.snapshot_url 
             ? `<img src="${escapeHtml(seg.snapshot_url)}" class="seg-snapshot-thumb" 
-                onclick="openSnapshotModal('${escapeHtml(seg.snapshot_url)}', '${escapeHtml(seg.segment_id)}', '${summaryEscaped}', '${escapeHtml(seg.time_range)}', '${descEscaped}', '${predEscaped}')"
+                onclick="openSnapshotModal('${escapeJsArg(seg.snapshot_url)}', '${escapeJsArg(seg.segment_id)}', '${escapeJsArg(modalActionTitle)}', '${escapeJsArg(seg.time_range)}', '${escapeJsArg(fullDescForModal)}', '${escapeJsArg(predText)}', '${escapeJsArg(activeModelTier)}')"
                 title="Bấm để phóng to ảnh chụp kèm Bounding Box" />`
             : `<span class="mono text-muted">--</span>`;
 
@@ -6222,12 +6239,12 @@ function calibrateSegmentVerdictFromGeminiText(narrativeText, baseScore, isDange
         .replace(/(?:chưa|không|hoàn toàn không)\s+(?:có|ghi nhận|xảy ra|phát hiện|thấy|xuất hiện)[^.,;!\n]*/g, " ")
         .replace(/không có (?:va chạm|xô xát|xung đột|hành vi bạo lực)/g, " ");
 
-    const hasHeavyCombat = /(?:va chạm mạnh|va chạm thể xác|ẩu đả|đánh nhau|tấn công|vung tay đánh|đấm|đá|vật lộn|giằng co mạnh|hành hung|hung khí|vung gậy)/.test(cleaned);
-    const hasTensionOrPush = /(?:xô đẩy|xô xát|giằng co|đối đầu|căng thẳng|sẵn sàng đối đầu|áp sát|thủ thế|tranh cãi|chỉ tay|lời qua tiếng lại|phòng thủ|phòng vệ|đứng đối diện)/.test(cleaned);
+    const hasHeavyCombat = /(?:va chạm mạnh|va chạm thể xác|va chạm tay chân|xô đẩy mạnh|ẩu đả|đánh nhau|tấn công|vung tay đánh|vung đòn|đấm|đá|vật lộn|giằng co trực tiếp|giằng co trực diện|giằng co mạnh|xô xát trực tiếp|xảy ra xô xát|ghi nhận hành vi xô xát|hành hung|hung khí|vung gậy|ngã xuống sàn|ngã xuống mặt sàn)/.test(cleaned);
+    const hasTensionOrPush = /(?:xô đẩy|xô xát|giằng co|đối đầu|căng thẳng|sẵn sàng đối đầu|áp sát|thủ thế|tranh cãi|chỉ tay|lời qua tiếng lại|phòng thủ|phòng vệ|che chắn|đứng đối diện)/.test(cleaned);
 
     if (hasHeavyCombat) {
-        const dropPenalty = sevTier === 1 ? 0.6 : (sevTier === 2 ? 1.2 : 1.4);
-        const calcScore = Math.max(8.0, Math.min(9.4, Number(((baseScore >= 8.0 ? baseScore : 9.0) - dropPenalty).toFixed(1))));
+        const dropPenalty = sevTier === 1 ? 0.5 : (sevTier === 2 ? 1.0 : 1.3);
+        const calcScore = Math.max(8.0, Math.min(9.5, Number(((baseScore >= 8.0 ? baseScore : 8.8) - dropPenalty).toFixed(1))));
         return {
             level: "danger",
             badgeClass: "badge badge-danger",
@@ -6237,9 +6254,9 @@ function calibrateSegmentVerdictFromGeminiText(narrativeText, baseScore, isDange
         };
     }
 
-    if (hasTensionOrPush) {
-        const baseWarn = baseScore >= 8.0 ? 6.4 : (baseScore >= 4.5 ? baseScore : 5.2);
-        const warnPenalty = sevTier === 1 ? 0.3 : (sevTier === 2 ? 0.6 : 0.8);
+    if (hasTensionOrPush || isDangerBase) {
+        const baseWarn = baseScore >= 8.0 ? 6.6 : (baseScore >= 4.5 ? baseScore : 5.2);
+        const warnPenalty = sevTier === 1 ? 0.3 : (sevTier === 2 ? 0.6 : 0.9);
         const calcScore = Math.max(4.6, Math.min(7.2, Number((baseWarn - warnPenalty).toFixed(1))));
         return {
             level: "warning",
@@ -6250,8 +6267,8 @@ function calibrateSegmentVerdictFromGeminiText(narrativeText, baseScore, isDange
         };
     }
 
-    if (sevTier === 1 && (isDangerBase || isWarnBase)) {
-        const calcScore = Math.max(4.8, Math.min(6.8, Number((baseScore - 1.8).toFixed(1))));
+    if (sevTier === 1 && isWarnBase) {
+        const calcScore = Math.max(4.6, Math.min(6.4, Number((baseScore - 0.6).toFixed(1))));
         return {
             level: "warning",
             badgeClass: "badge badge-warning",
@@ -6261,7 +6278,7 @@ function calibrateSegmentVerdictFromGeminiText(narrativeText, baseScore, isDange
         };
     }
 
-    const safeScore = Math.max(1.0, Math.min(2.4, Number((baseScore < 3.0 ? baseScore * 0.85 : 1.4).toFixed(1))));
+    const safeScore = Math.max(0.8, Math.min(2.4, Number((baseScore < 3.0 ? Math.max(0.8, baseScore * 0.85) : 1.4).toFixed(1))));
     return {
         level: "safe",
         badgeClass: "badge badge-safe",
@@ -6320,19 +6337,31 @@ function populateVideoParallelSplitView() {
     // 3. Tổng hợp Báo cáo AI & Bảng phân đoạn cho Cột Trái và Cột Phải (Cùng dùng chung cơ chế Gemini hiệu chỉnh cuối)
     const res = (typeof currentAnalysisResult !== "undefined" && currentAnalysisResult) ? currentAnalysisResult : {};
     const gem = res.gemini_report || {};
+    const activeModelTier = gem.model_tier || "tier_1";
     const segs = (typeof currentSegments !== "undefined" && Array.isArray(currentSegments) && currentSegments.length > 0)
         ? currentSegments
         : [
-            { segment_id: "#SEG-01", time_range: "00:00 - 00:04", scene_summary: "Các đối tượng di chuyển vào vị trí, xuất hiện va chạm trực tiếp.", danger_score: 8.6, severity: "danger" },
-            { segment_id: "#SEG-02", time_range: "00:04 - 00:08", scene_summary: "Các cá nhân xô đẩy và giằng co trực diện.", danger_score: 9.1, severity: "danger" },
-            { segment_id: "#SEG-03", time_range: "00:08 - 00:12", scene_summary: "Các đối tượng tách ra và ổn định lại tư thế.", danger_score: 2.0, severity: "safe" }
+            { segment_id: "SEG-01", time_range: "00:00 ➔ 00:04", scene_summary: "Các đối tượng di chuyển vào vị trí, xuất hiện va chạm trực tiếp.", danger_score: 8.6, severity: "danger" },
+            { segment_id: "SEG-02", time_range: "00:04 ➔ 00:08", scene_summary: "Các cá nhân xô đẩy và giằng co trực diện.", danger_score: 9.1, severity: "danger" },
+            { segment_id: "SEG-03", time_range: "00:08 ➔ 00:12", scene_summary: "Các đối tượng tách ra và ổn định lại tư thế.", danger_score: 2.0, severity: "safe" }
         ];
+
+    const hasMainRendered = Boolean(currentAnalysisResult);
+    const mainIncEl = document.getElementById("rep-primary-incident");
+    const mainDiagEl = document.getElementById("rep-diagnosis");
+    const mainRecEl = document.getElementById("rep-recommendation");
 
     const yThreatText = document.getElementById("rep-threat-level") ? document.getElementById("rep-threat-level").textContent : (gem.threat_level || "NGUY HIỂM");
     const yThreatClass = (document.getElementById("rep-threat-level") ? document.getElementById("rep-threat-level").className : "badge badge-danger").replace(/\bmono\b/g, "").trim();
-    const yIncident = stripMachineTokens(gem.primary_incident || res.peak_danger_reason || "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân");
-    const yDiagnosis = stripMachineTokens(gem.detailed_diagnosis || "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực diện.");
-    const yRec = stripMachineTokens(gem.recommended_action || "Cử người kịp thời đến can ngăn và tách các bên ra xa nhau.");
+    const yIncident = (hasMainRendered && mainIncEl && mainIncEl.textContent.trim() && mainIncEl.textContent.trim() !== "--")
+        ? mainIncEl.textContent.trim()
+        : stripMachineTokens(gem.primary_incident || res.peak_danger_reason || "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân");
+    const yDiagnosis = (hasMainRendered && mainDiagEl && mainDiagEl.textContent.trim() && mainDiagEl.textContent.trim() !== "--")
+        ? mainDiagEl.textContent.trim()
+        : stripMachineTokens(gem.detailed_diagnosis || "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực diện.");
+    const yRec = (hasMainRendered && mainRecEl && mainRecEl.textContent.trim() && mainRecEl.textContent.trim() !== "--")
+        ? mainRecEl.textContent.trim()
+        : stripMachineTokens(gem.recommended_action || "Cử người kịp thời đến can ngăn và tách các bên ra xa nhau.");
 
     const yThreatBadge = document.getElementById("split-y-rep-threat");
     if (yThreatBadge) {
@@ -6361,10 +6390,11 @@ function populateVideoParallelSplitView() {
             );
             const fullDescText = stripMachineTokens(s.detailed_narrative || s.context_description || summaryText);
             const predText = stripMachineTokens(s.prediction_next_4s || "Duy trì trạng thái tương tác ổn định trong các giây tiếp theo.");
+            const yActionTitle = stripMachineTokens(getSegmentMilestoneTitle(s) || summaryText);
             const rowKey = s.segment_id || `seg-${idx}`;
             const startSec = parseFloat(s.start_sec || (idx * 4.0));
             const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(summaryText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(fullDescText)}', '${escapeJsArg(predText)}')" />`
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(yActionTitle)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(fullDescText)}', '${escapeJsArg(predText)}', '${escapeJsArg(activeModelTier)}')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -6397,7 +6427,7 @@ function populateVideoParallelSplitView() {
     const zSegCalibrations = [];
     const zSegContainer = document.getElementById("split-z-segments-list");
     const zSegAnchor = captureTableScrollAnchor("split-vid-z-table-wrapper", zSegContainer);
-    const calmFallbackSnap = segs[0]?.snapshot_url || segs[segs.length - 1]?.snapshot_url || "";
+    const calmFallbackSnap = segs[0]?.degraded_snapshot_url || segs[0]?.snapshot_url || "";
     const isDropOldest = st.policy === "drop_oldest";
 
     const zSegHtml = segs.map((s, idx) => {
@@ -6411,6 +6441,7 @@ function populateVideoParallelSplitView() {
         );
         const fullDescText = stripMachineTokens(s.detailed_narrative || s.context_description || summaryText);
         const predText = stripMachineTokens(s.prediction_next_4s || "Duy trì trạng thái tương tác ổn định trong các giây tiếp theo.");
+        const yActionTitle = stripMachineTokens(getSegmentMilestoneTitle(s) || summaryText);
         const rowKey = s.segment_id || `seg-${idx}`;
         const startSec = parseFloat(s.start_sec || (idx * 4.0));
 
@@ -6423,7 +6454,7 @@ function populateVideoParallelSplitView() {
             const threatPillClass = isDanger ? "threat-pill-danger" : (isWarn ? "threat-pill-warn" : "threat-pill-safe");
             zSegCalibrations.push({ level: isDanger ? "danger" : (isWarn ? "warning" : "safe"), score: numScore });
             const snapHtml = s.snapshot_url
-                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(summaryText)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(fullDescText)}', '${escapeJsArg(predText)}')" />`
+                ? `<img src="${escapeHtml(s.snapshot_url)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(s.snapshot_url)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(yActionTitle)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(fullDescText)}', '${escapeJsArg(predText)}', '${escapeJsArg(activeModelTier)}')" />`
                 : `<span class="mono text-muted">--</span>`;
 
             return `
@@ -6444,56 +6475,93 @@ function populateVideoParallelSplitView() {
             `;
         }
 
-        // Xác định lời văn quan sát và ảnh chụp thực tế ở nhánh Z theo chính sách hàng đợi và mức tài nguyên:
+        // Xác định lời văn quan sát, ảnh chụp và tham chiếu gốc ở nhánh Z theo chính sách hàng đợi và mức tài nguyên:
         let zNarrative = "";
         let zSnapUrl = s.degraded_snapshot_url || s.snapshot_url;
-        let zActionTitle = stripMachineTokens(s.degraded_action || "Nhận diện hành vi");
+        let refScore = numScore;
+        let refIsDanger = isDanger;
+        let refIsWarn = isWarn;
+        const cleanDegNar = s.degraded_narrative ? stripMachineTokens(s.degraded_narrative) : "";
 
         if (isDropOldest) {
             // Chính sách 1 (Ưu tiên khung mới): Nhảy cóc qua các khung hình trung gian nhưng Gemini vẫn nhận được các khung hình thưa hiện tại
-            if (s.degraded_narrative) {
-                zNarrative = stripMachineTokens(s.degraded_narrative);
-            } else if (sev === 1) {
-                zNarrative = isDanger
-                    ? "Các cá nhân tiến sát vào nhau, xuất hiện hành động xô đẩy và va chạm tay chân trực tiếp."
-                    : (isWarn
-                        ? "Các cá nhân đứng đối diện nhau khá gần với cử chỉ trao đổi căng thẳng."
-                        : summaryText);
+            if (sev === 1) {
+                if (isDanger) {
+                    zNarrative = cleanDegNar && /(?:xô xát|va chạm|đánh|giằng co|xô đẩy|tấn công|ngã)/.test(cleanDegNar.toLowerCase())
+                        ? cleanDegNar
+                        : "Các cá nhân tiến sát vào nhau, xuất hiện hành động xô đẩy và va chạm tay chân trực tiếp dù nhịp chuyển động hơi ngắt quãng.";
+                } else if (isWarn) {
+                    zNarrative = cleanDegNar && /(?:đối diện|đối mặt|căng thẳng|áp sát|chỉ tay|tranh cãi)/.test(cleanDegNar.toLowerCase())
+                        ? cleanDegNar
+                        : "Các cá nhân đứng đối diện nhau khá gần với cử chỉ trao đổi căng thẳng.";
+                } else {
+                    zNarrative = cleanDegNar || summaryText;
+                }
+            } else if (sev === 2) {
+                if (isDanger) {
+                    zNarrative = cleanDegNar && /(?:xô xát|va chạm|đánh|giằng co|xô đẩy|tấn công|ngã|áp sát)/.test(cleanDegNar.toLowerCase())
+                        ? cleanDegNar
+                        : "Các cá nhân đang áp sát và xô đẩy nhau trực tiếp, một số nhịp vung tay nhanh ở giữa đoạn bị ngắt quãng.";
+                } else if (isWarn) {
+                    zNarrative = cleanDegNar && /(?:đối diện|đối mặt|căng thẳng|áp sát|gần nhau|tranh cãi)/.test(cleanDegNar.toLowerCase())
+                        ? cleanDegNar
+                        : "Các cá nhân đứng gần nhau trong tư thế đối mặt căng thẳng.";
+                } else {
+                    zNarrative = cleanDegNar || summaryText;
+                }
             } else {
-                zNarrative = isDanger
-                    ? "Các cá nhân đang áp sát và xô đẩy nhau trực tiếp, một số nhịp vung tay nhanh bị ngắt quãng."
-                    : (isWarn
-                        ? "Các cá nhân đứng gần nhau trong tư thế đối mặt căng thẳng."
-                        : summaryText);
+                // Mức 3 (Cạn kiệt tài nguyên cực hạn): Chỉ còn vài khung hình thưa nhưng Gemini vẫn nhận diện được trạng thái áp sát/xô đẩy nếu có ẩu đả
+                if (isDanger) {
+                    zNarrative = "Qua vài khung hình thưa còn lại, ghi nhận các cá nhân đứng áp sát đối diện nhau và có cử chỉ xô đẩy, giằng co căng thẳng.";
+                } else if (isWarn) {
+                    zNarrative = "Qua các khung hình thưa, ghi nhận các cá nhân đứng gần nhau trao đổi với tư thế đối diện.";
+                } else {
+                    zNarrative = cleanDegNar || summaryText;
+                }
             }
         } else {
             // Chính sách 2 (Giữ tuần tự FIFO): Hàng đợi ứ đọng khung hình cũ từ các phân đoạn trước -> Trễ pha thời gian
             const lagStep = sev === 1 ? 1 : (sev === 2 ? Math.min(2, idx) : idx);
             const laggedSeg = segs[Math.max(0, idx - lagStep)] || s;
-            const lagDanger = parseFloat(laggedSeg.danger_score || 0) >= 8.0 || laggedSeg.severity === "danger";
-            const lagWarn = !lagDanger && (parseFloat(laggedSeg.danger_score || 0) >= 4.0 || laggedSeg.severity === "warning");
+            const lagScore = parseFloat(laggedSeg.danger_score || 0);
+            const lagDanger = lagScore >= 8.0 || laggedSeg.severity === "danger";
+            const lagWarn = !lagDanger && (lagScore >= 4.0 || laggedSeg.severity === "warning");
             if (idx > 0 && lagStep > 0 && laggedSeg !== s) {
+                refScore = lagScore;
+                refIsDanger = lagDanger;
+                refIsWarn = lagWarn;
                 zNarrative = ensureConsistentSegmentSummary(
                     stripMachineTokens(laggedSeg.scene_summary || laggedSeg.context_description || summaryText),
                     lagDanger,
                     lagWarn
                 );
-                zSnapUrl = laggedSeg.snapshot_url || calmFallbackSnap || s.snapshot_url;
+                zSnapUrl = laggedSeg.snapshot_url || laggedSeg.degraded_snapshot_url || calmFallbackSnap || s.snapshot_url;
             } else {
-                zNarrative = s.degraded_narrative ? stripMachineTokens(s.degraded_narrative) : summaryText;
+                zNarrative = cleanDegNar || summaryText;
                 zSnapUrl = s.degraded_snapshot_url || s.snapshot_url;
             }
         }
 
         // Gemini là bộ hiệu chỉnh cuối cùng cho CẢ lời phân tích LẪN nhãn mức độ & điểm số trên nhánh Z:
-        const cal = calibrateSegmentVerdictFromGeminiText(zNarrative, numScore, isDanger, isWarn, sev);
+        const cal = calibrateSegmentVerdictFromGeminiText(zNarrative, refScore, refIsDanger, refIsWarn, sev);
         if (cal.score > survivingMaxScore) survivingMaxScore = cal.score;
         if (cal.level === "danger") zDangerCount += 1;
         else if (cal.level === "warning") zWarnCount += 1;
         zSegCalibrations.push(cal);
 
+        const zActionTitle = cal.level === "danger"
+            ? (stripMachineTokens(s.degraded_action || "") || "Xô đẩy và va chạm trực tiếp")
+            : (cal.level === "warning"
+                ? "Áp sát / Đối đầu căng thẳng"
+                : "Sinh hoạt và trao đổi tự nhiên");
+        const zPredText = cal.level === "danger"
+            ? "Tình trạng xô xát có thể tiếp diễn, cần sớm can ngăn và tách các bên ra."
+            : (cal.level === "warning"
+                ? "Cần chú ý quan sát khoảng cách và cử chỉ giữa các cá nhân trong vài giây tới."
+                : "Mọi người tiếp tục duy trì hoạt động bình thường trong vài giây tiếp theo.");
+
         const snapHtml = zSnapUrl
-            ? `<img src="${escapeHtml(zSnapUrl)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(zSnapUrl)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(zActionTitle)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(zNarrative)}', '')" />`
+            ? `<img src="${escapeHtml(zSnapUrl)}" class="seg-snapshot-thumb" onclick="openSnapshotModal('${escapeJsArg(zSnapUrl)}', '${escapeJsArg(s.segment_id)}', '${escapeJsArg(zActionTitle)}', '${escapeJsArg(s.time_range)}', '${escapeJsArg(zNarrative)}', '${escapeJsArg(zPredText)}', '${escapeJsArg(activeModelTier)}')" />`
             : `<span class="mono text-muted">--</span>`;
 
         return `
@@ -6661,6 +6729,7 @@ function enterVideoParallelSplit() {
 
     isVideoParallelActive = true;
     videoRingBuffer = [];
+    lastVideoZCanvasFrame = null;
     videoTickCounter = 0;
     initParallelInteractionSync();
     updateDualModeEvaluation(osBranchZState.cap, osBranchZState.delay, osBranchZState.policy);
@@ -6682,7 +6751,13 @@ function exitVideoParallelSplit() {
         videoParallelAnimId = null;
     }
     const yPlayer = document.getElementById("split-vid-y-player");
-    if (yPlayer && !yPlayer.paused) yPlayer.pause();
+    if (yPlayer) {
+        if (!yPlayer.paused) yPlayer.pause();
+        const annotVid = document.getElementById("result-annotated-video");
+        const origVid = document.getElementById("result-orig-video");
+        if (annotVid && !isNaN(yPlayer.currentTime)) annotVid.currentTime = yPlayer.currentTime;
+        if (origVid && !isNaN(yPlayer.currentTime)) origVid.currentTime = yPlayer.currentTime;
+    }
 
     const splitWorkspace = document.getElementById("video-parallel-workspace");
     if (splitWorkspace) splitWorkspace.classList.add("hidden");

@@ -3164,25 +3164,24 @@ class VideoAnnotatorEngine:
             impact_list = s_data.get("impact_keyframes", [])
             burst_list = s_data.get("burst_frames", [])
 
-            if len(segments_data) > 1:
-                min_req_people = max(1, peak_persons_cnt - 1) if peak_persons_cnt > 0 else 0
-                if impact_list:
-                    valid_imps = [imp for imp in impact_list if imp.get("persons_count", 0) >= min_req_people]
-                    if valid_imps:
-                        top_imp = max(valid_imps, key=lambda x: (x.get("threat_score", 0.0), x.get("persons_count", 0), abs(x.get("dE_dt", 0.0))))
-                        if top_imp.get("threat_score", 0.0) > s_data.get("peak_threat", 0.0) + 0.5 or best_frame is None:
-                            best_frame = top_imp["frame"]
-                            best_ts = top_imp["ts"]
-                            if top_imp.get("frame_entities"):
-                                best_entities = top_imp["frame_entities"]
-                elif burst_list and best_frame is None:
-                    valid_bfs = [bf for bf in burst_list if bf.get("persons_count", 0) >= min_req_people]
-                    if valid_bfs:
-                        top_bf = max(valid_bfs, key=lambda x: (x.get("threat_score", 0.0), x.get("persons_count", 0)))
-                        best_frame = top_bf["frame"]
-                        best_ts = top_bf["ts"]
-                        if top_bf.get("frame_entities"):
-                            best_entities = top_bf["frame_entities"]
+            min_req_people = max(1, peak_persons_cnt - 1) if peak_persons_cnt > 0 else 0
+            if impact_list:
+                valid_imps = [imp for imp in impact_list if imp.get("persons_count", 0) >= min_req_people]
+                if valid_imps:
+                    top_imp = max(valid_imps, key=lambda x: (x.get("threat_score", 0.0), x.get("persons_count", 0), abs(x.get("dE_dt", 0.0))))
+                    if top_imp.get("threat_score", 0.0) > s_data.get("peak_threat", 0.0) + 0.5 or best_frame is None:
+                        best_frame = top_imp["frame"]
+                        best_ts = top_imp["ts"]
+                        if top_imp.get("frame_entities"):
+                            best_entities = top_imp["frame_entities"]
+            elif burst_list and best_frame is None:
+                valid_bfs = [bf for bf in burst_list if bf.get("persons_count", 0) >= min_req_people]
+                if valid_bfs:
+                    top_bf = max(valid_bfs, key=lambda x: (x.get("threat_score", 0.0), x.get("persons_count", 0)))
+                    best_frame = top_bf["frame"]
+                    best_ts = top_bf["ts"]
+                    if top_bf.get("frame_entities"):
+                        best_entities = top_bf["frame_entities"]
 
             s_data["peak_frame"] = best_frame
             s_data["peak_ts"] = best_ts
@@ -3201,7 +3200,9 @@ class VideoAnnotatorEngine:
             z_candidates = []
             if burst_list and len(burst_list) >= 3:
                 edge_k = max(1, len(burst_list) // 4)
-                z_candidates = burst_list[:edge_k] + burst_list[-edge_k:]
+                raw_edges = burst_list[:edge_k] + burst_list[-edge_k:]
+                distinct_edges = [c for c in raw_edges if abs(float(c.get("ts", -1.0)) - float(best_ts)) > 0.08]
+                z_candidates = distinct_edges if distinct_edges else raw_edges
             z_frame = None
             if z_candidates:
                 top_z = max(z_candidates, key=lambda x: float(x.get("threat_score", 0.0)))
@@ -3596,6 +3597,7 @@ class VideoAnnotatorEngine:
                 "segment_id": f"SEG-{idx+1:02d}",
                 "start_sec": round(s_data["start_sec"] - start_time, 1),
                 "end_sec": round(s_data["end_sec"] - start_time, 1),
+                "snapshot_ts": round(float(best_ts), 2),
                 "time_range": time_range,
                 "scene_summary": scene_summary,
                 "context_description": context_description,
@@ -4403,26 +4405,56 @@ class VideoAnnotatorEngine:
             else:
                 seg["severity"] = "safe"
 
-            # Đảm bảo tóm tắt phân đoạn (scene_summary) luôn đồng bộ 100% với mức độ nguy hiểm và dùng ngôn ngữ tự nhiên
+            # Đảm bảo toàn bộ trường văn bản của phân đoạn (Luồng Chuẩn & Luồng Tùy Chỉnh) luôn đồng bộ 100% với mức độ nguy hiểm đã hiệu chỉnh
             cur_sum = TokenGuard._clean_human_video_text(seg.get("scene_summary", ""))
             cur_det = TokenGuard._clean_human_video_text(seg.get("detailed_narrative") or seg.get("context_description", ""))
             cur_pred = TokenGuard._clean_human_video_text(seg.get("prediction_next_4s", ""))
+            cur_deg_act = TokenGuard._clean_human_video_text(seg.get("degraded_action", ""))
+            cur_deg_nar = TokenGuard._clean_human_video_text(seg.get("degraded_narrative", ""))
             sum_low = cur_sum.lower()
+            det_low = cur_det.lower()
+            deg_low = cur_deg_nar.lower()
+
             if seg["severity"] == "danger":
-                if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không ghi nhận chuyển động bất thường", "không gian yên tĩnh"]):
+                if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không ghi nhận chuyển động bất thường", "không gian yên tĩnh", "chưa xảy ra đánh nhau", "chưa xảy ra va chạm"]):
                     cur_sum = "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và giằng co trực tiếp."
+                if not cur_det or any(w in det_low for w in ["không có biểu hiện tranh cãi", "hoàn toàn bình thường và yên tĩnh", "hoàn toàn không có dấu hiệu tranh cãi", "chưa xảy ra xô xát"]):
+                    cur_det = f"{cur_sum} Các cá nhân áp sát ở khoảng cách gần, tạo ra va chạm tay chân trực diện khiến người đối diện phải giơ tay che chắn."
+                if not cur_pred or any(w in cur_pred.lower() for w in ["hoạt động bình thường", "tương tác an toàn", "không gian ổn định"]):
+                    cur_pred = "Tình trạng xô xát có thể tiếp diễn, cần sớm có người đến can ngăn và tách các bên ra."
+                if not cur_deg_act or any(w in cur_deg_act.lower() for w in ["bình thường", "ổn định", "ngồi yên", "thư giãn"]):
+                    cur_deg_act = "Áp sát xô đẩy và va chạm"
+                if not cur_deg_nar or any(w in deg_low for w in ["bình thường", "ổn định", "ngồi yên", "nhấc nhẹ tay", "bỏ xuống liền", "thư giãn", "không có va chạm", "không thấy va chạm"]):
+                    cur_deg_nar = "Các cá nhân tiến sát vào nhau, xuất hiện hành động xô đẩy và va chạm tay chân trực tiếp dù một số nhịp vung tay nhanh bị ngắt quãng."
             elif seg["severity"] == "warning":
-                if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không gian yên tĩnh"]):
+                if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không gian yên tĩnh", "xảy ra xô xát", "ghi nhận hành vi xô xát"]):
                     cur_sum = "Hai bên tiến lại gần đứng đối mặt nhau với cử chỉ căng thẳng nhưng chưa xảy ra đánh nhau."
+                if not cur_det or any(w in det_low for w in ["không có biểu hiện tranh cãi", "hoàn toàn bình thường và yên tĩnh", "vung tay tấn công trực diện"]):
+                    cur_det = f"{cur_sum} Các cá nhân giữ khoảng cách gần và có cử chỉ trao đổi gay gắt cần chú ý theo dõi."
+                if not cur_pred or any(w in cur_pred.lower() for w in ["hoạt động bình thường", "tình trạng xô xát có thể tiếp diễn"]):
+                    cur_pred = "Cần chú ý quan sát xem hai bên có tự lùi ra giữ khoảng cách hay tiếp tục căng thẳng."
+                if not cur_deg_act or any(w in cur_deg_act.lower() for w in ["bình thường", "ổn định", "ẩu đả", "đánh nhau"]):
+                    cur_deg_act = "Đứng đối mặt căng thẳng"
+                if not cur_deg_nar or any(w in deg_low for w in ["sinh hoạt bình thường", "ngồi yên", "ẩu đả", "đánh nhau", "vung tay đánh"]):
+                    cur_deg_nar = "Các cá nhân đứng đối diện nhau ở khoảng cách gần với tư thế và cử chỉ trao đổi căng thẳng."
             else:
-                if not cur_sum or any(w in sum_low for w in ["cảnh báo xung đột", "xảy ra xô xát", "ghi nhận hành vi xô xát"]):
+                if not cur_sum or any(w in sum_low for w in ["cảnh báo", "xô xát", "xung đột", "tấn công", "vung tay đánh", "giằng co", "tình huống căng thẳng", "đứng đối mặt", "tranh cãi"]):
                     cur_sum = "Mọi người trong khu vực đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái."
+                if not cur_det or any(w in det_low for w in ["tấn công trực diện", "vung tay đánh", "giằng co", "tư thế cảnh giác", "lời qua tiếng lại"]):
+                    cur_det = "Các cá nhân trong khung hình đang ngồi làm việc hoặc đứng trò chuyện, đi lại tự nhiên và giữ khoảng cách thoải mái."
+                if not cur_pred or any(w in cur_pred.lower() for w in ["xô xát", "can ngăn", "căng thẳng", "cảnh báo"]):
+                    cur_pred = "Mọi người tiếp tục duy trì hoạt động bình thường trong vài giây tiếp theo."
+                if not cur_deg_act or any(w in cur_deg_act.lower() for w in ["xô xát", "xô đẩy", "tấn công", "đánh nhau", "giằng co", "căng thẳng", "đối đầu", "va chạm"]):
+                    cur_deg_act = "Sinh hoạt và trao đổi tự nhiên"
+                if not cur_deg_nar or any(w in deg_low for w in ["xô xát", "xô đẩy", "tấn công", "đánh nhau", "giằng co", "căng thẳng", "đối đầu", "va chạm"]):
+                    cur_deg_nar = "Mọi người trong khu vực giữ vị trí ổn định, ngồi làm việc hoặc đứng trao đổi tự nhiên."
+
             seg["scene_summary"] = cur_sum
-            if cur_det:
-                seg["detailed_narrative"] = cur_det
-                seg["context_description"] = cur_det
-            if cur_pred:
-                seg["prediction_next_4s"] = cur_pred
+            seg["detailed_narrative"] = cur_det
+            seg["context_description"] = cur_det
+            seg["prediction_next_4s"] = cur_pred
+            seg["degraded_action"] = cur_deg_act
+            seg["degraded_narrative"] = cur_deg_nar
 
             s_start = seg.get("start_sec", 0.0)
             s_end = seg.get("end_sec", 0.0)
@@ -4452,18 +4484,58 @@ class VideoAnnotatorEngine:
                         slot["score"] = max(slot.get("score", 0.0), danger_target)
                         slot["level"] = "danger"
 
-        # Cập nhật max_danger_score đồng bộ với timeline_segments
-        if is_global_safe:
-            max_danger_score = min(max([seg.get("danger_score", 0.0) for seg in timeline_segments] or [0.0]), 1.5)
-            peak_danger_reason = gemini_result.get("primary_incident") or "Không gian an toàn, sinh hoạt bình thường"
+        # Đồng bộ 100% phán quyết tổng thể (gemini_result, max_danger_score, is_global_safe) với các phân đoạn timeline đã hiệu chỉnh
+        has_calibrated_danger = any(seg.get("severity") == "danger" or float(seg.get("danger_score", 0.0)) >= 8.0 for seg in timeline_segments)
+        has_calibrated_warn = any(seg.get("severity") == "warning" or (4.0 <= float(seg.get("danger_score", 0.0)) < 8.0) for seg in timeline_segments)
+
+        if has_calibrated_danger:
+            is_global_safe = False
+            max_danger_score = max([float(seg.get("danger_score", 0.0)) for seg in timeline_segments] + [8.2])
+            if isinstance(gemini_result, dict) and gemini_result:
+                gemini_result["threat_level"] = "NGUY HIỂM"
+                gemini_result["is_safe_environment"] = False
+                inc_low = str(gemini_result.get("primary_incident", "")).lower()
+                if not inc_low or any(w in inc_low for w in ["an toàn", "bình thường", "ổn định", "yên tĩnh"]):
+                    gemini_result["primary_incident"] = "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân"
+                diag_low = str(gemini_result.get("detailed_diagnosis", "")).lower()
+                if not diag_low or any(w in diag_low for w in ["hoàn toàn an toàn", "sinh hoạt bình thường", "không có biểu hiện tranh cãi"]):
+                    gemini_result["detailed_diagnosis"] = "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực diện cần can thiệp kịp thời."
+                rec_low = str(gemini_result.get("recommended_action", "")).lower()
+                if not rec_low or "định kỳ" in rec_low or "bình thường" in rec_low:
+                    gemini_result["recommended_action"] = "Cử người kịp thời đến can ngăn và tách các bên ra xa nhau để giữ trật tự."
+            peak_danger_reason = (gemini_result.get("primary_incident") if isinstance(gemini_result, dict) else None) or "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân"
+        elif has_calibrated_warn:
+            is_global_safe = False
+            max_danger_score = min(7.6, max([float(seg.get("danger_score", 0.0)) for seg in timeline_segments] + [4.8]))
+            if isinstance(gemini_result, dict) and gemini_result:
+                gemini_result["threat_level"] = "CẢNH BÁO"
+                gemini_result["is_safe_environment"] = False
+                inc_low = str(gemini_result.get("primary_incident", "")).lower()
+                if not inc_low or any(w in inc_low for w in ["an toàn", "bình thường", "ổn định", "ẩu đả", "đánh nhau"]):
+                    gemini_result["primary_incident"] = "Ghi nhận hai bên đứng đối mặt căng thẳng và lời qua tiếng lại"
+                diag_low = str(gemini_result.get("detailed_diagnosis", "")).lower()
+                if not diag_low or any(w in diag_low for w in ["hoàn toàn an toàn", "sinh hoạt bình thường"]):
+                    gemini_result["detailed_diagnosis"] = "Các cá nhân tiến lại gần đứng đối diện nhau với cử chỉ trao đổi căng thẳng nhưng chưa xảy ra đánh nhau."
+                rec_low = str(gemini_result.get("recommended_action", "")).lower()
+                if not rec_low or "bình thường" in rec_low:
+                    gemini_result["recommended_action"] = "Theo dõi sát tình hình và chủ động nhắc nhở để tránh sự việc leo thang thành xô xát."
+            peak_danger_reason = (gemini_result.get("primary_incident") if isinstance(gemini_result, dict) else None) or "Ghi nhận hai bên đứng đối mặt căng thẳng cần lưu ý"
         else:
-            max_danger_score = max([seg.get("danger_score", 0.0) for seg in timeline_segments] or [max_danger_score])
-            if max_danger_score >= 8.0:
-                peak_danger_reason = gemini_result.get("primary_incident") or "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân"
-            elif max_danger_score >= 4.0:
-                peak_danger_reason = gemini_result.get("primary_incident") or "Ghi nhận hai bên đứng đối mặt căng thẳng cần lưu ý"
-            else:
-                peak_danger_reason = gemini_result.get("primary_incident") or "Không gian an toàn, sinh hoạt bình thường"
+            is_global_safe = True
+            max_danger_score = min(max([float(seg.get("danger_score", 0.0)) for seg in timeline_segments] or [1.0]), 2.2)
+            if isinstance(gemini_result, dict) and gemini_result:
+                gemini_result["threat_level"] = "AN TOÀN"
+                gemini_result["is_safe_environment"] = True
+                inc_low = str(gemini_result.get("primary_incident", "")).lower()
+                if not inc_low or any(w in inc_low for w in ["xô xát", "tấn công", "ẩu đả", "đánh nhau", "bạo lực", "va chạm", "căng thẳng"]):
+                    gemini_result["primary_incident"] = "Không gian an toàn, mọi người sinh hoạt và trao đổi bình thường"
+                diag_low = str(gemini_result.get("detailed_diagnosis", "")).lower()
+                if not diag_low or any(w in diag_low for w in ["xô xát", "tấn công", "ẩu đả", "đánh nhau", "bạo lực"]):
+                    gemini_result["detailed_diagnosis"] = "Toàn bộ hoạt động của mọi người trong khu vực diễn ra ôn hòa và tự nhiên, hoàn toàn không có dấu hiệu tranh cãi hay va chạm."
+                rec_low = str(gemini_result.get("recommended_action", "")).lower()
+                if not rec_low or any(w in rec_low for w in ["can ngăn", "khẩn cấp", "tách các bên"]):
+                    gemini_result["recommended_action"] = "Không gian hoàn toàn bình thường, tiếp tục duy trì quan sát định kỳ."
+            peak_danger_reason = (gemini_result.get("primary_incident") if isinstance(gemini_result, dict) else None) or "Không gian an toàn, sinh hoạt bình thường"
 
         # Thống kê Phân bổ Rủi ro & Tư thế Đa chiều (Multi-dimensional Behavior & Risk Analytics)
         safe_cnt = 0
@@ -4550,18 +4622,14 @@ class VideoAnnotatorEngine:
         else:
             ergo_advice = "Cảnh báo công thái học: Xuất hiện tư thế gập sâu bất đối xứng hoặc dấu hiệu té ngã. Cần kiểm tra an toàn lập tức."
 
-        # Quyết định dominant_risk theo tiêu chuẩn an ninh: Có biến cố bạo lực/đòn đánh -> Đánh dấu DANGER
-        if (
-            is_global_safe or 
-            (call_gemini and str(gemini_result.get("threat_level", "")).upper() in ("AN TOÀN", "SAFE")) or
-            (call_gemini and gemini_result.get("is_safe_environment") is True)
-        ):
+        # Quyết định dominant_risk đồng bộ 100% với các phân đoạn đã được Gemini hiệu chỉnh
+        if is_global_safe:
             dominant_risk = "safe"
             danger_cnt = 0
             danger_pct = 0.0
-        elif danger_cnt >= 2 or danger_pct >= 5.0 or max_danger_score >= 8.0:
+        elif has_calibrated_danger or danger_cnt >= 2 or danger_pct >= 5.0 or max_danger_score >= 8.0:
             dominant_risk = "danger"
-        elif warn_cnt >= 3 or warn_pct >= 10.0 or max_danger_score >= 4.0:
+        elif has_calibrated_warn or warn_cnt >= 3 or warn_pct >= 10.0 or max_danger_score >= 4.0:
             dominant_risk = "warning"
         else:
             dominant_risk = "safe"
@@ -4708,7 +4776,7 @@ class VideoAnnotatorEngine:
             "entities_detected": all_detected_entities,
             "max_danger_score": max_danger_score,
             "peak_danger_reason": peak_danger_reason,
-            "overall_danger_level": "AN TOAN" if (is_global_safe or (call_gemini and str(gemini_result.get("threat_level", "")).upper() in ("AN TOÀN", "SAFE")) or (call_gemini and gemini_result.get("is_safe_environment") is True)) else ("NGUY HIEM" if max_danger_score >= 8.0 else ("CANH BAO" if max_danger_score >= 4.0 else "AN TOAN")),
+            "overall_danger_level": "AN TOAN" if is_global_safe else ("NGUY HIEM" if (has_calibrated_danger or max_danger_score >= 8.0) else ("CANH BAO" if (has_calibrated_warn or max_danger_score >= 4.0) else "AN TOAN")),
             "behavior_analytics": behavior_analytics,
             "gemini_report": gemini_result,
             "os_pipeline_report": os_pipeline_report,

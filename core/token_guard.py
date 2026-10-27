@@ -216,12 +216,15 @@ class TokenGuard:
                 
                 if seg_threat_lvl == "NGUY HIỂM":
                     seg_act = macro_action if threat_level == "NGUY HIỂM" else "Xô xát và giằng co trực tiếp"
+                    dom_posture = "Ngã xuống sàn" if (has_fall and not (has_clash or has_strike)) else "Xô xát / Ra đòn"
+                    deg_act = "Ngã xuống mặt sàn" if (has_fall and not (has_clash or has_strike)) else "Áp sát xô đẩy và va chạm"
                     if has_fall and not (has_clash or has_strike):
                         macro_sum = "Một người bất ngờ mất thăng bằng ngã xuống sàn, những người xung quanh tiến lại gần hỗ trợ."
                         detailed_narrative = (
                             f"Trong khoảng thời gian {t_rng}, một cá nhân bất ngờ loạng choạng rồi ngã xuống mặt sàn. "
                             f"Những người đứng gần đó lập tức dừng việc đang làm và bước tới kiểm tra, đỡ người bị ngã dậy."
                         )
+                        deg_nar = "Một cá nhân đang nằm trên mặt sàn và những người xung quanh tiến lại gần cúi xuống hỗ trợ."
                     else:
                         is_loc_sum_safe = any(w in loc_sum.lower() for w in ["ổn định", "bình thường", "an toàn", "không có xung lực", "chưa phát sinh"])
                         macro_sum = loc_sum if (loc_sum and not is_loc_sum_safe) else "Các cá nhân lao vào áp sát nhau, vung tay đánh và giằng co trực diện."
@@ -229,34 +232,44 @@ class TokenGuard:
                             f"Trong khoảng thời gian {t_rng}, một người chủ động bước nhanh tới áp sát và vung tay đánh trực diện về phía người đối diện. "
                             f"Người bị tấn công lập tức giơ hai tay lên che chắn vùng đầu ngực và nghiêng người lùi lại để tự vệ, trong khi những người xung quanh lùi ra giữ khoảng cách quan sát."
                         )
+                        deg_nar = "Các cá nhân tiến sát vào nhau, xuất hiện hành động xô đẩy và va chạm tay chân trực tiếp dù một số nhịp vung tay nhanh bị ngắt quãng."
                 elif seg_threat_lvl == "CẢNH BÁO":
                     seg_act = "Đứng đối mặt tranh cãi căng thẳng"
+                    dom_posture = "Đứng đối diện căng thẳng"
+                    deg_act = "Đứng đối mặt căng thẳng"
                     is_loc_sum_mismatch = any(w in loc_sum.lower() for w in ["ổn định", "bình thường", "an toàn", "không có xung lực"])
                     macro_sum = loc_sum if (loc_sum and not is_loc_sum_mismatch) else "Hai bên tiến lại gần đứng đối mặt nhau với cử chỉ chỉ tay và trao đổi căng thẳng."
                     detailed_narrative = (
                         f"Trong khoảng thời gian {t_rng}, các cá nhân bước lại gần và đứng đối diện nhau với thái độ căng thẳng, xuất hiện cử chỉ đưa tay chỉ trỏ hoặc giơ tay phòng bị trước ngực. "
                         f"Hai bên mới dừng ở mức lời qua tiếng lại chứ chưa xảy ra hành động đánh nhau hay xô đẩy mạnh."
                     )
+                    deg_nar = "Các cá nhân đứng đối diện nhau ở khoảng cách gần với tư thế và cử chỉ trao đổi căng thẳng."
                 else:
                     seg_act = "Sinh hoạt và trao đổi bình thường"
+                    dom_posture = "Sinh hoạt bình thường"
+                    deg_act = "Sinh hoạt và trao đổi tự nhiên"
                     is_loc_sum_combat = any(w in loc_sum.lower() for w in ["xung đột", "xô xát", "tấn công", "phòng vệ", "cảnh báo"])
                     macro_sum = loc_sum if (loc_sum and not is_loc_sum_combat) else "Mọi người giữ khoảng cách thoải mái, ngồi làm việc hoặc đứng trò chuyện tự nhiên."
                     detailed_narrative = (
                         f"Trong khoảng thời gian {t_rng}, các cá nhân trong khung hình đang ngồi tại chỗ hoặc đứng trò chuyện, đi lại tự nhiên. "
                         f"Mọi người giữ khoảng cách thoải mái và cử chỉ ôn hòa, hoàn toàn không có dấu hiệu tranh cãi hay va chạm."
                     )
+                    deg_nar = "Mọi người trong khu vực giữ vị trí ổn định, ngồi làm việc hoặc đứng trao đổi tự nhiên."
 
                 seg_analyses.append({
                     "segment_id": s_id,
                     "macro_narrative": macro_sum,
                     "detailed_action": seg_act,
+                    "dominant_posture": dom_posture,
                     "detailed_narrative": detailed_narrative,
                     "weapon_detected": "Hung khí / Vật cứng" if (seg_threat_lvl == "NGUY HIỂM" and has_strike and loc_sc >= 8.6) else None,
                     "posture_override": None,
                     "threat_score": round(min(9.6, max(8.0, loc_sc)) if seg_threat_lvl == "NGUY HIỂM" else (min(7.4, max(4.5, loc_sc)) if seg_threat_lvl == "CẢNH BÁO" else min(2.4, max(0.5, loc_sc))), 1),
                     "threat_level": seg_threat_lvl,
                     "context_description": detailed_narrative,
-                    "prediction_next_4s": loc_pred if loc_pred else "Tiếp tục quan sát diễn biến hoạt động của mọi người trong vài giây tiếp theo."
+                    "prediction_next_4s": loc_pred if loc_pred else "Tiếp tục quan sát diễn biến hoạt động của mọi người trong vài giây tiếp theo.",
+                    "degraded_action": deg_act,
+                    "degraded_narrative": deg_nar
                 })
 
         return {
@@ -544,8 +557,8 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
       "threat_level": "NGUY HIỂM" | "CẢNH BÁO" | "AN TOÀN",
       "context_description": "Ghi giống detailed_narrative (2-3 câu cốt lõi, không lặp lại)",
       "prediction_next_4s": "Dự đoán ngắn gọn 1 câu về xu hướng hành vi trong 4 giây tiếp theo",
-      "degraded_action": "Cụm từ ngắn (4-8 từ) mô tả hành vi bị biến dị/sơ sài ở nhánh suy giảm tài nguyên Z (khi lỡ mất khung hình đỉnh cử chỉ)",
-      "degraded_narrative": "Mô tả hành vi bị biến dị ở nhánh Z khi thiếu hụt tài nguyên làm lỡ mất khoảnh khắc đỉnh của cử chỉ (ví dụ: nhánh chuẩn thấy rõ giơ tay vẫy hoặc va chạm đỉnh điểm, còn nhánh Z chỉ thấy hơi nhấc nhẹ tay rồi bỏ xuống liền hoặc lướt qua). Chỉ viết ngôn ngữ hành vi tự nhiên, tuyệt đối không giải thích kỹ thuật."
+      "degraded_action": "Cụm từ ngắn (4-8 từ) mô tả hành vi quan sát được qua vài khung hình thưa của phân đoạn này",
+      "degraded_narrative": "Mô tả tự nhiên (1 câu, 15-25 từ) về hành vi quan sát được khi chỉ có vài khung hình thưa của phân đoạn này: Nếu phân đoạn đang có ẩu đả/xô xát thì vẫn phải nêu rõ thấy các cá nhân áp sát, xô đẩy và va chạm tay chân (dù một số nhịp vung tay nhanh bị ngắt quãng); nếu là cảnh căng thẳng thì nêu đứng đối mặt gần; nếu là cảnh an toàn thì nêu sinh hoạt tự nhiên. TUYỆT ĐỐI KHÔNG nhắc tên 'nhánh chuẩn', 'nhánh Z', 'luồng Z' hay giải thích kỹ thuật."
     }}
   ]
 }}
@@ -735,6 +748,8 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
         s = re.sub(r'\bxung lực(?:\s+động học|\s+cơ thể|\s+va chạm)?\b', 'tác động', s, flags=re.IGNORECASE)
         s = re.sub(r'\bđộng năng(?:\s+bạo lực)?\b', 'chuyển động', s, flags=re.IGNORECASE)
         s = re.sub(r'\bsinh cơ học\b', 'tư thế', s, flags=re.IGNORECASE)
+        s = re.sub(r'^(?:ở|tại|trên)\s+(?:nhánh|luồng)\s+(?:z|tùy\s+chỉnh|suy\s+giảm)[^,:]*[,:]?\s*', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(?:nhánh|luồng)\s+(?:chuẩn|y)\s+[^,;.]*[,;]\s*(?:còn|trong khi)\s+(?:nhánh|luồng)\s+(?:z|tùy\s+chỉnh)\s+(?:chỉ\s+)?', '', s, flags=re.IGNORECASE)
         s = re.sub(r'\s{2,}', ' ', s)
         s = re.sub(r'\s+([,.;:!?])', r'\1', s)
         s = re.sub(r'^[,.;:\-\s]+', '', s).strip()
