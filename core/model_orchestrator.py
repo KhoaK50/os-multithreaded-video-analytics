@@ -623,13 +623,15 @@ class HierarchicalModelOrchestrator:
             if self.active_tier == ModelTier.TIER_1_PRIMARY:
                 self.active_tier = ModelTier.TIER_2_FALLBACK
 
-        # Chỉ tự động quay về Mô hình 1 khi Mô hình 1 vừa thoát khỏi trạng thái khóa hạn mức (cooldown) và đã qua chu kỳ suy luận hiện tại
-        last_inf_elapsed = time.time() - getattr(self, "last_inference_ts", 0.0)
+        # Chỉ tự động quay về Mô hình 1 khi Mô hình 1 vừa thoát khỏi trạng thái khóa hạn mức (cooldown)
+        was_t1_cooldown = self.cooldown_tracker.tier1_cooldown_start is not None
+        t1_ready_now = self.cooldown_tracker.is_tier1_ready()
+        last_inf_ts = getattr(self, "last_inference_ts", 0.0) or 0.0
+        last_inf_elapsed = (time.time() - last_inf_ts) if last_inf_ts > 0.0 else 0.0
         if (
             self.active_tier != ModelTier.TIER_1_PRIMARY
-            and getattr(self.cooldown_tracker, "tier1_cooldown_start", 0.0) > 0.0
-            and self.cooldown_tracker.is_tier1_ready()
-            and last_inf_elapsed > 6.5
+            and t1_ready_now
+            and (was_t1_cooldown or last_inf_elapsed > 8.0)
             and quota_stats.get("tier1_rpm_used", 0) < self.quota_tracker.rpm_limit
             and quota_stats.get("tier1_rpd_used", 0) < self.quota_tracker.rpd_limit
         ):
