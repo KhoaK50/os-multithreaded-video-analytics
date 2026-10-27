@@ -3511,7 +3511,7 @@ class VideoAnnotatorEngine:
                 "calculated_score": final_threat_score
             }
 
-            # Tổng hợp câu văn mô tả sinh động và chi tiết từ số liệu động học thực tế (Kinematic-Semantic Synthesis)
+            # Tổng hợp câu văn mô tả tự nhiên như con người quan sát ngoài đời thực
             attackers = [e for e in seg_entities if e.get("severity") == "danger"]
             defenders = [e for e in seg_entities if e.get("severity") == "warning"]
             observers = [e for e in seg_entities if e.get("severity") == "safe" and e.get("id") != "KHÔNG GIAN"]
@@ -3520,7 +3520,7 @@ class VideoAnnotatorEngine:
                 for e in seg_entities if e.get("id") != "KHÔNG GIAN"
             ]
             actor_detail_sentence = (
-                f"Chi tiết trạng thái từng chủ thể trong khung hình ({time_range}): " + "; ".join(actor_detail_clauses) + "."
+                f"Trạng thái từng cá nhân trong khung hình ({time_range}): " + "; ".join(actor_detail_clauses) + "."
                 if actor_detail_clauses else ""
             )
 
@@ -3528,73 +3528,69 @@ class VideoAnnotatorEngine:
                 if attackers and defenders:
                     atk_id = attackers[0]["id"]
                     def_id = defenders[0]["id"]
-                    scene_summary = f"Cảnh báo xung đột: Đối tượng {atk_id} áp sát ở cự ly {dist_px} px, vung đòn tốc độ {vel_px} px/s về phía {def_id}. {def_id} co hai tay phòng vệ né đòn."
+                    scene_summary = f"Xảy ra xô xát: {atk_id} tiến sát và vung tay đánh mạnh về phía {def_id}, khiến {def_id} phải giơ hai tay lên che chắn và nghiêng người né tránh."
                     if observers:
                         obs_str = ", ".join([o["id"] for o in observers[:2]])
-                        scene_summary += f" Đối tượng {obs_str} duy trì tương tác an toàn."
+                        scene_summary += f" Trong khi đó, {obs_str} đứng ở gần đó quan sát sự việc."
                     context_description = (
-                        f"Trong khung thời gian {time_range}, hệ thống ghi nhận hành vi xung đột thể chất trực diện khi đối tượng {atk_id} chủ động lao tới rút ngắn khoảng cách xuống còn {dist_px} px và thực hiện động tác vung chi tấn công với vận tốc đỉnh {vel_px} px/s nhắm vào {def_id}. "
-                        f"Trước lực tác động bất ngờ, {def_id} phản ứng co hai tay chắn đỡ vùng đầu ngực và nghiêng trục thân lùi lại để giảm chấn thương. "
-                        f"{actor_detail_sentence} "
-                        f"Chỉ số xung lực động học đạt {round(max_k, 2)} kết hợp điểm tương tác áp sát {round(max_c, 2)}, xác lập mức cảnh báo nguy hiểm ({final_threat_score}/10)."
+                        f"Trong khoảng thời gian {time_range}, {atk_id} chủ động bước nhanh tới áp sát và vung tay tấn công trực diện vào {def_id}. "
+                        f"Trước động tác bất ngờ này, {def_id} phản ứng giơ hai tay lên che chắn vùng đầu ngực và nghiêng người lùi bước để tự vệ. "
+                        f"{actor_detail_sentence}"
                     ).strip()
                 elif attackers:
                     atk_id = attackers[0]["id"]
-                    scene_summary = f"Cảnh báo an ninh: Đối tượng {atk_id} ghi nhận xung lực cơ thể đột biến ({vel_px} px/s) với tư thế vung tay tấn công áp sát."
+                    scene_summary = f"Ghi nhận hành vi xô xát: {atk_id} lao nhanh về phía trước và vung tay mạnh tạo ra va chạm trực tiếp."
                     context_description = (
-                        f"Tại phân đoạn {time_range}, đối tượng {atk_id} gia tăng đột ngột vận tốc chuyển động tay chân lên mức {vel_px} px/s kèm theo tư thế dồn trọng tâm tấn công ở cự ly gần ({dist_px} px). "
-                        f"{actor_detail_sentence} "
-                        f"Biên độ dao động động năng vượt ngưỡng an toàn (xung lực {round(max_k, 2)}), hệ thống kích hoạt cảnh báo nguy cơ cao ({final_threat_score}/10)."
+                        f"Trong khoảng thời gian {time_range}, {atk_id} bất ngờ lao nhanh tới phía trước với động tác vung tay mạnh ở khoảng cách rất gần. "
+                        f"{actor_detail_sentence}"
                     ).strip()
                 else:
-                    scene_summary = f"Cảnh báo va chạm: Phát hiện biến thiên động học mạnh giữa các cá nhân ({vel_px} px/s), cự ly thu hẹp dưới {dist_px} px."
+                    scene_summary = "Các cá nhân lao vào áp sát nhau, xuất hiện hành động giằng co và xô đẩy mạnh."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, các đối tượng trong vùng giám sát di chuyển áp sát nhau ở cự ly hẹp ({dist_px} px) kèm theo xung lực va chạm mạnh ({vel_px} px/s). "
-                        f"{actor_detail_sentence} "
-                        f"Quỹ đạo chuyển động hỗn loạn và mật độ tương tác cao phản ánh tình huống ẩu đả thực tế ({final_threat_score}/10)."
+                        f"Trong khoảng thời gian {time_range}, các cá nhân trong khu vực tiến sát vào nhau kèm theo động tác giằng co và va chạm tay chân trực diện. "
+                        f"{actor_detail_sentence}"
                     ).strip()
             elif seg_severity == "warning":
                 if defenders:
                     def_id = defenders[0]["id"]
-                    scene_summary = f"Cảnh báo phòng vệ: Ghi nhận đối tượng {def_id} thủ thế co hai tay chắn đỡ, nghiêng thân né tránh ở cự ly {dist_px} px."
+                    scene_summary = f"Tình huống căng thẳng: {def_id} đưa hai tay lên trước ngực ở tư thế phòng thủ và nghiêng người giữ khoảng cách với người đối diện."
                     context_description = (
-                        f"Tại phân đoạn {time_range}, đối tượng {def_id} chuyển sang trạng thái thủ thế cảnh giác, hai tay nâng cao chắn trước ngực và trục lưng nghiêng nhẹ để giữ khoảng cách phòng vệ ({dist_px} px, vận tốc chi {vel_px} px/s). "
+                        f"Trong khoảng thời gian {time_range}, {def_id} nâng hai tay lên trước ngực ở tư thế cảnh giác và hơi nghiêng người lùi lại để giữ khoảng cách an toàn. "
                         f"{actor_detail_sentence} "
-                        f"Tình huống thể hiện sự căng thẳng đối kháng hoặc dư chấn ngay sau va chạm nhưng chưa phát sinh đòn đánh sát thương mới ({final_threat_score}/10)."
+                        f"Hai bên có biểu hiện căng thẳng nhưng chưa xảy ra đòn đánh trực tiếp."
                     ).strip()
                 else:
-                    scene_summary = f"Trạng thái đối đầu: Các đối tượng thu hẹp khoảng cách tiếp cận ({dist_px} px), tư thế sẵn sàng phòng vệ nhưng chưa phát sinh va chạm."
+                    scene_summary = "Hai bên tiến lại gần đứng đối diện nhau với cử chỉ căng thẳng, có dấu hiệu tranh cãi nhưng chưa xảy ra va chạm tay chân."
                     context_description = (
-                        f"Trong phân đoạn {time_range}, các chủ thể di chuyển tiến lại gần nhau làm thu hẹp cự ly tiếp xúc xuống mức {dist_px} px với vận tốc cử động đạt {vel_px} px/s. "
+                        f"Trong khoảng thời gian {time_range}, các cá nhân bước lại gần và đứng đối diện nhau với cử chỉ trao đổi căng thẳng. "
                         f"{actor_detail_sentence} "
-                        f"Dù chưa ghi nhận xung lực đấm đá trực tiếp, ngôn ngữ cơ thể và khoảng cách đứng đối diện cho thấy dấu hiệu tranh cãi hoặc tiền xung đột cần theo dõi sát ({final_threat_score}/10)."
+                        f"Sự việc mới dừng ở mức lời qua tiếng lại và đối mặt gần, chưa xảy ra xô xát."
                     ).strip()
             else:
                 if len(observers) > 1:
-                    scene_summary = f"Khu vực an ninh ổn định: Ghi nhận {len(observers)} đối tượng hoạt động bình thường, cự ly an toàn > 1.5 m, không có xung lực đột biến."
+                    scene_summary = f"Mọi người trong khu vực ({len(observers)} người) đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, toàn bộ {len(observers)} chủ thể trong khung hình duy trì hoạt động sinh hoạt và trao đổi tự nhiên, giữ khoảng cách tương tác an toàn ({dist_px} px) và vận tốc cử động ổn định ({vel_px} px/s). "
+                        f"Trong khoảng thời gian {time_range}, cả {len(observers)} người trong khung hình đang ngồi làm việc hoặc đứng trò chuyện, đi lại tự nhiên và ôn hòa. "
                         f"{actor_detail_sentence} "
-                        f"Không phát hiện hành vi áp sát đột ngột, vung tay gây hấn hay mất cân bằng trục cơ thể ({final_threat_score}/10)."
+                        f"Không có biểu hiện tranh cãi, tiến sát gây hấn hay va chạm."
                     ).strip()
                 elif len(seg_entities) == 1 and seg_entities[0].get("id") != "KHÔNG GIAN":
-                    scene_summary = f"Đối tượng {seg_entities[0]['id']} {seg_entities[0]['action'].lower()}, trạng thái sinh cơ học ổn định."
+                    scene_summary = f"{seg_entities[0]['id']} đang {seg_entities[0]['action'].lower()} một cách tự nhiên và ổn định."
                     context_description = (
-                        f"Tại phân đoạn {time_range}, chủ thể {seg_entities[0]['id']} thực hiện hoạt động {seg_entities[0]['action'].lower()} với tư thế {seg_entities[0].get('posture', 'ổn định').lower()}, tốc độ chuyển động chi ở mức thấp ({vel_px} px/s). "
-                        f"Môi trường xung quanh hoàn toàn bình thường, không có biểu hiện bất thường về an ninh ({final_threat_score}/10)."
+                        f"Trong khoảng thời gian {time_range}, {seg_entities[0]['id']} đang {seg_entities[0]['action'].lower()} với tư thế {seg_entities[0].get('posture', 'ổn định').lower()}. "
+                        f"Không gian xung quanh hoàn toàn bình thường và yên tĩnh."
                     ).strip()
                 else:
-                    scene_summary = "Khu vực an ninh ổn định, không ghi nhận chuyển động bất thường."
+                    scene_summary = "Không gian yên tĩnh, mọi người giữ vị trí ổn định và sinh hoạt bình thường."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, không gian giám sát duy trì trạng thái tĩnh và trật tự ổn định. "
-                        f"Không xuất hiện xung lực cơ học hay tương tác va chạm giữa các cá nhân trong khung hình ({final_threat_score}/10)."
+                        f"Trong khoảng thời gian {time_range}, không gian duy trì sự trật tự và ổn định, mọi người sinh hoạt bình thường."
                     )
 
-            pred_next = "Duy trì trạng thái tương tác an toàn trong các giây tiếp theo"
+            pred_next = "Mọi người tiếp tục duy trì hoạt động bình thường trong vài giây tiếp theo."
             if seg_severity == "danger":
-                pred_next = "Nguy cơ xung đột tiếp diễn cao; cần kích hoạt cảnh báo an ninh và tách biệt các đối tượng"
+                pred_next = "Tình trạng xô xát có thể tiếp diễn, cần sớm có người đến can ngăn và tách các bên ra."
             elif seg_severity == "warning":
-                pred_next = "Cần theo dõi cự ly tiếp xúc; có thể hạ nhiệt nếu các đối tượng lùi bước giữ khoảng cách an toàn"
+                pred_next = "Cần chú ý quan sát xem hai bên có tự lùi ra giữ khoảng cách hay tiếp tục căng thẳng."
 
             timeline_segments.append({
                 "segment_id": f"SEG-{idx+1:02d}",
@@ -4407,6 +4403,27 @@ class VideoAnnotatorEngine:
             else:
                 seg["severity"] = "safe"
 
+            # Đảm bảo tóm tắt phân đoạn (scene_summary) luôn đồng bộ 100% với mức độ nguy hiểm và dùng ngôn ngữ tự nhiên
+            cur_sum = TokenGuard._clean_human_video_text(seg.get("scene_summary", ""))
+            cur_det = TokenGuard._clean_human_video_text(seg.get("detailed_narrative") or seg.get("context_description", ""))
+            cur_pred = TokenGuard._clean_human_video_text(seg.get("prediction_next_4s", ""))
+            sum_low = cur_sum.lower()
+            if seg["severity"] == "danger":
+                if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không ghi nhận chuyển động bất thường", "không gian yên tĩnh"]):
+                    cur_sum = "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và giằng co trực tiếp."
+            elif seg["severity"] == "warning":
+                if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không gian yên tĩnh"]):
+                    cur_sum = "Hai bên tiến lại gần đứng đối mặt nhau với cử chỉ căng thẳng nhưng chưa xảy ra đánh nhau."
+            else:
+                if not cur_sum or any(w in sum_low for w in ["cảnh báo xung đột", "xảy ra xô xát", "ghi nhận hành vi xô xát"]):
+                    cur_sum = "Mọi người trong khu vực đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái."
+            seg["scene_summary"] = cur_sum
+            if cur_det:
+                seg["detailed_narrative"] = cur_det
+                seg["context_description"] = cur_det
+            if cur_pred:
+                seg["prediction_next_4s"] = cur_pred
+
             s_start = seg.get("start_sec", 0.0)
             s_end = seg.get("end_sec", 0.0)
             seg_sev = seg.get("severity", "safe")
@@ -4442,9 +4459,9 @@ class VideoAnnotatorEngine:
         else:
             max_danger_score = max([seg.get("danger_score", 0.0) for seg in timeline_segments] or [max_danger_score])
             if max_danger_score >= 8.0:
-                peak_danger_reason = gemini_result.get("primary_incident") or "Phát hiện xung đột thể xác / đòn đánh hoặc hung khí nguy hiểm"
+                peak_danger_reason = gemini_result.get("primary_incident") or "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân"
             elif max_danger_score >= 4.0:
-                peak_danger_reason = gemini_result.get("primary_incident") or "Ghi nhận biến động động học cần lưu ý"
+                peak_danger_reason = gemini_result.get("primary_incident") or "Ghi nhận hai bên đứng đối mặt căng thẳng cần lưu ý"
             else:
                 peak_danger_reason = gemini_result.get("primary_incident") or "Không gian an toàn, sinh hoạt bình thường"
 

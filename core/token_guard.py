@@ -128,71 +128,71 @@ class TokenGuard:
             threat_level = "NGUY HIỂM"
             is_safe = False
             if has_fall:
-                primary_inc = "Phát hiện Biến cố Té ngã / Mất thăng bằng nghiêm trọng"
-                diag = f"Hệ thống phát hiện biến cố sụp đổ trục thân và đầu chạm sát sàn (Điểm nguy cơ: {max_threat_score:.1f}/10.0). Hệ thống kích hoạt Tier-3 Autonomous Heuristic phân tích động học cục bộ."
-                rec = "Kích hoạt cảnh báo hỗ trợ y tế, kiểm tra tình trạng nạn nhân ngay lập tức."
-                macro_action = "Té ngã và cần trợ giúp y tế"
+                primary_inc = "Phát hiện người bị ngã xuống sàn cần hỗ trợ khẩn cấp"
+                diag = "Ghi nhận một cá nhân bất ngờ mất thăng bằng và ngã xuống mặt sàn, những người xung quanh lập tức dừng lại và tiến lại gần để kiểm tra tình hình."
+                rec = "Nhanh chóng cử người đến kiểm tra tình trạng sức khỏe và hỗ trợ người bị ngã."
+                macro_action = "Bị ngã xuống sàn và cần hỗ trợ"
             else:
-                primary_inc = "Phát hiện Xung đột thể xác / Biến động động năng bạo lực"
-                diag = f"Hệ thống Edge AI phát hiện gia tốc động học đột biến và tương tác va chạm vật lý mức độ cao giữa các đối tượng (Điểm nguy cơ: {max_threat_score:.1f}/10.0). Kích hoạt Tier-3 Autonomous Heuristic phân tích động học cục bộ."
-                rec = "Kích hoạt cảnh báo an ninh, tiến hành can thiệp giải tán xung đột kịp thời."
-                macro_action = "Xung đột thể xác và giằng co áp sát"
-            scene_ctx = f"Khu vực ghi nhận {max_entities} đối tượng với diễn biến tương tác xung đột cường độ cao, chuyển động tay chân nhanh và áp sát trực tiếp."
-            overall_concl = f"Kết luận an ninh: Ghi nhận tình huống đe dọa thể xác / biến động động năng nguy hiểm ({max_threat_score:.1f}/10.0). Yêu cầu lực lượng giám sát lưu tâm xử lý."
+                primary_inc = "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân"
+                diag = "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực diện khiến người đối diện phải giơ hai tay lên che chắn và lùi bước né tránh."
+                rec = "Cử người kịp thời đến can ngăn và tách các bên ra xa nhau để giữ trật tự."
+                macro_action = "Xô xát và giằng co trực tiếp"
+            scene_ctx = f"Khu vực có {max_entities} người xuất hiện, đang xảy ra tình huống va chạm tay chân và giằng co trực tiếp giữa các cá nhân."
+            overall_concl = "Kết luận: Đã xảy ra hành vi xô xát trực tiếp giữa các cá nhân trong khu vực, cần sớm can thiệp để ổn định trật tự."
             
             if has_fall and not (has_clash or has_strike):
                 base_roles = [
-                    {"role": "Nạn nhân / Người gặp biến cố té ngã", "actor_label": "Nạn nhân sụp đổ sàn", "distinctive_anchor": "Khu vực trung tâm sàn nhà, tư thế nằm ngang", "action": "Té ngã / Nằm bất động trên sàn", "posture": "Sụp đổ trục thân và nằm sát mặt sàn", "appearance": "Đối tượng tiêu điểm ghi nhận"},
-                    {"role": "Đối tượng hỗ trợ / Tiếp cận", "actor_label": "Người tiếp cận hỗ trợ", "distinctive_anchor": "Vị trí lân cận, di chuyển về phía nạn nhân", "action": "Tiếp cận hỗ trợ", "posture": "Tư thế đứng hoặc cúi kiểm tra", "appearance": "Đối tượng xung quanh hiện trường"},
-                    {"role": "Đối tượng trong không gian", "actor_label": "Đối tượng lân cận", "distinctive_anchor": "Khu vực rìa không gian", "action": "Duy trì vị trí", "posture": "Tư thế tự nhiên", "appearance": "Đối tượng xung quanh"},
-                    {"role": "Đối tượng di chuyển", "actor_label": "Đối tượng phía sau", "distinctive_anchor": "Khu vực nền phía sau", "action": "Di chuyển tự nhiên", "posture": "Tư thế tự nhiên", "appearance": "Đối tượng xung quanh"}
+                    {"role": "Người bị ngã", "actor_label": "Người ngã trên sàn", "distinctive_anchor": "Khu vực giữa sàn nhà", "action": "Bị ngã nằm trên mặt sàn", "posture": "Nằm trên mặt sàn", "appearance": "Người cần hỗ trợ"},
+                    {"role": "Người tiến lại hỗ trợ", "actor_label": "Người đến giúp đỡ", "distinctive_anchor": "Đứng cạnh người bị ngã", "action": "Bước lại gần hỏi thăm và đỡ dậy", "posture": "Đứng cúi người hỗ trợ", "appearance": "Người xung quanh"},
+                    {"role": "Người đứng gần đó", "actor_label": "Người quan sát", "distinctive_anchor": "Khu vực bên cạnh", "action": "Đứng nhìn về phía người bị ngã", "posture": "Đang đứng quan sát", "appearance": "Người xung quanh"},
+                    {"role": "Người đi ngang qua", "actor_label": "Người phía sau", "distinctive_anchor": "Khu vực phía sau", "action": "Dừng bước theo dõi sự việc", "posture": "Đang đứng tự nhiên", "appearance": "Người xung quanh"}
                 ]
             else:
                 base_roles = [
-                    {"role": "Chủ thể gây hấn / Tấn công", "actor_label": "Chủ thể chủ động áp sát", "distinctive_anchor": "Vị trí chủ động di chuyển, vung tay áp sát đối phương", "action": "Vung tay ra đòn / Tấn công áp sát", "posture": "Thủ thế và va chạm cường độ cao", "appearance": "Đối tượng tiêu điểm quan sát"},
-                    {"role": "Đối tượng bị tác động / Phòng vệ", "actor_label": "Đối tượng giằng co phòng vệ", "distinctive_anchor": "Vị trí đối diện, tư thế lùi bước chống đỡ", "action": "Giằng co va chạm / Đỡ đòn né tránh", "posture": "Thủ thế đối đầu né đòn", "appearance": "Đối tượng tương tác trực tiếp"},
-                    {"role": "Đối tượng lân cận", "actor_label": "Đối tượng ngoài tiêu điểm", "distinctive_anchor": "Đứng cách ly ngoài phạm vi va chạm", "action": "Duy trì vị trí", "posture": "Tư thế đứng tự nhiên", "appearance": "Đối tượng xung quanh"},
-                    {"role": "Đối tượng ngoại vi", "actor_label": "Đối tượng di chuyển ngoại vi", "distinctive_anchor": "Khu vực lân cận ngoài tiêu điểm", "action": "Di chuyển tự nhiên", "posture": "Tư thế tự nhiên", "appearance": "Đối tượng xung quanh"}
+                    {"role": "Chủ động gây hấn", "actor_label": "Người chủ động lao vào", "distinctive_anchor": "Đứng áp sát phía trước", "action": "Tiến sát và vung tay đánh về phía đối phương", "posture": "Đang đứng nhào tới vung tay", "appearance": "Người tham gia xô xát"},
+                    {"role": "Phòng thủ / Chống đỡ", "actor_label": "Người bị tác động", "distinctive_anchor": "Đứng đối diện người gây hấn", "action": "Giơ hai tay che chắn vùng đầu ngực và lùi bước né đòn", "posture": "Đang đứng co tay che chắn", "appearance": "Người tham gia xô xát"},
+                    {"role": "Người ngoài cuộc / Quan sát", "actor_label": "Người đứng xem", "distinctive_anchor": "Đứng lùi ở bên ngoài", "action": "Đứng giữ khoảng cách và nhìn về phía hai người đang xô xát", "posture": "Đang đứng quan sát", "appearance": "Người xung quanh"},
+                    {"role": "Người ngoài cuộc / Quan sát", "actor_label": "Người phía sau", "distinctive_anchor": "Khu vực phía sau", "action": "Ngồi hoặc đứng nhìn theo diễn biến sự việc", "posture": "Tư thế tự nhiên", "appearance": "Người xung quanh"}
                 ]
         elif max_threat_score >= 4.0:
             threat_level = "CẢNH BÁO"
             is_safe = False
-            primary_inc = "Cảnh báo tư thế bất thường / Thủ thế đối đầu"
-            diag = f"Phát hiện dấu hiệu căng thẳng hoặc thay đổi tư thế đột ngột giữa các đối tượng (Điểm số: {max_threat_score:.1f}/10.0). Kích hoạt Tier-3 Autonomous Heuristic."
-            rec = "Tiếp tục quan sát chặt chẽ luồng video để phát hiện sớm các nguy cơ leo thang."
-            macro_action = "Thủ thế đối đầu và căng thẳng"
-            scene_ctx = f"Khu vực ghi nhận {max_entities} đối tượng với tương tác căng thẳng ở cự ly gần."
-            overall_concl = "Kết luận: Tình huống tiềm ẩn bất ổn hoặc tranh chấp, cần theo dõi sát sao."
+            primary_inc = "Ghi nhận hai bên đứng đối mặt căng thẳng và lời qua tiếng lại"
+            diag = "Các cá nhân tiến lại gần đứng đối diện nhau với thái độ căng thẳng, có cử chỉ chỉ tay và giơ tay phòng thủ trước ngực nhưng chưa xảy ra đánh nhau."
+            rec = "Theo dõi sát tình hình và chủ động nhắc nhở để tránh sự việc leo thang thành xô xát."
+            macro_action = "Đứng đối mặt tranh cãi căng thẳng"
+            scene_ctx = f"Khu vực có {max_entities} người, trong đó hai người đang đứng đối diện nhau khá gần với cử chỉ tranh luận căng thẳng."
+            overall_concl = "Kết luận: Hai bên đang có dấu hiệu lời qua tiếng lại và căng thẳng, cần lưu ý quan sát để ngăn ngừa va chạm."
             base_roles = [
-                {"role": "Đối tượng #01", "actor_label": "Đối tượng tiêu điểm (Trước)", "distinctive_anchor": "Vị trí tiền cảnh, tư thế co tay thủ thế", "action": "Thủ thế / Căng thẳng", "posture": "Co tay trước ngực", "appearance": "Đối tượng trong tiêu điểm"},
-                {"role": "Đối tượng #02", "actor_label": "Đối tượng đối diện", "distinctive_anchor": "Vị trí đối diện cự ly gần", "action": "Đối diện / Tương tác căng thẳng", "posture": "Tư thế đối kháng", "appearance": "Đối tượng đối diện"},
-                {"role": "Đối tượng #03", "actor_label": "Đối tượng lân cận", "distinctive_anchor": "Vị trí lân cận", "action": "Duy trì vị trí", "posture": "Tư thế đứng tự nhiên", "appearance": "Người xung quanh"},
-                {"role": "Đối tượng #04", "actor_label": "Đối tượng di chuyển", "distinctive_anchor": "Khu vực hành lang lân cận", "action": "Di chuyển tự nhiên", "posture": "Tư thế tự nhiên", "appearance": "Người xung quanh"}
+                {"role": "Đối mặt căng thẳng", "actor_label": "Người đứng phía trước", "distinctive_anchor": "Vị trí phía trước", "action": "Đứng đối diện và giơ tay tranh luận căng thẳng", "posture": "Đang đứng đối diện", "appearance": "Người trong cuộc"},
+                {"role": "Đối mặt căng thẳng", "actor_label": "Người đứng đối diện", "distinctive_anchor": "Vị trí đối diện", "action": "Đứng nhìn thẳng vào người đối diện và giữ khoảng cách phòng bị", "posture": "Đang đứng đối diện", "appearance": "Người trong cuộc"},
+                {"role": "Người ngoài cuộc / Quan sát", "actor_label": "Người đứng gần đó", "distinctive_anchor": "Vị trí bên cạnh", "action": "Đứng yên theo dõi cuộc nói chuyện", "posture": "Đang đứng tự nhiên", "appearance": "Người xung quanh"},
+                {"role": "Người ngoài cuộc / Quan sát", "actor_label": "Người phía sau", "distinctive_anchor": "Khu vực phía sau", "action": "Giữ nguyên vị trí sinh hoạt", "posture": "Tư thế tự nhiên", "appearance": "Người xung quanh"}
             ]
         else:
             threat_level = "AN TOÀN"
             is_safe = True
-            primary_inc = "Hoạt động và di chuyển bình thường"
-            diag = f"Không gian giám sát ổn định, ghi nhận {max_entities} đối tượng tương tác với động năng bình thường. Hệ thống kích hoạt Bộ hội chẩn Cục bộ Tự hành (Tier-3 Autonomous Heuristic) bảo toàn 100% dữ liệu."
-            rec = "Duy trì giám sát tự động định kỳ theo quy chuẩn."
-            macro_action = "Hoạt động sinh hoạt và di chuyển bình thường"
-            scene_ctx = f"Khu vực ghi nhận {max_entities} đối tượng tham gia hoạt động ổn định, không gian an toàn."
-            overall_concl = "Đánh giá an toàn tổng thể: Toàn bộ quá trình vận động của các đối tượng hoàn toàn an toàn và lành mạnh. Không phát hiện bất kỳ dấu hiệu nguy cơ nào."
+            primary_inc = "Mọi người sinh hoạt, di chuyển và trò chuyện bình thường"
+            diag = f"Ghi nhận {max_entities} người trong khu vực đang ngồi học tập, làm việc hoặc đi lại trao đổi tự nhiên, không có biểu hiện tranh cãi hay xô xát."
+            rec = "Không gian hoàn toàn bình thường, tiếp tục duy trì quan sát định kỳ."
+            macro_action = "Sinh hoạt và trò chuyện bình thường"
+            scene_ctx = f"Khu vực có {max_entities} người đang sinh hoạt, làm việc và trò chuyện ôn hòa trong không gian trật tự."
+            overall_concl = "Đánh giá tổng thể: Toàn bộ hoạt động của mọi người trong khu vực diễn ra bình thường, thân thiện và hoàn toàn an toàn."
             base_roles = [
-                {"role": "Đối tượng #01", "actor_label": "Nhân vật tiêu điểm", "distinctive_anchor": "Vị trí trung tâm khu vực", "action": "Vận động tự nhiên", "posture": "Tư thế ổn định", "appearance": "Trang phục thường nhật"},
-                {"role": "Đối tượng #02", "actor_label": "Nhân vật phối hợp", "distinctive_anchor": "Vị trí liền kề", "action": "Vận động và tương tác", "posture": "Tư thế tự nhiên", "appearance": "Trang phục thường nhật"},
-                {"role": "Đối tượng #03", "actor_label": "Đối tượng trong không gian", "distinctive_anchor": "Khu vực lân cận", "action": "Duy trì vị trí", "posture": "Tư thế tự nhiên", "appearance": "Đối tượng trong khung cảnh"},
-                {"role": "Đối tượng #04", "actor_label": "Đối tượng di chuyển phụ", "distinctive_anchor": "Khu vực ngoại vi", "action": "Sinh hoạt bình thường", "posture": "Tư thế ổn định", "appearance": "Đối tượng trong khung cảnh"}
+                {"role": "An toàn", "actor_label": "Người ở vị trí trung tâm", "distinctive_anchor": "Vị trí trung tâm", "action": "Ngồi hoặc đứng trao đổi tự nhiên", "posture": "Tư thế thoải mái", "appearance": "Trang phục thường ngày"},
+                {"role": "An toàn", "actor_label": "Người bên cạnh", "distinctive_anchor": "Vị trí bên cạnh", "action": "Trò chuyện và phối hợp nhịp nhàng", "posture": "Tư thế tự nhiên", "appearance": "Trang phục thường ngày"},
+                {"role": "An toàn", "actor_label": "Người trong phòng", "distinctive_anchor": "Khu vực lân cận", "action": "Giữ nguyên vị trí làm việc", "posture": "Tư thế tự nhiên", "appearance": "Trang phục thường ngày"},
+                {"role": "An toàn", "actor_label": "Người phía sau", "distinctive_anchor": "Khu vực phía sau", "action": "Sinh hoạt bình thường", "posture": "Tư thế ổn định", "appearance": "Trang phục thường ngày"}
             ]
 
         detected_actors = []
         for i in range(max_entities):
-            r = base_roles[i] if i < len(base_roles) else {"role": f"Chủ thể #{i+1}", "actor_label": f"Đối tượng #{i+1}", "distinctive_anchor": f"Khu vực #{i+1}", "action": "Quan sát bối cảnh", "posture": "Tự nhiên", "appearance": "Đối tượng trong khung cảnh"}
+            r = base_roles[i] if i < len(base_roles) else {"role": "An toàn", "actor_label": f"Người thứ {i+1}", "distinctive_anchor": f"Vị trí thứ {i+1}", "action": "Sinh hoạt tự nhiên", "posture": "Tự nhiên", "appearance": "Trang phục thường ngày"}
             detected_actors.append({
                 "actor_index": i + 1,
                 "tag_id": i + 1,
-                "actor_label": r.get("actor_label", f"Đối tượng #{i+1}"),
-                "distinctive_anchor": r.get("distinctive_anchor", f"Khu vực #{i+1}"),
+                "actor_label": r.get("actor_label", f"Người thứ {i+1}"),
+                "distinctive_anchor": r.get("distinctive_anchor", f"Vị trí thứ {i+1}"),
                 "role": r["role"],
                 "appearance": r["appearance"],
                 "true_action": r["action"],
@@ -208,59 +208,55 @@ class TokenGuard:
                 loc_sc = float(s.get("local_score", 0.0))
                 loc_sum = str(s.get("local_summary", "")).strip()
                 loc_pred = str(s.get("local_prediction", "")).strip()
-                vel_px = int(s.get("max_velocity", 0))
-                dist_px = int(s.get("min_distance", 180))
 
                 if num_segs == 1:
                     seg_threat_lvl = threat_level
                 else:
                     seg_threat_lvl = "NGUY HIỂM" if loc_sc >= 7.5 else ("CẢNH BÁO" if loc_sc >= 4.0 else "AN TOÀN")
                 
-                # Tạo đoạn văn miêu tả phân tích hành vi cụ thể, dài và rõ ràng gắn với thông số động học riêng của từng phân đoạn
                 if seg_threat_lvl == "NGUY HIỂM":
-                    seg_act = macro_action if threat_level == "NGUY HIỂM" else "Xung đột thể xác và giằng co áp sát"
+                    seg_act = macro_action if threat_level == "NGUY HIỂM" else "Xô xát và giằng co trực tiếp"
                     if has_fall and not (has_clash or has_strike):
+                        macro_sum = "Một người bất ngờ mất thăng bằng ngã xuống sàn, những người xung quanh tiến lại gần hỗ trợ."
                         detailed_narrative = (
-                            f"Phân đoạn {s_id} ({t_rng}) ghi nhận biến cố té ngã nghiêm trọng trong không gian giám sát. "
-                            f"Chủ thể mất thăng bằng đột ngột, trục thân sụp đổ nhanh chóng xuống sát mặt sàn với vận tốc dịch chuyển {vel_px} px/s (điểm nguy cơ: {max(loc_sc, max_threat_score):.1f}/10). "
-                            f"Các đối tượng xung quanh có xu hướng dừng vận động hoặc di chuyển tiếp cận hiện trường để quan sát và hỗ trợ. "
-                            f"Khuyến nghị kích hoạt hỗ trợ y tế và kiểm tra an toàn tại chỗ lập tức."
+                            f"Trong khoảng thời gian {t_rng}, một cá nhân bất ngờ loạng choạng rồi ngã xuống mặt sàn. "
+                            f"Những người đứng gần đó lập tức dừng việc đang làm và bước tới kiểm tra, đỡ người bị ngã dậy."
                         )
                     else:
-                        base_desc = loc_sum if loc_sum else f"Ghi nhận va chạm áp sát ở cự ly {dist_px} px với vận tốc vung chi {vel_px} px/s."
+                        is_loc_sum_safe = any(w in loc_sum.lower() for w in ["ổn định", "bình thường", "an toàn", "không có xung lực", "chưa phát sinh"])
+                        macro_sum = loc_sum if (loc_sum and not is_loc_sum_safe) else "Các cá nhân lao vào áp sát nhau, vung tay đánh và giằng co trực diện."
                         detailed_narrative = (
-                            f"Tại phân đoạn {s_id} ({t_rng}), {base_desc} "
-                            f"Hệ thống ghi nhận xung lực cơ thể cường độ cao ({vel_px} px/s) khi đối tượng chủ động lao tới rút ngắn khoảng cách xuống còn {dist_px} px và thực hiện động tác vung tay/chân tấn công trực diện. "
-                            f"Đối phương buộc phải co tay chắn đỡ hoặc giật lùi né đòn trong thế bị động, trong khi các cá nhân xung quanh dạt ra giữ khoảng cách quan sát (điểm nguy cơ: {min(9.6, max(loc_sc, 8.2)):.1f}/10)."
+                            f"Trong khoảng thời gian {t_rng}, một người chủ động bước nhanh tới áp sát và vung tay đánh trực diện về phía người đối diện. "
+                            f"Người bị tấn công lập tức giơ hai tay lên che chắn vùng đầu ngực và nghiêng người lùi lại để tự vệ, trong khi những người xung quanh lùi ra giữ khoảng cách quan sát."
                         )
                 elif seg_threat_lvl == "CẢNH BÁO":
-                    seg_act = "Đối đầu căng thẳng / Áp sát thủ thế"
-                    base_desc = loc_sum if loc_sum else f"Các đối tượng thu hẹp khoảng cách tiếp cận ({dist_px} px, vận tốc {vel_px} px/s)."
+                    seg_act = "Đứng đối mặt tranh cãi căng thẳng"
+                    is_loc_sum_mismatch = any(w in loc_sum.lower() for w in ["ổn định", "bình thường", "an toàn", "không có xung lực"])
+                    macro_sum = loc_sum if (loc_sum and not is_loc_sum_mismatch) else "Hai bên tiến lại gần đứng đối mặt nhau với cử chỉ chỉ tay và trao đổi căng thẳng."
                     detailed_narrative = (
-                        f"Tại phân đoạn {s_id} ({t_rng}), {base_desc} "
-                        f"Các chủ thể tiến lại gần nhau ở cự ly {dist_px} px với tư thế căng thẳng, xuất hiện cử chỉ chỉ trỏ, giằng co nhẹ hoặc thủ thế phòng vệ (vận tốc chi đạt {vel_px} px/s). "
-                        f"Mặc dù chưa bùng phát đòn tấn công sát thương cao, ngôn ngữ cơ thể cho thấy mức độ cảnh giác và đối kháng rõ rệt cần được giám sát chặt chẽ."
+                        f"Trong khoảng thời gian {t_rng}, các cá nhân bước lại gần và đứng đối diện nhau với thái độ căng thẳng, xuất hiện cử chỉ đưa tay chỉ trỏ hoặc giơ tay phòng bị trước ngực. "
+                        f"Hai bên mới dừng ở mức lời qua tiếng lại chứ chưa xảy ra hành động đánh nhau hay xô đẩy mạnh."
                     )
                 else:
-                    seg_act = "Hoạt động ổn định / Chưa phát sinh va chạm"
-                    base_desc = loc_sum if loc_sum else "Các đối tượng duy trì tư thế ngồi hoặc đứng trao đổi với động năng bình thường."
+                    seg_act = "Sinh hoạt và trao đổi bình thường"
+                    is_loc_sum_combat = any(w in loc_sum.lower() for w in ["xung đột", "xô xát", "tấn công", "phòng vệ", "cảnh báo"])
+                    macro_sum = loc_sum if (loc_sum and not is_loc_sum_combat) else "Mọi người giữ khoảng cách thoải mái, ngồi làm việc hoặc đứng trò chuyện tự nhiên."
                     detailed_narrative = (
-                        f"Tại phân đoạn {s_id} ({t_rng}), {base_desc} "
-                        f"Các cá nhân trong khung hình duy trì vị trí sinh hoạt bình thường, cự ly tương tác giữ ở ngưỡng an toàn ({dist_px} px) và vận tốc cử động tay chân ổn định ({vel_px} px/s). "
-                        f"Không ghi nhận biểu hiện áp sát gây hấn, vung hung khí hay xung lực cơ thể đột biến trong suốt khoảng thời gian này."
+                        f"Trong khoảng thời gian {t_rng}, các cá nhân trong khung hình đang ngồi tại chỗ hoặc đứng trò chuyện, đi lại tự nhiên. "
+                        f"Mọi người giữ khoảng cách thoải mái và cử chỉ ôn hòa, hoàn toàn không có dấu hiệu tranh cãi hay va chạm."
                     )
 
                 seg_analyses.append({
                     "segment_id": s_id,
-                    "macro_narrative": loc_sum if loc_sum else f"Phân đoạn {s_id} ({t_rng}): {seg_act}.",
+                    "macro_narrative": macro_sum,
                     "detailed_action": seg_act,
                     "detailed_narrative": detailed_narrative,
-                    "weapon_detected": "Hung khí / Vật dụng va chạm" if (seg_threat_lvl == "NGUY HIỂM" and has_strike and loc_sc >= 8.6) else None,
+                    "weapon_detected": "Hung khí / Vật cứng" if (seg_threat_lvl == "NGUY HIỂM" and has_strike and loc_sc >= 8.6) else None,
                     "posture_override": None,
                     "threat_score": round(min(9.6, max(8.0, loc_sc)) if seg_threat_lvl == "NGUY HIỂM" else (min(7.4, max(4.5, loc_sc)) if seg_threat_lvl == "CẢNH BÁO" else min(2.4, max(0.5, loc_sc))), 1),
                     "threat_level": seg_threat_lvl,
                     "context_description": detailed_narrative,
-                    "prediction_next_4s": loc_pred if loc_pred else "Duy trì theo dõi sát sao động thái ở chu kỳ tiếp theo."
+                    "prediction_next_4s": loc_pred if loc_pred else "Tiếp tục quan sát diễn biến hoạt động của mọi người trong vài giây tiếp theo."
                 })
 
         return {
@@ -268,11 +264,11 @@ class TokenGuard:
             "model_tier": "Tier-3 Local Arbiter",
             "threat_level": threat_level,
             "is_safe_environment": is_safe,
-            "primary_incident": f"{primary_inc} (Autonomous Heuristic Arbiter)",
+            "primary_incident": primary_inc,
             "detailed_diagnosis": diag,
             "recommended_action": rec,
             "scene_context": scene_ctx,
-            "chronological_evolution": f"Diễn biến toàn cảnh: Ghi nhận {max_entities} đối tượng trong khung hình. Quá trình vận động được phân tích trực tiếp qua cảm biến động học Edge AI, trạng thái đánh giá là {threat_level}.",
+            "chronological_evolution": f"Diễn biến toàn cảnh: Khu vực có {max_entities} người xuất hiện trong khung hình. Mọi cử chỉ và tương tác giữa các cá nhân được ghi nhận liền mạch với mức độ đánh giá là {threat_level}.",
             "overall_conclusion": overall_concl,
             "confidence_score": 0.92,
             "token_usage": 0,
@@ -431,31 +427,22 @@ class TokenGuard:
         hints_text = ("\nCÁC ĐỐI TƯỢNG VÀ VỊ TRÍ KHÔNG GIAN GHI NHẬN TỪ BỘ THEO DÕI ĐỘNG HỌC:\n" + "\n".join(hints_lines)) if hints_lines else ""
         optical_note = ""
         if video_metadata.get("optical_alert"):
-            optical_note = f"\n[CẢNH BÁO QUANG HỌC TỪ EDGE AI]: {video_metadata.get('optical_alert')}\n"
+            optical_note = "\n[GỢI Ý CHUYỂN ĐỘNG]: Có ghi nhận nhịp chuyển động nhanh và tiếp xúc gần trong cảnh, hãy nhìn kỹ hình ảnh để xác định đây là xô xát thật hay chỉ là sinh hoạt bình thường.\n"
 
-        motion_telemetry = video_metadata.get("motion_telemetry", {})
-        if motion_telemetry:
-            mhi_val = motion_telemetry.get("mhi_persistence", 0.0)
-            conv_val = motion_telemetry.get("centripetal_convergence", 0.0)
-            dedt_val = motion_telemetry.get("peak_dE_dt", 0.0)
-            if mhi_val > 0.0 or conv_val > 0.0 or abs(dedt_val) > 0.0:
-                optical_note += (
-                    f"\n[CHỈ SỐ ĐỘNG HỌC SOTA TỪ EDGE AI]:\n"
-                    f"- Độ bền bỉ động học (MHI Persistence): {mhi_val:.2f} (>0.35: Đám mây va chạm giằng co kéo dài bền bỉ, loại trừ đèn xe quét qua)\n"
-                    f"- Tốc độ hội tụ hướng tâm (Centripetal Convergence): {conv_val:.2f} (>0.80: Hai đối tượng đang lao sầm trực diện vào nhau)\n"
-                    f"- Đỉnh đạo hàm xung kích (Peak dE/dt Shockwave): {dedt_val:.1f} (Gia tốc va đập / xô ngã tức thời)\n"
-                )
-
-        prompt = f"""Bạn là Chuyên gia Giám sát AI An ninh & Phân tích Động học Video.
-Hãy xem xét kỹ các ảnh khung hình đính kèm (đã được vẽ Bounding Box và Khung xương của đối tượng) kết hợp với thông số từ hệ thống Edge AI:
+        prompt = f"""Bạn là một chuyên gia phân tích hành vi con người với lối quan sát tinh tế, tự nhiên và giàu sinh khí.
+Hãy quan sát kỹ những người trong các ảnh đính kèm như thể bạn đang trực tiếp nhìn họ ngoài đời thực và thuật lại sự việc cho người dùng bằng ngôn ngữ đời thường, tự nhiên, rõ ràng nhất:
 
 THÔNG SỐ VIDEO:
-- Thời lượng đoạn phân tích: {video_metadata.get('duration_sec', 0):.1f}s ({video_metadata.get('frame_count', 0)} frames @ {video_metadata.get('fps', 30):.1f} FPS)
+- Thời lượng đoạn phân tích: {video_metadata.get('duration_sec', 0):.1f}s
 - Luồng âm thanh: {audio_status_str}
-- Số sự kiện động học ghi nhận: {len(event_summary)}
 {hints_text}
 {optical_note}
 {seg_text}
+
+QUY TẮC VĂN PHONG CON NGƯỜI BẮT BUỘC (BÁO CÁO DÀNH CHO NGƯỜI DÙNG, KHÔNG PHẢI LOG MÁY):
+- Hãy viết hoàn toàn như một con người đang quan sát và kể lại hành động của những người trong video.
+- CẤM TUYỆT ĐỐI dùng các thuật ngữ máy móc, đo đạc kỹ thuật hoặc nhãn hệ thống trong câu văn báo cáo: KHÔNG viết "px", "px/s", "m/s", "cự ly > 1.5 m", "xung lực", "động năng", "gia tốc động học", "biến thiên động học", "sinh cơ học", "trục thân", "trục lưng", "góc nghiêng", "T1", "T2", "T3", "T4", "PEAK", "Edge AI", "Autonomous Heuristic", "Tier-1", "Tier-2", "Tier-3", "Bounding Box".
+- Thay vì viết "áp sát ở cự ly 47 px với xung lực đột biến", hãy miêu tả tự nhiên như con người: "bước nhanh lại gần và vung tay đánh mạnh về phía người đối diện khiến người này phải giơ hai tay lên che chắn trước ngực".
 
 HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
 1. TRỌNG TÀI THẨM ĐỊNH NGUY CƠ (Contextual Arbiter):
@@ -464,12 +451,12 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
    - CẢNH BÁO: Khi hai bên mới dừng ở mức căng thẳng lời nói, chỉ tay, tiến lại gần đối mặt hoặc thủ thế nhưng CHƯA có va chạm thể xác trực diện -> BẮT BUỘC kết luận "threat_level": "CẢNH BÁO" (điểm 4.5 - 5.8). TUYỆT ĐỐI KHÔNG đánh giá "NGUY HIỂM" dựa trên suy đoán tâm lý hay "sát khí" khi chưa có đòn đánh!
    - AN TOÀN: Khi các đối tượng sinh hoạt gia đình vui vẻ, cha mẹ chơi đùa cùng con cái, học tập, làm việc, đi lại, hoặc giao tiếp bình thường -> BẮT BUỘC kết luận "threat_level": "AN TOÀN", "is_safe_environment": true, "threat_score" trong các phân đoạn phải <= 1.8, và TUYỆT ĐỐI KHÔNG gán vai trò chiến đấu ("Kẻ tấn công", "Nạn nhân", "Phòng thủ") cho các thành viên trong cảnh an toàn.
 
-2. ĐẶC TRỊ BẠO LỰC BAN ĐÊM, THIẾU SÁNG, MỜ NHÒE, CHE KHUẤT & GÓC QUAY XA (Night & Harsh Condition Scuffle Reasoning):
-   - Khi quan sát chuỗi ảnh liên hoàn đính kèm (Burst Sequence):
-     So sánh sự thay đổi vị trí của các đối tượng qua các mốc thời gian liên tiếp (T1 -> T2 -> T3...):
-     + Nếu thấy 2 hoặc nhiều bóng người lao vào nhau, ôm ghì, giằng co, vung tay/chân, xô đẩy, hoặc một người ngã xuống/lảo đảo: ĐÂY LÀ HÀNH VI XÔ XÁT / ĐÁNH NHAU / ẨU ĐẢ!
+2. ĐẶC TRỊ BẠO LỰC BAN ĐÊM, THIẾU SÁNG, MỜ NHÒE, CHE KHUẤT & GÓC QUAY XA:
+   - Khi quan sát chuỗi ảnh liên hoàn đính kèm:
+     So sánh sự thay đổi vị trí và cử chỉ của mọi người từ đầu đến cuối đoạn:
+     + Nếu thấy 2 hoặc nhiều người lao vào nhau, ôm ghì, giằng co, vung tay/chân, xô đẩy, hoặc một người ngã xuống/lảo đảo: ĐÂY LÀ HÀNH VI XÔ XÁT / ĐÁNH NHAU / ẨU ĐẢ!
      + Phân biệt rõ ràng giữa ẨU ĐẢ thực tế với HOẠT ĐỘNG AN TOÀN: Khi các đối tượng trong bối cảnh gia đình (cha mẹ bế bồng, chơi đùa với con cái), trường học (học sinh trò chuyện, ngồi học, đi lại) hoặc nơi làm việc, các chuyển động nhanh hoặc bế bồng KHÔNG PHẢI là xô xát. Trong trường hợp này, BẮT BUỘC kết luận "threat_level": "AN TOÀN", "threat_score" <= 2.0, và "is_safe_environment": true.
-     + Cảnh báo quang học từ Edge AI (nếu có) chỉ mang tính chất gợi ý kỹ thuật để bạn kiểm chứng chi tiết, KHÔNG ĐƯỢC ép buộc quy chụp nếu hình ảnh thực tế hoàn toàn là sinh hoạt an toàn, hòa nhã.
+     + Gợi ý chuyển động (nếu có) chỉ để bạn kiểm chứng chi tiết, KHÔNG ĐƯỢC ép buộc quy chụp nếu hình ảnh thực tế hoàn toàn là sinh hoạt an toàn, hòa nhã.
 
 3. NHẬN DIỆN VŨ KHÍ & VẬT DỤNG NGUY HIỂM (Weapon & Tool Detection):
    - Quan sát kỹ xem các đối tượng có cầm gậy, que, thước dài, hung khí hoặc vật dụng nào để tấn công/đe dọa đối phương hay không.
@@ -678,6 +665,7 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
         if orch is not None:
             data, used_tier = orch.execute_multimodal_failover(contents=contents, config=config)
             if data is not None and isinstance(data, dict):
+                self._sanitize_video_report_payload(data)
                 data["status"] = "success"
                 data["model_tier"] = getattr(used_tier, "value", str(used_tier))
                 if "token_usage" not in data:
@@ -713,6 +701,7 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
 
             raw_text = response.text.strip()
             data = json.loads(raw_text)
+            self._sanitize_video_report_payload(data)
             data["token_usage"] = token_usage
             data["status"] = "success"
             data["model_tier"] = "Tier-1 Gemini 3.8"
@@ -728,4 +717,44 @@ HƯỚNG DẪN QUAN SÁT THỊ GIÁC & ĐÁNH GIÁ NGUY CƠ KHÁCH QUAN:
             fallback_data = self._synthesize_local_autonomous_report(event_summary, video_metadata, segment_info, reason=str(e))
             fallback_data["model_tier"] = "Tier-3 Local Arbiter"
             return fallback_data
+
+    @staticmethod
+    def _clean_human_video_text(text: Any) -> str:
+        if not text:
+            return ""
+        s = str(text).strip()
+        s = re.sub(r'\(\s*Autonomous\s+Heuristic\s+Arbiter\s*\)', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\(\s*T[1-4](?:-PEAK)?(?:\s*[,/→\-]\s*T[1-4](?:-PEAK)?)*\s*\)', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\[\s*T[1-4](?:-PEAK)?(?:\s*[,/→\-]\s*T[1-4](?:-PEAK)?)*\s*\]', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(?:ở|tại|từ|đến|sang|qua|pha|mốc|giai đoạn)?\s*T[1-4](?:-PEAK)?\b', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'(?:Hệ thống\s+)?(?:Kích hoạt\s+)?(?:Bộ hội chẩn\s+Cục bộ\s+Tự hành\s*)?\(?Tier-[123]\s*Autonomous\s*Heuristic[^.]*\.?', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(?:ở\s+)?cự ly\s*(?:an toàn\s*)?(?:dưới\s*|xuống còn\s*|tiếp xúc\s*|tiếp cận\s*)?(?:>\s*)?\d+(?:\.\d+)?\s*(?:px|m)\b', 'ở khoảng cách gần', s, flags=re.IGNORECASE)
+        s = re.sub(r'\b(?:với\s+)?(?:vận tốc|tốc độ)(?:\s+vung\s+đòn|\s+vung\s+chi|\s+dịch\s+chuyển|\s+chuyển\s+động|\s+đỉnh|\s+chi)?(?:\s+đạt|\s+lên\s+mức)?\s*\d+(?:\.\d+)?\s*(?:px/s|m/s)\b', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\(\s*\d+(?:\.\d+)?\s*(?:px/s|px|m/s)[^)]*\)', '', s, flags=re.IGNORECASE)
+        s = re.sub(r',?\s*không có xung lực đột biến', '', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bxung lực(?:\s+động học|\s+cơ thể|\s+va chạm)?\b', 'tác động', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bđộng năng(?:\s+bạo lực)?\b', 'chuyển động', s, flags=re.IGNORECASE)
+        s = re.sub(r'\bsinh cơ học\b', 'tư thế', s, flags=re.IGNORECASE)
+        s = re.sub(r'\s{2,}', ' ', s)
+        s = re.sub(r'\s+([,.;:!?])', r'\1', s)
+        s = re.sub(r'^[,.;:\-\s]+', '', s).strip()
+        if s and s[0].islower():
+            s = s[0].upper() + s[1:]
+        return s
+
+    @classmethod
+    def _sanitize_video_report_payload(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(data, dict):
+            return data
+        for k in ("primary_incident", "detailed_diagnosis", "recommended_action", "scene_context", "chronological_evolution", "overall_conclusion"):
+            if k in data and data[k]:
+                data[k] = cls._clean_human_video_text(data[k])
+        segs = data.get("segment_analyses")
+        if isinstance(segs, list):
+            for seg in segs:
+                if isinstance(seg, dict):
+                    for sk in ("macro_narrative", "detailed_action", "detailed_narrative", "context_description", "prediction_next_4s", "degraded_action", "degraded_narrative"):
+                        if sk in seg and seg[sk]:
+                            seg[sk] = cls._clean_human_video_text(seg[sk])
+        return data
 

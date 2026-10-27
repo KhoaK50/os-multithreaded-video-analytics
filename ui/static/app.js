@@ -1011,7 +1011,14 @@ function openSegmentDetailModal(segId) {
     }
 
     // 1. Summary
-    const summaryVal = (seg.scene_summary || seg.context_description || "Phân đoạn ghi nhận vận động ổn định của các đối tượng.").trim();
+    const numScoreModal = parseFloat(seg.danger_score || 0);
+    const isDangerModal = numScoreModal >= 8.0 || seg.severity === "danger";
+    const isWarnModal = !isDangerModal && (numScoreModal >= 4.0 || seg.severity === "warning");
+    const summaryVal = ensureConsistentSegmentSummary(
+        stripMachineTokens(seg.scene_summary || seg.context_description || "Phân đoạn ghi nhận hoạt động ổn định của mọi người."),
+        isDangerModal,
+        isWarnModal
+    );
     safeSetText("seg-modal-summary", summaryVal);
 
     // 2. Entity Detail Cards (Rộng rãi, tập trung vào vị trí trên ảnh chụp và hành vi cốt lõi)
@@ -1117,7 +1124,7 @@ function openSegmentDetailModal(segId) {
     }
 
     // 3. Detailed Narrative (Loại bỏ việc lặp lại câu tóm tắt hoặc câu sáo rỗng)
-    let narrativeText = (seg.detailed_narrative || seg.context_description || summaryVal).trim();
+    let narrativeText = stripMachineTokens(seg.detailed_narrative || seg.context_description || summaryVal);
     if (narrativeText.length > summaryVal.length && narrativeText.startsWith(summaryVal)) {
         narrativeText = narrativeText.slice(summaryVal.length).replace(/^[\s.—-]+/, '').trim();
     }
@@ -1127,7 +1134,7 @@ function openSegmentDetailModal(segId) {
     const focalText = document.getElementById("seg-modal-focal-text");
     if (focalBox && focalText) {
         if (seg.focal_actors_desc && !narrativeText.includes(seg.focal_actors_desc)) {
-            focalText.textContent = seg.focal_actors_desc;
+            focalText.textContent = stripMachineTokens(seg.focal_actors_desc);
             focalBox.classList.remove("hidden");
         } else {
             focalBox.classList.add("hidden");
@@ -1138,30 +1145,26 @@ function openSegmentDetailModal(segId) {
     const predText = document.getElementById("seg-modal-pred-text");
     if (predBox && predText) {
         if (seg.prediction_next_4s) {
-            predText.textContent = seg.prediction_next_4s;
+            predText.textContent = stripMachineTokens(seg.prediction_next_4s);
             predBox.classList.remove("hidden");
         } else {
             predBox.classList.add("hidden");
         }
     }
 
-    // 4. Telemetry Breakdown Grid
+    // 4. Telemetry Breakdown Grid (Hiển thị bằng ngôn ngữ con người dễ hiểu)
     const telemContainer = document.getElementById("seg-modal-telemetry");
     if (telemContainer) {
         telemContainer.innerHTML = "";
         const tb = seg.telemetry_breakdown || {};
-        const maxVelVal = tb.max_velocity !== undefined ? tb.max_velocity : (tb.strike_velocity || 0);
-        const maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
-        const minDistVal = tb.min_distance !== undefined ? tb.min_distance : (tb.proximity_dist || null);
-        const minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : '> 1.5 m');
-        const dominantPosture = (tb.dominant_posture || tb.posture_state || 'Bình thường').replace(/[\(\)]/g, '').trim();
+        const humanLabels = formatHumanTelemetryLabels(tb, isDangerModal, isWarnModal);
         const scoreVal = typeof seg.danger_score === 'number' ? seg.danger_score : parseFloat(seg.danger_score || 0);
 
         const items = [
-            { label: "Vận tốc cử động tối đa", val: maxVelStr, tip: "Tốc độ di chuyển hoặc vung tay chân lớn nhất ghi nhận được" },
-            { label: "Khoảng cách tiếp cận", val: minDistStr, tip: "Khoảng cách đo đạc gần nhất giữa các đối tượng" },
-            { label: "Tư thế nhận diện", val: dominantPosture, tip: "Tư thế chủ đạo được thẩm định trong phân đoạn" },
-            { label: "Điểm nguy cơ tổng hợp", val: `${scoreVal.toFixed(1)} / 10`, tip: "Điểm nguy cơ đa biến kết hợp động học và thị giác" }
+            { label: "Nhịp độ cử động", val: humanLabels.speedText, tip: "Mức độ nhanh chậm của cử chỉ tay chân trong phân đoạn" },
+            { label: "Khoảng cách giữa mọi người", val: humanLabels.distanceText, tip: "Mức độ đứng gần hay giữ khoảng cách giữa các cá nhân" },
+            { label: "Tư thế nhận diện", val: humanLabels.postureText, tip: "Tư thế chủ đạo được ghi nhận trong phân đoạn" },
+            { label: "Điểm nguy cơ tổng hợp", val: `${scoreVal.toFixed(1)} / 10`, tip: "Mức độ an toàn hay nguy hiểm của phân đoạn" }
         ];
 
         items.forEach(it => {
@@ -1294,9 +1297,22 @@ function escapeJsArg(text) {
 function stripMachineTokens(str) {
     if (!str) return "";
     let s = String(str)
+        .replace(/\(\s*Autonomous\s+Heuristic\s+Arbiter\s*\)/gi, "")
         .replace(/\(\s*T[1-4](?:-PEAK)?(?:\s*[,/→\-]\s*T[1-4](?:-PEAK)?)*\s*\)/gi, "")
         .replace(/\[\s*T[1-4](?:-PEAK)?(?:\s*[,/→\-]\s*T[1-4](?:-PEAK)?)*\s*\]/gi, "")
         .replace(/\b(?:ở|tại|từ|đến|sang|qua|pha|mốc|giai đoạn)?\s*T[1-4](?:-PEAK)?\b/gi, "")
+        .replace(/(?:Hệ thống\s+)?(?:Kích hoạt\s+)?(?:Bộ hội chẩn\s+Cục bộ\s+Tự hành\s*)?\(?Tier-[123]\s*Autonomous\s*Heuristic[^.]*\.?/gi, "")
+        .replace(/Hệ thống Edge AI phát hiện gia tốc động học đột biến và tương tác va chạm vật lý mức độ cao giữa các đối tượng/gi, "Ghi nhận các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực tiếp")
+        .replace(/Phát hiện Xung đột thể xác\s*\/\s*Biến động động năng bạo lực/gi, "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân")
+        .replace(/Cảnh báo phòng vệ:\s*Ghi nhận đối tượng\s+(ID\s*#\d+)\s+thủ thế co hai tay chắn đỡ,\s*nghiêng thân né tránh(?:\s+ở cự ly\s*\d+\s*px)?/gi, "Tình huống căng thẳng: $1 đưa hai tay lên trước ngực che chắn và nghiêng người né tránh")
+        .replace(/Khu vực an ninh ổn định:\s*Ghi nhận\s+(\d+)\s+đối tượng hoạt động bình thường,?\s*cự ly an toàn\s*>\s*1\.5\s*m,?\s*không có xung lực đột biến/gi, "Mọi người trong khu vực ($1 người) đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái")
+        .replace(/\b(?:ở\s+)?cự ly\s*(?:an toàn\s*)?(?:dưới\s*|xuống còn\s*|tiếp xúc\s*|tiếp cận\s*)?(?:>\s*)?\d+(?:\.\d+)?\s*(?:px|m)\b/gi, "ở khoảng cách gần")
+        .replace(/\b(?:với\s+)?(?:vận tốc|tốc độ)(?:\s+vung\s+đòn|\s+vung\s+chi|\s+dịch\s+chuyển|\s+chuyển\s+động|\s+đỉnh|\s+chi)?(?:\s+đạt|\s+lên\s+mức)?\s*\d+(?:\.\d+)?\s*(?:px\/s|m\/s)\b/gi, "")
+        .replace(/\(\s*\d+(?:\.\d+)?\s*(?:px\/s|px|m\/s)[^)]*\)/gi, "")
+        .replace(/,?\s*không có xung lực đột biến/gi, "")
+        .replace(/\bxung lực(?:\s+động học|\s+cơ thể|\s+va chạm)?\b/gi, "tác động")
+        .replace(/\bđộng năng(?:\s+bạo lực)?\b/gi, "chuyển động")
+        .replace(/\bsinh cơ học\b/gi, "tư thế")
         .replace(/\s{2,}/g, " ")
         .replace(/\s+([,.;:!?])/g, "$1")
         .replace(/^[,.;:\-\s]+/, "")
@@ -1305,6 +1321,49 @@ function stripMachineTokens(str) {
         s = s[0].toUpperCase() + s.slice(1);
     }
     return s;
+}
+
+function ensureConsistentSegmentSummary(summary, isDanger, isWarn) {
+    let s = stripMachineTokens(summary || "");
+    const sLow = s.toLowerCase();
+    if (isDanger) {
+        if (!s || sLow.includes("ổn định") || sLow.includes("hoạt động bình thường") || sLow.includes("sinh hoạt") || sLow.includes("khoảng cách thoải mái")) {
+            return "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và giằng co trực tiếp.";
+        }
+    } else if (isWarn) {
+        if (!s || sLow.includes("ổn định") || sLow.includes("hoạt động bình thường") || sLow.includes("sinh hoạt") || sLow.includes("khoảng cách thoải mái")) {
+            return "Hai bên tiến lại gần đứng đối mặt nhau với cử chỉ căng thẳng nhưng chưa xảy ra đánh nhau.";
+        }
+    } else {
+        if (!s || sLow.includes("cảnh báo xung đột") || sLow.includes("xảy ra xô xát")) {
+            return "Mọi người trong khu vực đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái.";
+        }
+    }
+    return s;
+}
+
+function formatHumanTelemetryLabels(tb, isDanger, isWarn) {
+    const rawVel = tb && tb.max_velocity !== undefined ? parseFloat(tb.max_velocity) : 0;
+    const rawDist = tb && tb.min_distance !== undefined ? parseFloat(tb.min_distance) : 180;
+    const postureText = ((tb && (tb.dominant_posture || tb.posture_state)) || (isDanger ? "Xô xát / Va chạm" : (isWarn ? "Đứng đối mặt căng thẳng" : "Sinh hoạt tự nhiên")))
+        .replace(/[\(\)]/g, "")
+        .trim();
+
+    let speedText = "Điềm tĩnh / Tự nhiên";
+    if (isDanger || rawVel >= 220) {
+        speedText = "Vung tay / Di chuyển mạnh";
+    } else if (isWarn || rawVel >= 135) {
+        speedText = "Cử động nhanh";
+    }
+
+    let distanceText = "Giữ khoảng cách thoải mái";
+    if (isDanger || (rawDist > 0 && rawDist < 85)) {
+        distanceText = "Áp sát rất gần";
+    } else if (isWarn || (rawDist > 0 && rawDist < 145)) {
+        distanceText = "Đứng gần nhau";
+    }
+
+    return { speedText, distanceText, postureText };
 }
 
 function humanizeBehaviorRecord(item, idx = 0) {
@@ -2166,9 +2225,9 @@ function renderResults(result) {
         threatBadge.textContent = "AN TOÀN";
     }
 
-    safeSetText("rep-primary-incident", gemini.primary_incident || result.peak_danger_reason || "Bình thường");
-    safeSetText("rep-diagnosis", gemini.detailed_diagnosis || "Không ghi nhận dấu hiệu thương tích hoặc bạo lực bất thường.");
-    safeSetText("rep-recommendation", gemini.recommended_action || "Duy trì chế độ giám sát tự động thông thường.");
+    safeSetText("rep-primary-incident", stripMachineTokens(gemini.primary_incident || result.peak_danger_reason || "Bình thường"));
+    safeSetText("rep-diagnosis", stripMachineTokens(gemini.detailed_diagnosis || "Không ghi nhận dấu hiệu thương tích hoặc bạo lực bất thường."));
+    safeSetText("rep-recommendation", stripMachineTokens(gemini.recommended_action || "Duy trì chế độ giám sát tự động thông thường."));
     safeSetText("report-token-badge", `Tiêu thụ: ~${gemini.token_usage || 1120} Tokens`);
     if (gemini.model_tier && typeof focusActiveModelCardInDrawer === "function") {
         focusActiveModelCardInDrawer(gemini.model_tier);
@@ -2558,31 +2617,27 @@ function renderTimelineSegments() {
         const badgeClass = isDanger ? "badge badge-danger" : (isWarn ? "badge badge-warning" : "badge badge-safe");
         const badgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
 
-        // Cột 3: Cơ sở đánh giá động học & đo đạc (tính trước để làm giàu ngữ cảnh nếu cần)
+        // Cột 3: Cơ sở đánh giá hành vi (hiển thị bằng ngôn ngữ con người dễ hiểu)
         const tb = seg.telemetry_breakdown;
         let breakdownHtml = "";
-        let maxVelStr = "0 px/s";
-        let minDistStr = "> 1.5 m";
-        let dominantPosture = "Bình thường";
         if (tb) {
-            const maxVelVal = tb.max_velocity !== undefined ? tb.max_velocity : (tb.strike_velocity || 0);
-            maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
-            const minDistVal = tb.min_distance !== undefined ? tb.min_distance : (tb.proximity_dist || null);
-            minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : '> 1.5 m');
-            dominantPosture = (tb.dominant_posture || tb.posture_state || 'Bình thường').replace(/[\(\)]/g, '').trim();
-
+            const humanLabels = formatHumanTelemetryLabels(tb, isDanger, isWarn);
             breakdownHtml = `
                 <div class="telemetry-breakdown-box">
-                    <div class="tb-item" title="Vận tốc cử động tay/chân lớn nhất trong đoạn"><span class="tb-k">Vận tốc:</span> <strong class="tb-v mono">${escapeHtml(maxVelStr)}</strong></div>
-                    <div class="tb-item" title="Khoảng cách tiếp cận gần nhất"><span class="tb-k">Tiếp cận:</span> <strong class="tb-v mono">${escapeHtml(minDistStr)}</strong></div>
-                    <div class="tb-item" title="Tư thế phân đoạn"><span class="tb-k">Tư thế:</span> <span class="tb-v">${escapeHtml(dominantPosture)}</span></div>
+                    <div class="tb-item" title="Nhịp độ cử động tay chân trong phân đoạn"><span class="tb-k">Nhịp cử động:</span> <strong class="tb-v">${escapeHtml(humanLabels.speedText)}</strong></div>
+                    <div class="tb-item" title="Khoảng cách đứng giữa các cá nhân"><span class="tb-k">Khoảng cách:</span> <strong class="tb-v">${escapeHtml(humanLabels.distanceText)}</strong></div>
+                    <div class="tb-item" title="Tư thế chủ đạo của phân đoạn"><span class="tb-k">Tư thế:</span> <span class="tb-v">${escapeHtml(humanLabels.postureText)}</span></div>
                 </div>
             `;
         }
 
         // Cột 2: Bên ngoài bảng chỉ hiển thị tóm tắt ngắn gọn + chip ID; chi tiết đầy đủ xem trong Modal Chi Tiết
-        const summaryText = (seg.scene_summary || seg.context_description || "Khu vực sinh hoạt ổn định, không có xung đột.").trim();
-        let rawDetailText = (seg.detailed_narrative || seg.context_description || "").trim();
+        const summaryText = ensureConsistentSegmentSummary(
+            stripMachineTokens(seg.scene_summary || seg.context_description || "Khu vực sinh hoạt ổn định, không có xung đột."),
+            isDanger,
+            isWarn
+        );
+        let rawDetailText = stripMachineTokens(seg.detailed_narrative || seg.context_description || "");
 
         let actorChipsHtml = "";
         const entitySentenceParts = [];
@@ -3426,12 +3481,8 @@ function drawEventCentricFlowStreams(segments, duration) {
         let riskBadgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẦN CHÚ Ý" : "AN TOÀN");
 
         const tb = seg.telemetry_breakdown || {};
-        const maxVelVal = tb.max_velocity !== undefined ? tb.max_velocity : (tb.strike_velocity || 0);
-        const maxVelStr = typeof maxVelVal === "number" ? `${maxVelVal} px/s` : String(maxVelVal);
-        const minDistVal = tb.min_distance !== undefined ? tb.min_distance : (tb.proximity_dist || null);
-        const minDistStr = typeof minDistVal === "number" ? `${minDistVal} px` : (minDistVal ? String(minDistVal) : "> 1.5m");
-
-        const riskTooltip = `${timeRangeStr} ${riskBadgeText} (${score}/10). Vận tốc: ${maxVelStr}, Cự ly: ${minDistStr}. Nhấp để tua video.`;
+        const humanLabels = formatHumanTelemetryLabels(tb, isDanger, isWarn);
+        const riskTooltip = `${timeRangeStr} ${riskBadgeText} (${score}/10). Cử động: ${humanLabels.speedText}, Khoảng cách: ${humanLabels.distanceText}. Nhấp để tua video.`;
 
         threatPillsHtml += `
             <div class="event-stream-pill threat-risk-pill ${riskClass}"
@@ -3444,10 +3495,10 @@ function drawEventCentricFlowStreams(segments, duration) {
                     <span class="pill-time mono">${timeRangeStr}</span>
                     <span class="pill-risk-badge font-mono">${riskBadgeText} (${score}/10)</span>
                 </div>
-                <div class="pill-metrics-row mono">
-                    <span>Vận tốc: ${escapeHtml(maxVelStr)}</span>
-                    <span class="pill-metric-sep">|</span>
-                    <span>Cự ly: ${escapeHtml(minDistStr)}</span>
+                <div class="pill-metrics-row">
+                    <span>${escapeHtml(humanLabels.speedText)}</span>
+                    <span class="pill-metric-sep">·</span>
+                    <span>${escapeHtml(humanLabels.distanceText)}</span>
                 </div>
             </div>
         `;
@@ -6231,9 +6282,9 @@ function populateVideoParallelSplitView() {
 
     const yThreatText = document.getElementById("rep-threat-level") ? document.getElementById("rep-threat-level").textContent : (gem.threat_level || "NGUY HIỂM");
     const yThreatClass = (document.getElementById("rep-threat-level") ? document.getElementById("rep-threat-level").className : "badge badge-danger").replace(/\bmono\b/g, "").trim();
-    const yIncident = gem.primary_incident || res.peak_danger_reason || "Phát hiện xung đột thể chất cường độ cao";
-    const yDiagnosis = gem.detailed_diagnosis || "Ghi nhận đầy đủ các khung hình đỉnh điểm và xác định chính xác thời điểm va chạm.";
-    const yRec = gem.recommended_action || "Lưu trữ trích đoạn bằng chứng và kiểm tra an ninh tại khu vực.";
+    const yIncident = stripMachineTokens(gem.primary_incident || res.peak_danger_reason || "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân");
+    const yDiagnosis = stripMachineTokens(gem.detailed_diagnosis || "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực diện.");
+    const yRec = stripMachineTokens(gem.recommended_action || "Cử người kịp thời đến can ngăn và tách các bên ra xa nhau.");
 
     const yThreatBadge = document.getElementById("split-y-rep-threat");
     if (yThreatBadge) {
@@ -6255,7 +6306,11 @@ function populateVideoParallelSplitView() {
             const badgeClass = isDanger ? "badge badge-danger" : (isWarn ? "badge badge-warning" : "badge badge-safe");
             const badgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
             const threatPillClass = isDanger ? "threat-pill-danger" : (isWarn ? "threat-pill-warn" : "threat-pill-safe");
-            const summaryText = stripMachineTokens(s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn.");
+            const summaryText = ensureConsistentSegmentSummary(
+                stripMachineTokens(s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn."),
+                isDanger,
+                isWarn
+            );
             const fullDescText = stripMachineTokens(s.detailed_narrative || s.context_description || summaryText);
             const predText = stripMachineTokens(s.prediction_next_4s || "Duy trì trạng thái tương tác ổn định trong các giây tiếp theo.");
             const rowKey = s.segment_id || `seg-${idx}`;
@@ -6297,7 +6352,11 @@ function populateVideoParallelSplitView() {
         const numScore = parseFloat(s.danger_score || 0);
         const isDanger = numScore >= 8.0 || s.severity === "danger";
         const isWarn = !isDanger && (numScore >= 4.0 || s.severity === "warning");
-        const summaryText = stripMachineTokens(s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn.");
+        const summaryText = ensureConsistentSegmentSummary(
+            stripMachineTokens(s.scene_summary || s.context_description || "Hoạt động ổn định trong phân đoạn."),
+            isDanger,
+            isWarn
+        );
         const fullDescText = stripMachineTokens(s.detailed_narrative || s.context_description || summaryText);
         const predText = stripMachineTokens(s.prediction_next_4s || "Duy trì trạng thái tương tác ổn định trong các giây tiếp theo.");
         const rowKey = s.segment_id || `seg-${idx}`;

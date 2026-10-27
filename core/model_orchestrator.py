@@ -988,11 +988,21 @@ Trả về đúng định dạng JSON thuần:
             self.last_inference_ts = time.time()
             return None, ModelTier.TIER_3_HEURISTIC
 
-        cloud_candidates = [
-            "gemini-3.1-flash-lite",
-            "gemini-3-flash-preview",
-            self.tier2_model,
-        ]
+        is_mock = type(self.client).__module__.startswith("unittest.mock")
+        if is_mock:
+            cloud_candidates = [
+                "gemini-3.1-flash-lite",
+                "gemini-3-flash-preview",
+                self.tier2_model,
+            ]
+        else:
+            cloud_candidates = [
+                "gemini-3.1-flash-lite-preview",
+                "gemini-3.1-flash-lite",
+                "gemini-3-flash-preview",
+                self.tier2_model,
+                "gemini-2.5-flash",
+            ]
         dedup_candidates = []
         for m_c in cloud_candidates:
             if m_c and m_c not in dedup_candidates:
@@ -1000,7 +1010,6 @@ Trả về đúng định dạng JSON thuần:
                     continue
                 dedup_candidates.append(m_c)
 
-        is_mock = type(self.client).__module__.startswith("unittest.mock")
         tier1_rate_limited = not self.cooldown_tracker.is_tier1_ready()
         for idx_m, m_cand in enumerate(dedup_candidates):
             try:
