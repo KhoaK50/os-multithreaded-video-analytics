@@ -748,6 +748,9 @@ async function fetchCameraLogs() {
         if (countBadge) countBadge.textContent = `${logs.length} sự kiện`;
 
         renderBehaviorTable(logs);
+        if (logs.length > 0 && logs[0].model_tier && typeof focusActiveModelCardInDrawer === "function") {
+            focusActiveModelCardInDrawer(logs[0].model_tier);
+        }
         if (typeof updateLiveParallelReportsAndLogs === "function") {
             updateLiveParallelReportsAndLogs();
         }
@@ -2167,6 +2170,9 @@ function renderResults(result) {
     safeSetText("rep-diagnosis", gemini.detailed_diagnosis || "Không ghi nhận dấu hiệu thương tích hoặc bạo lực bất thường.");
     safeSetText("rep-recommendation", gemini.recommended_action || "Duy trì chế độ giám sát tự động thông thường.");
     safeSetText("report-token-badge", `Tiêu thụ: ~${gemini.token_usage || 1120} Tokens`);
+    if (gemini.model_tier && typeof focusActiveModelCardInDrawer === "function") {
+        focusActiveModelCardInDrawer(gemini.model_tier);
+    }
 
     // Action Percentages
     const barsContainer = document.getElementById("action-bars-container");
@@ -3508,45 +3514,117 @@ function toggleTelemetryDrawer() {
     drawer.classList.toggle("hidden");
 }
 
+let lastFocusedQuotaTier = "tier_1";
+
+function normalizeActiveTierKey(rawTier) {
+    const s = String(rawTier || "").toLowerCase();
+    if (s.includes("tier_2") || s.includes("3.5") || s.includes("1.5") || s.includes("fallback")) return "tier_2";
+    if (s.includes("tier_3") || s.includes("local") || s.includes("heuristic")) return "tier_3";
+    return "tier_1";
+}
+
+function focusActiveModelCardInDrawer(activeTier) {
+    const normTier = normalizeActiveTierKey(activeTier);
+    const bubbleBadge = document.getElementById("bubble-tier-badge");
+    const shortTier = normTier === "tier_1" ? "Mô hình 1" : (normTier === "tier_2" ? "Mô hình 2" : "Mô hình 3");
+    if (bubbleBadge) {
+        const curText = bubbleBadge.textContent || "";
+        const rpmPart = curText.includes("·") ? " · " + curText.split("·")[1].trim() : "";
+        bubbleBadge.textContent = `${shortTier}${rpmPart}`;
+        bubbleBadge.className = normTier === "tier_1"
+            ? "bubble-badge mono badge-tier1"
+            : (normTier === "tier_2" ? "bubble-badge mono badge-tier2" : "bubble-badge mono badge-tier3");
+    }
+
+    const listEl = document.getElementById("drawer-quota-list");
+    if (!listEl) return;
+    const cards = listEl.querySelectorAll(".quota-matrix-card[data-tier-key]");
+    if (!cards.length) return;
+
+    cards.forEach(card => {
+        const key = card.getAttribute("data-tier-key");
+        const isActive = (key === normTier);
+        card.classList.toggle("quota-card-active", isActive);
+        card.classList.toggle("tier-2-active", isActive && key === "tier_2");
+        card.classList.toggle("tier-3-active", isActive && key === "tier_3");
+
+        const badgeEl = card.querySelector(".qmc-badge");
+        const statusEl = card.querySelector(".qmc-status-val");
+        if (badgeEl) {
+            if (isActive) {
+                badgeEl.textContent = "Đang dùng";
+                badgeEl.className = `badge ${key === "tier_2" ? "badge-warning" : "badge-safe"} mono qmc-badge`;
+            } else {
+                badgeEl.textContent = key === "tier_1" ? "Tạm nghỉ" : (key === "tier_2" ? "Dự phòng" : "Nội bộ");
+                badgeEl.className = "badge badge-neutral mono qmc-badge";
+            }
+        }
+        if (statusEl) {
+            if (isActive) {
+                statusEl.textContent = key === "tier_1"
+                    ? "Đang xử lý chính"
+                    : (key === "tier_2" ? "Đang tiếp quản xử lý" : "Đang phân tích nội bộ");
+                statusEl.style.color = key === "tier_2" ? "var(--accent-amber-text)" : "var(--accent-emerald-text)";
+            } else {
+                statusEl.textContent = key === "tier_1"
+                    ? "Chờ lượt kế tiếp"
+                    : (key === "tier_2" ? "Tự động tiếp quản khi cần" : "Dự phòng xử lý nội bộ");
+                statusEl.style.color = "var(--text-secondary)";
+            }
+        }
+    });
+
+    if (lastFocusedQuotaTier !== normTier) {
+        lastFocusedQuotaTier = normTier;
+        const activeCard = listEl.querySelector(`.quota-matrix-card[data-tier-key="${normTier}"]`);
+        if (activeCard && typeof activeCard.scrollIntoView === "function") {
+            activeCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+    }
+}
+
 function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
     if (!quotaMatrix) return;
 
-    // Update floating bubble badge
+    // Xác định chính xác mô hình đang chạy trong thời gian thực (ưu tiên mô hình thực tế của bản ghi mới nhất khi camera đang chạy)
+    let activeTier = normalizeActiveTierKey(
+        telemetryData.active_model_tier ||
+        (telemetryData.model_orchestrator && telemetryData.model_orchestrator.active_tier) ||
+        (quotaMatrix.tier_2?.is_active ? "tier_2" : (quotaMatrix.tier_3?.is_active ? "tier_3" : "tier_1"))
+    );
+    if ((telemetryData.camera_running || telemetryData.producer_running) && Array.isArray(cachedLogs) && cachedLogs.length > 0 && cachedLogs[0]?.model_tier) {
+        activeTier = normalizeActiveTierKey(cachedLogs[0].model_tier);
+    }
+
     const bubbleBadge = document.getElementById("bubble-tier-badge");
-    const tierInfo = telemetryData.model_orchestrator || {};
-    const activeTier = tierInfo.active_tier || "tier_1";
+    const shortTier = activeTier === "tier_1" ? "Mô hình 1" : (activeTier === "tier_2" ? "Mô hình 2" : "Mô hình 3");
     if (bubbleBadge) {
-        if (activeTier === "tier_1") {
-            bubbleBadge.textContent = "Mô hình 1";
-            bubbleBadge.className = "bubble-badge mono badge-tier1";
-        } else if (activeTier === "tier_2") {
-            bubbleBadge.textContent = "Mô hình 2";
-            bubbleBadge.className = "bubble-badge mono badge-tier2";
-        } else {
-            bubbleBadge.textContent = "Mô hình 3";
-            bubbleBadge.className = "bubble-badge mono badge-tier3";
-        }
+        bubbleBadge.textContent = shortTier;
+        bubbleBadge.className = activeTier === "tier_1"
+            ? "bubble-badge mono badge-tier1"
+            : (activeTier === "tier_2" ? "bubble-badge mono badge-tier2" : "bubble-badge mono badge-tier3");
     }
 
     // Update hardware metrics in drawer
-    safeSetText("drawer-fps", `${telemetryData.fps || 0} FPS`);
+    const fpsVal = telemetryData.fps !== undefined ? telemetryData.fps : (telemetryData.producer_fps || 0);
+    safeSetText("drawer-fps", `${fpsVal} FPS`);
     const dQueueSize = telemetryData.queue_size !== undefined ? telemetryData.queue_size : (telemetryData.bounded_queue_size || 0);
     const dQueueMax = telemetryData.queue_max !== undefined ? telemetryData.queue_max : (telemetryData.bounded_queue_capacity || 16);
     safeSetText("drawer-queue", `${dQueueSize} / ${dQueueMax} khung`);
     safeSetText("drawer-cpu", `${telemetryData.cpu_percent || 0}%`);
     safeSetText("drawer-ram", `${telemetryData.ram_percent || 0}%`);
-    const hwLabel = telemetryData.gpu_name || "Thiết bị xử lý hệ thống";
+    const hwLabel = telemetryData.gpu_name || "CPU Hệ thống";
     if (telemetryData.gpu_vram_total_mb && telemetryData.gpu_vram_total_mb > 0) {
-        safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0} / ${telemetryData.gpu_vram_total_mb} MB (${hwLabel})`);
+        safeSetText("drawer-vram", `${telemetryData.gpu_vram_mb || 0}/${telemetryData.gpu_vram_total_mb} MB · ${hwLabel}`);
     } else {
-        safeSetText("drawer-vram", `RAM chia sẻ (${hwLabel})`);
+        safeSetText("drawer-vram", `${hwLabel} · RAM chia sẻ`);
     }
 
     // Update realtime Quota Gauges (Minute, Day & Tokens)
     const rq = telemetryData.realtime_quota;
     if (rq) {
         safeSetText("drawer-rpm-val", `${rq.rpm_used || 0} / ${rq.rpm_limit || 15}`);
-        safeSetText("drawer-rpm-rem", `Còn lại: ${rq.rpm_remaining !== undefined ? rq.rpm_remaining : 15} lượt`);
+        safeSetText("drawer-rpm-rem", `Còn ${rq.rpm_remaining !== undefined ? rq.rpm_remaining : 15} lượt`);
         const rpmBar = document.getElementById("drawer-rpm-bar");
         if (rpmBar) {
             rpmBar.style.width = `${Math.min(100, rq.rpm_percent || 0)}%`;
@@ -3560,7 +3638,7 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
         }
 
         safeSetText("drawer-rpd-val", `${(rq.rpd_used || 0).toLocaleString()} / ${(rq.rpd_limit || 1500).toLocaleString()}`);
-        safeSetText("drawer-rpd-rem", `Còn lại: ${(rq.rpd_remaining !== undefined ? rq.rpd_remaining : 1500).toLocaleString()} lượt`);
+        safeSetText("drawer-rpd-rem", `Còn ${(rq.rpd_remaining !== undefined ? rq.rpd_remaining : 1500).toLocaleString()} lượt`);
         const rpdBar = document.getElementById("drawer-rpd-bar");
         if (rpdBar) {
             rpdBar.style.width = `${Math.min(100, rq.rpd_percent || 0)}%`;
@@ -3569,36 +3647,53 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
         safeSetText("drawer-tokens-val", `${(rq.tokens_today || 0).toLocaleString()} tokens`);
 
         if (bubbleBadge && rq.rpm_used > 0) {
-            const shortTier = activeTier === "tier_1" ? "Mô hình 1" : (activeTier === "tier_2" ? "Mô hình 2" : "Mô hình 3");
             bubbleBadge.textContent = `${shortTier} · ${rq.rpm_used}/${rq.rpm_limit || 15}`;
         }
     }
 
-    // Render Quota Matrix cards
+    // Render Quota Matrix cards (Xúc tích, rõ ràng, focus đúng mô hình đang chạy thực tế)
     const listEl = document.getElementById("drawer-quota-list");
     if (!listEl) return;
 
     let itemsHtml = "";
-    Object.keys(quotaMatrix).forEach(key => {
+    ["tier_1", "tier_2", "tier_3"].forEach(key => {
         const item = quotaMatrix[key];
-        const isActive = item.is_active;
-        const activeClass = isActive ? "quota-card-active" : "";
+        if (!item) return;
+        const isActive = (key === activeTier);
+        const tierActiveClass = isActive
+            ? `quota-card-active ${key === "tier_2" ? "tier-2-active" : (key === "tier_3" ? "tier-3-active" : "")}`.trim()
+            : "";
+        const badgeClass = isActive
+            ? (key === "tier_2" ? "badge-warning" : "badge-safe")
+            : "badge-neutral";
+        const badgeText = isActive
+            ? "Đang dùng"
+            : (key === "tier_1" && item.badge && item.badge !== "Đang dùng" ? item.badge : (key === "tier_1" ? "Tạm nghỉ" : (key === "tier_2" ? "Dự phòng" : "Nội bộ")));
+        const statusText = isActive
+            ? (key === "tier_1" ? "Đang xử lý chính" : (key === "tier_2" ? "Đang tiếp quản xử lý" : "Đang phân tích nội bộ"))
+            : (key === "tier_1" && item.status && item.status !== "Đang xử lý chính" && item.status !== "Đang hoạt động chính"
+                ? item.status
+                : (key === "tier_1" ? "Chờ lượt kế tiếp" : (key === "tier_2" ? "Tự động tiếp quản khi cần" : "Dự phòng xử lý nội bộ")));
+        const statusColor = isActive
+            ? (key === "tier_2" ? "var(--accent-amber-text)" : "var(--accent-emerald-text)")
+            : "var(--text-secondary)";
+
         itemsHtml += `
-            <div class="quota-matrix-card ${activeClass}">
+            <div class="quota-matrix-card ${tierActiveClass}" data-tier-key="${key}">
                 <div class="qmc-header">
                     <div class="qmc-title-group">
                         <strong class="qmc-name">${escapeHtml(item.name)}</strong>
                         <span class="qmc-model mono">${escapeHtml(item.model)}</span>
                     </div>
-                    <span class="badge ${isActive ? 'badge-safe' : 'badge-neutral'} mono">${escapeHtml(item.badge)}</span>
+                    <span class="badge ${badgeClass} mono qmc-badge">${escapeHtml(badgeText)}</span>
                 </div>
                 <div class="qmc-details">
                     <div class="qmc-detail-row">
-                        <span class="qmc-label">Trạng thái:</span>
-                        <strong class="qmc-val" style="color: ${isActive ? 'var(--accent-emerald-text)' : 'var(--text-secondary)'}">${escapeHtml(item.status)}</strong>
+                        <span class="qmc-label">Trạng thái</span>
+                        <strong class="qmc-val qmc-status-val" style="color: ${statusColor}">${escapeHtml(statusText)}</strong>
                     </div>
                     <div class="qmc-detail-row">
-                        <span class="qmc-label">Hạn mức:</span>
+                        <span class="qmc-label">Hạn mức</span>
                         <span class="qmc-val mono">${escapeHtml(item.limit)}</span>
                     </div>
                 </div>
@@ -3606,6 +3701,14 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
         `;
     });
     listEl.innerHTML = itemsHtml;
+
+    if (lastFocusedQuotaTier !== activeTier) {
+        lastFocusedQuotaTier = activeTier;
+        const activeCard = listEl.querySelector(`.quota-matrix-card[data-tier-key="${activeTier}"]`);
+        if (activeCard && typeof activeCard.scrollIntoView === "function") {
+            activeCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+    }
 }
 
 // ==============================================================================

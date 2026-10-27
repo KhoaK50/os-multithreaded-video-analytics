@@ -623,10 +623,13 @@ class HierarchicalModelOrchestrator:
             if self.active_tier == ModelTier.TIER_1_PRIMARY:
                 self.active_tier = ModelTier.TIER_2_FALLBACK
 
-        # Ngay khi hạn mức phút (sau 60s) hoặc hạn mức ngày (sau 00:00) của Mô hình 1 hồi lại -> Quay về Mô hình 1 ngay lập tức
+        # Chỉ tự động quay về Mô hình 1 khi Mô hình 1 vừa thoát khỏi trạng thái khóa hạn mức (cooldown) và đã qua chu kỳ suy luận hiện tại
+        last_inf_elapsed = time.time() - getattr(self, "last_inference_ts", 0.0)
         if (
             self.active_tier != ModelTier.TIER_1_PRIMARY
+            and getattr(self.cooldown_tracker, "tier1_cooldown_start", 0.0) > 0.0
             and self.cooldown_tracker.is_tier1_ready()
+            and last_inf_elapsed > 6.5
             and quota_stats.get("tier1_rpm_used", 0) < self.quota_tracker.rpm_limit
             and quota_stats.get("tier1_rpd_used", 0) < self.quota_tracker.rpd_limit
         ):
@@ -799,6 +802,8 @@ class HierarchicalModelOrchestrator:
 
     def _record_success(self, res: dict, bio: dict, tier: ModelTier):
         self._sanitize_analysis_payload(res)
+        self.active_tier = tier
+        self.last_inference_ts = time.time()
         entry = ContextMemoryEntry(
             timestamp=time.time(),
             time_str=time.strftime("%H:%M:%S"),
@@ -930,8 +935,7 @@ Trả về đúng định dạng JSON thuần:
                     return res
 
         # 4. Fallback sang Tier 3 (Xử lý nội bộ) khi cả Mô hình 1 và Mô hình 2 đều không thể phản hồi
-        if not self.cooldown_tracker.is_tier1_ready() and not self.cooldown_tracker.is_tier2_ready():
-            self.active_tier = ModelTier.TIER_3_HEURISTIC
+        self.active_tier = ModelTier.TIER_3_HEURISTIC
         res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
         res["model_tier"] = ModelTier.TIER_3_HEURISTIC.value
         self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
@@ -947,6 +951,8 @@ Trả về đúng định dạng JSON thuần:
         Ưu tiên các mô hình Cloud ổn định, tự động ghi nhận hạn mức theo từng tầng mô hình.
         """
         if not self.client:
+            self.active_tier = ModelTier.TIER_3_HEURISTIC
+            self.last_inference_ts = time.time()
             return None, ModelTier.TIER_3_HEURISTIC
 
         if getattr(self, "_explicit_tier1", False) and self.cooldown_tracker.is_tier1_ready():
@@ -965,6 +971,7 @@ Trả về đúng định dạng JSON thuần:
                 if isinstance(data, dict) and toks:
                     data["token_usage"] = int(toks)
                 self.active_tier = ModelTier.TIER_1_PRIMARY
+                self.last_inference_ts = time.time()
                 return data, ModelTier.TIER_1_PRIMARY
             except Exception as e1:
                 if is_rate_limit_error(e1):
@@ -973,6 +980,8 @@ Trả về đúng định dạng JSON thuần:
                     self.active_tier = ModelTier.TIER_2_FALLBACK
 
         if not self.cooldown_tracker.is_tier2_ready():
+            self.active_tier = ModelTier.TIER_3_HEURISTIC
+            self.last_inference_ts = time.time()
             return None, ModelTier.TIER_3_HEURISTIC
 
         cloud_candidates = [
@@ -1021,6 +1030,7 @@ Trả về đúng định dạng JSON thuần:
                 if isinstance(data, dict) and toks:
                     data["token_usage"] = int(toks)
                 self.active_tier = used_tier
+                self.last_inference_ts = time.time()
                 return data, used_tier
             except Exception as e_cand:
                 if is_rate_limit_error(e_cand):
@@ -1047,10 +1057,14 @@ Trả về đúng định dạng JSON thuần:
                 )
                 raw_text = getattr(resp, "text", "") or "{}"
                 data = self._parse_gemini_json(raw_text)
+                self.active_tier = ModelTier.TIER_2_FALLBACK
+                self.last_inference_ts = time.time()
                 return data, ModelTier.TIER_2_FALLBACK
             except Exception:
                 pass
 
+        self.active_tier = ModelTier.TIER_3_HEURISTIC
+        self.last_inference_ts = time.time()
         return None, ModelTier.TIER_3_HEURISTIC
 
     def execute_chat_qa(self, prompt: str) -> dict:
@@ -1059,6 +1073,8 @@ Trả về đúng định dạng JSON thuần:
         Trả về: {"answer": str, "model_tier": str, "active_tier_name": str}
         """
         if not self.client:
+            self.active_tier = ModelTier.TIER_3_HEURISTIC
+            self.last_inference_ts = time.time()
             return {
                 "answer": "[Tier-3 Hội Chẩn Tự Hành] Hệ thống đang hoạt động ở chế độ ngoại tuyến cục bộ. Dữ liệu sự kiện được bảo toàn đầy đủ.",
                 "model_tier": "tier_3",
@@ -1076,6 +1092,8 @@ Trả về đúng định dạng JSON thuần:
                     model=self.tier1_model,
                     contents=[prompt]
                 )
+                self.active_tier = ModelTier.TIER_1_PRIMARY
+                self.last_inference_ts = time.time()
                 return {
                     "answer": getattr(resp, "text", "").strip(),
                     "model_tier": "tier_1",
@@ -1096,6 +1114,8 @@ Trả về đúng định dạng JSON thuần:
                     model=self.tier2_model,
                     contents=[prompt]
                 )
+                self.active_tier = ModelTier.TIER_2_FALLBACK
+                self.last_inference_ts = time.time()
                 return {
                     "answer": getattr(resp, "text", "").strip(),
                     "model_tier": "tier_2",
@@ -1110,6 +1130,8 @@ Trả về đúng định dạng JSON thuần:
                     logger.error(f"execute_chat_qa Tier 2 lỗi: {e2}")
 
         # 4. Fallback Tier 3
+        self.active_tier = ModelTier.TIER_3_HEURISTIC
+        self.last_inference_ts = time.time()
         return {
             "answer": "[Tier-3 Hội Chẩn Tự Hành] Hệ thống kích hoạt cơ chế tự hành cục bộ do hạn mức API Cloud chạm trần. Hoạt động giám sát duy trì an toàn và liên tục.",
             "model_tier": "tier_3",

@@ -710,7 +710,7 @@ class LiveCameraPipeline:
                         "snapshot_url": f"/api/snapshots/{snap_name}",
                         "degraded_snapshot_url": f"/api/snapshots/{snap_z_name}",
                         "severity": init_sev,
-                        "model_tier": active_tier_before,
+                        "model_tier": "tier_3_local",
                     }
 
                     # Nếu lượt gọi trước còn đang hoàn tất nốt những mili-giây cuối, chờ tối đa 3.0s để không bỏ lỡ lượt gọi Gemini thật
@@ -727,6 +727,7 @@ class LiveCameraPipeline:
                             cloud_in_flight[0] = True
                             can_call_cloud = True
 
+                    cloud_succeeded = [False]
                     if can_call_cloud:
                         done_ev = threading.Event()
                         cloud_res_holder = [None]
@@ -767,6 +768,7 @@ class LiveCameraPipeline:
                                     self.biomechanics["posture"] = act_val
                                     self.biomechanics["alert"] = f"Dự đoán 4s tới: {pred_val}"
                                     self.biomechanics["is_danger"] = (sev_val == "danger")
+                                cloud_succeeded[0] = True
                             except Exception as e_cloud:
                                 try:
                                     print(f"[!] Loi Cloud Gemini #{idx_num:03d}: {e_cloud}")
@@ -785,6 +787,12 @@ class LiveCameraPipeline:
                         t_worker.start()
                         # Đợi Gemini hoàn tất phân tích chi tiết hành vi trước khi ghi vào bảng sự kiện
                         done_ev.wait(timeout=13.5)
+
+                    if not cloud_succeeded[0]:
+                        from core.model_orchestrator import ModelTier
+                        MODEL_ORCHESTRATOR.active_tier = ModelTier.TIER_3_HEURISTIC
+                        MODEL_ORCHESTRATOR.last_inference_ts = time.time()
+                        self.gemini_status = "heuristic_offline"
 
                     with self.ai_lock:
                         self.action_logs.insert(0, entry)
@@ -1709,52 +1717,66 @@ def get_telemetry():
     rpd_lim = quota_stats.get("rpd_limit", 1500)
     rpm_lim = quota_stats.get("rpm_limit", 15)
 
-    t1_daily_locked = bool(tier_info.get("is_tier1_daily_exhausted", False)) or (t1_rpd >= rpd_lim)
-    if t1_daily_locked:
-        t1_status = "Đã hết hạn mức ngày (Mở lại lúc 00:00 ngày mai)"
-        t1_badge = "Chờ qua ngày"
-    elif tier_info.get("is_cooldown"):
-        t1_status = f"Đang hồi hạn mức phút ({round(tier_info.get('cooldown_remaining', 0), 1)}s ➔ Tự quay lại ngay)"
-        t1_badge = "Tạm nghỉ 60s"
-    else:
-        t1_status = "Đang hoạt động chính"
-        t1_badge = "Đang dùng"
+    active_tier_key = tier_info.get("active_tier", "tier_1")
+    if LIVE_CAMERA.running and LIVE_CAMERA.action_logs:
+        latest_logged_tier = _normalize_tier_key(LIVE_CAMERA.action_logs[0].get("model_tier", ""))
+        if latest_logged_tier in ("tier_2", "tier_3_local"):
+            active_tier_key = "tier_3" if latest_logged_tier == "tier_3_local" else "tier_2"
 
-    if tier_info.get("active_tier") == "tier_2":
-        t2_status = (
-            "Đang tiếp quản đến hết ngày (do Mô hình 1 hết hạn mức ngày)"
-            if t1_daily_locked
-            else "Đang tiếp quản tạm thời 60s (khi Mô hình 1 hồi hạn mức phút sẽ trả lại ngay)"
-        )
-        t2_badge = "Đang tiếp quản"
+    t1_daily_locked = bool(tier_info.get("is_tier1_daily_exhausted", False)) or (t1_rpd >= rpd_lim)
+    cd_sec = int(round(tier_info.get("cooldown_remaining", 0)))
+
+    if active_tier_key == "tier_1":
+        t1_status = "Đang xử lý chính"
+        t1_badge = "Đang dùng"
+    elif t1_daily_locked:
+        t1_status = "Hết hạn mức ngày (mở 00:00)"
+        t1_badge = "Hết lượt"
+    elif cd_sec > 0:
+        t1_status = f"Đang hồi hạn mức ({cd_sec}s)"
+        t1_badge = f"Chờ {cd_sec}s"
     else:
-        t2_status = "Sẵn sàng tự động tiếp quản khi Mô hình 1 chạm trần"
+        t1_status = "Tạm nhường lượt xử lý"
+        t1_badge = "Tạm nghỉ"
+
+    if active_tier_key == "tier_2":
+        t2_status = "Đang tiếp quản xử lý"
+        t2_badge = "Đang dùng"
+    else:
+        t2_status = "Tự động tiếp quản khi cần"
         t2_badge = "Dự phòng"
+
+    if active_tier_key == "tier_3":
+        t3_status = "Đang phân tích trực tiếp trên máy"
+        t3_badge = "Đang dùng"
+    else:
+        t3_status = "Dự phòng xử lý nội bộ"
+        t3_badge = "Nội bộ"
 
     quota_matrix = {
         "tier_1": {
-            "name": "Mô hình 1 (Chính): Nhận diện Đám mây",
+            "name": "Mô hình 1 · Chính",
             "model": tier1_m,
             "status": t1_status,
-            "limit": f"Ngày: {t1_rpd}/{rpd_lim} lượt | Phút: {t1_rpm}/{rpm_lim} lượt",
+            "limit": f"Ngày: {t1_rpd}/{rpd_lim} · Phút: {t1_rpm}/{rpm_lim}",
             "badge": t1_badge,
-            "is_active": (tier_info.get("active_tier") == "tier_1")
+            "is_active": (active_tier_key == "tier_1")
         },
         "tier_2": {
-            "name": "Mô hình 2 (Dự phòng): Tự động tiếp quản",
+            "name": "Mô hình 2 · Dự phòng",
             "model": tier2_m,
             "status": t2_status,
-            "limit": f"Ngày: {t2_rpd}/{rpd_lim} lượt | Phút: {t2_rpm}/{rpm_lim} lượt",
+            "limit": f"Ngày: {t2_rpd}/{rpd_lim} · Phút: {t2_rpm}/{rpm_lim}",
             "badge": t2_badge,
-            "is_active": (tier_info.get("active_tier") == "tier_2")
+            "is_active": (active_tier_key == "tier_2")
         },
         "tier_3": {
-            "name": "Mô hình 3 (Nội bộ): Xử lý trực tiếp trên máy",
-            "model": f"Bộ xử lý trên máy ({gpu_name})",
-            "status": "Luôn sẵn sàng khi cả 2 mô hình đám mây chạm trần",
-            "limit": "Không giới hạn số lượt",
-            "badge": "Nội bộ",
-            "is_active": (tier_info.get("active_tier") == "tier_3")
+            "name": "Mô hình 3 · Nội bộ",
+            "model": f"Xử lý nội bộ ({gpu_name})",
+            "status": t3_status,
+            "limit": "Không giới hạn lượt",
+            "badge": t3_badge,
+            "is_active": (active_tier_key == "tier_3")
         }
     }
 
@@ -1794,9 +1816,9 @@ def get_telemetry():
         "gpu_vram_used": round(vram_mb / 1024.0, 2),
         "gpu_vram_total": round(vram_total / 1024.0, 2) if vram_total > 0 else 0.0,
         "gpu_name": gpu_name,
-        "active_model_tier": tier_info.get("active_tier", "tier_1"),
-        "active_tier_name": tier_info.get("tier_name", "Mô hình 1 (Chính)"),
-        "tier_badge": tier_info.get("tier_badge", "Mô hình 1 (Chính)"),
+        "active_model_tier": active_tier_key,
+        "active_tier_name": "Mô hình 2 (Dự phòng)" if active_tier_key == "tier_2" else ("Mô hình 3 (Nội bộ)" if active_tier_key == "tier_3" else tier_info.get("tier_name", "Mô hình 1 (Chính)")),
+        "tier_badge": "Mô hình 2 (Dự phòng)" if active_tier_key == "tier_2" else ("Mô hình 3 (Nội bộ)" if active_tier_key == "tier_3" else tier_info.get("tier_badge", "Mô hình 1 (Chính)")),
         "cooldown_remaining": round(tier_info.get("cooldown_remaining", 0.0), 1),
         "is_cooldown": tier_info.get("is_cooldown", False),
         "is_tier1_daily_exhausted": t1_daily_locked,
