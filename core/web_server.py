@@ -1719,9 +1719,13 @@ def get_telemetry():
 
     active_tier_key = tier_info.get("active_tier", "tier_1")
     if LIVE_CAMERA.running and LIVE_CAMERA.action_logs:
-        latest_logged_tier = _normalize_tier_key(LIVE_CAMERA.action_logs[0].get("model_tier", ""))
-        if latest_logged_tier in ("tier_2", "tier_3_local"):
-            active_tier_key = "tier_3" if latest_logged_tier == "tier_3_local" else "tier_2"
+        raw_logged_tier = str(LIVE_CAMERA.action_logs[0].get("model_tier", "") or "").lower()
+        if "tier_3" in raw_logged_tier or "local" in raw_logged_tier or "heuristic" in raw_logged_tier:
+            active_tier_key = "tier_3"
+        elif "tier_2" in raw_logged_tier or "fallback" in raw_logged_tier:
+            active_tier_key = "tier_2"
+        elif "tier_1" in raw_logged_tier or "primary" in raw_logged_tier:
+            active_tier_key = "tier_1"
 
     t1_daily_locked = bool(tier_info.get("is_tier1_daily_exhausted", False)) or (t1_rpd >= rpd_lim)
     cd_sec = int(round(tier_info.get("cooldown_remaining", 0)))
