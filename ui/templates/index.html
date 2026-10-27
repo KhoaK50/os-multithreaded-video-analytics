@@ -212,29 +212,29 @@
                                 <span class="os-kernel-box-title">Trạng Thái 4 Luồng Thực Thi</span>
                             </div>
                             <div class="thread-state-matrix">
-                                <div class="thread-state-row">
+                                <div class="thread-state-row" title="Luồng 1 (CamProducer): Đọc khung hình 30 FPS từ Webcam, lọc nhiễu/chói và đẩy vào hàng đợi đệm">
                                     <div class="ts-info">
-                                        <span class="ts-name mono">CamProducer</span>
+                                        <span class="ts-name">Luồng 1 · Thu hình Camera</span>
                                     </div>
-                                    <span class="badge badge-neutral mono" id="ts-badge-producer">READY</span>
+                                    <span class="badge badge-neutral mono" id="ts-badge-producer">Sẵn sàng</span>
                                 </div>
-                                <div class="thread-state-row">
+                                <div class="thread-state-row" title="Luồng 2 (CamEdgeAI): Lấy ảnh từ hàng đợi để chạy YOLOv8-Pose trên GPU, trích xuất 17 khớp xương và chấm điểm động học">
                                     <div class="ts-info">
-                                        <span class="ts-name mono">CamEdgeAI</span>
+                                        <span class="ts-name">Luồng 2 · Khung xương AI</span>
                                     </div>
-                                    <span class="badge badge-neutral mono" id="ts-badge-edge">READY</span>
+                                    <span class="badge badge-neutral mono" id="ts-badge-edge">Sẵn sàng</span>
                                 </div>
-                                <div class="thread-state-row">
+                                <div class="thread-state-row" title="Luồng 3 (CamCompositor): Vẽ khung xương, khung định danh và phát luồng video trực tiếp lên trình duyệt">
                                     <div class="ts-info">
-                                        <span class="ts-name mono">CamCompositor</span>
+                                        <span class="ts-name">Luồng 3 · Kết xuất hiển thị</span>
                                     </div>
-                                    <span class="badge badge-neutral mono" id="ts-badge-compositor">READY</span>
+                                    <span class="badge badge-neutral mono" id="ts-badge-compositor">Sẵn sàng</span>
                                 </div>
-                                <div class="thread-state-row">
+                                <div class="thread-state-row" title="Luồng 4 (CamGeminiAI): Mỗi 6 giây gom chuỗi 4 mốc ảnh tiêu biểu gửi lên mô hình AI để phân tích hành vi và ghi nhật ký">
                                     <div class="ts-info">
-                                        <span class="ts-name mono">CamGeminiAI</span>
+                                        <span class="ts-name">Luồng 4 · Phân tích hành vi</span>
                                     </div>
-                                    <span class="badge badge-neutral mono" id="ts-badge-gemini">READY</span>
+                                    <span class="badge badge-neutral mono" id="ts-badge-gemini">Sẵn sàng</span>
                                 </div>
                             </div>
                         </div>

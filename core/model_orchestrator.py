@@ -699,17 +699,17 @@ class HierarchicalModelOrchestrator:
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None, tier_key: str = "tier_1"):
-        """Gọi đúng model của từng tầng (Tầng 1: gemini-3.1-flash-lite, Tầng 2: gemini-3-flash-preview) với MINIMAL thinking, minh bạch 1-1."""
+        """Gọi đúng model của từng tầng (Tầng 1: gemini-3.1-flash-lite, Tầng 2: gemini-3-flash-preview) với MINIMAL thinking, tự động thử lại nếu máy chủ Google bận tạm thời."""
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         if is_mock:
             candidates = [model]
         elif tier_key == "tier_2":
-            candidates = ["gemini-3-flash-preview"]
+            candidates = ["gemini-3-flash-preview", "gemini-2.5-flash"]
         else:
-            candidates = ["gemini-3.1-flash-lite"]
+            candidates = ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"]
 
         last_err = None
-        for m in candidates:
+        for idx_c, m in enumerate(candidates):
             try:
                 eff_config = config
                 if not is_mock and ("gemini-3-" in m or "gemini-3.1-" in m):
@@ -730,7 +730,9 @@ class HierarchicalModelOrchestrator:
             except Exception as e:
                 last_err = e
                 err_msg = str(e).upper()
-                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE", "503", "UNAVAILABLE", "504", "DEADLINE_EXCEEDED", "TIMEOUT"]):
+                if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE", "503", "UNAVAILABLE", "504", "DEADLINE_EXCEEDED", "TIMEOUT", "500", "INTERNAL"]):
+                    if not is_mock and idx_c < len(candidates) - 1:
+                        time.sleep(0.35)
                     continue
                 raise e
         if last_err:

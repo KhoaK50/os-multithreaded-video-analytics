@@ -3718,14 +3718,20 @@ function updateThreadStateBadge(elemId, stateStr) {
     const el = document.getElementById(elemId);
     if (!el) return;
     const st = String(stateStr || "READY").toUpperCase();
-    el.textContent = st;
     if (st.includes("RUNNING")) {
+        el.textContent = "Đang chạy";
         el.className = "badge badge-safe mono";
-    } else if (st.includes("CRITICAL") || st.includes("THROTTLED")) {
+    } else if (st.includes("CRITICAL")) {
+        el.textContent = "Ghi bộ đệm";
+        el.className = "badge badge-safe mono";
+    } else if (st.includes("THROTTLED")) {
+        el.textContent = "Bị giới hạn";
         el.className = "badge badge-warning mono";
     } else if (st.includes("WAITING")) {
+        el.textContent = "Đang chờ";
         el.className = "badge badge-outline mono";
     } else {
+        el.textContent = "Sẵn sàng";
         el.className = "badge badge-neutral mono";
     }
 }

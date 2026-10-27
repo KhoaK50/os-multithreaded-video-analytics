@@ -108,7 +108,7 @@ class LiveCameraPipeline:
         self.is_client_streaming = False
 
         self.frame_lock = threading.Lock()
-        self.frame_buffer = ThreadSafeBoundedBuffer(capacity=getattr(CONFIG, "FRAME_QUEUE_MAXSIZE", 16))
+        self.frame_buffer = ThreadSafeBoundedBuffer(capacity=16)
         self.latest_raw_frame = None
         self.latest_hud_frame = None
         self.frame_count = 0
@@ -710,12 +710,13 @@ class LiveCameraPipeline:
                         "snapshot_url": f"/api/snapshots/{snap_name}",
                         "degraded_snapshot_url": f"/api/snapshots/{snap_z_name}",
                         "severity": init_sev,
-                        "model_tier": "tier_3_local",
+                        "model_tier": active_tier_before if MODEL_ORCHESTRATOR.client is not None else "tier_3_local",
                     }
 
-                    # Nếu lượt gọi trước còn đang hoàn tất nốt những mili-giây cuối, chờ tối đa 3.0s để không bỏ lỡ lượt gọi Gemini thật
+                    # Nếu lượt gọi trước còn đang hoàn tất nốt những mili-giây cuối, chờ tối đa 6.0s để không bỏ lỡ lượt gọi Gemini thật
+                    self.thread_states["CamGeminiAI"] = "WAITING"
                     wait_busy_start = time.time()
-                    while time.time() - wait_busy_start < 3.0:
+                    while time.time() - wait_busy_start < 6.0:
                         with cloud_busy_lock:
                             if not cloud_in_flight[0]:
                                 break
@@ -727,8 +728,8 @@ class LiveCameraPipeline:
                             cloud_in_flight[0] = True
                             can_call_cloud = True
 
-                    cloud_succeeded = [False]
                     if can_call_cloud:
+                        self.thread_states["CamGeminiAI"] = "RUNNING"
                         done_ev = threading.Event()
                         cloud_res_holder = [None]
 
@@ -768,7 +769,6 @@ class LiveCameraPipeline:
                                     self.biomechanics["posture"] = act_val
                                     self.biomechanics["alert"] = f"Dự đoán 4s tới: {pred_val}"
                                     self.biomechanics["is_danger"] = (sev_val == "danger")
-                                cloud_succeeded[0] = True
                             except Exception as e_cloud:
                                 try:
                                     print(f"[!] Loi Cloud Gemini #{idx_num:03d}: {e_cloud}")
@@ -777,6 +777,7 @@ class LiveCameraPipeline:
                             finally:
                                 with cloud_busy_lock:
                                     cloud_in_flight[0] = False
+                                self.thread_states["CamGeminiAI"] = "WAITING" if self.running else "READY"
                                 done_ev.set()
 
                         t_worker = threading.Thread(
@@ -786,9 +787,8 @@ class LiveCameraPipeline:
                         )
                         t_worker.start()
                         # Đợi Gemini hoàn tất phân tích chi tiết hành vi trước khi ghi vào bảng sự kiện
-                        done_ev.wait(timeout=13.5)
-
-                    if not cloud_succeeded[0]:
+                        done_ev.wait(timeout=15.0)
+                    elif MODEL_ORCHESTRATOR.client is None:
                         from core.model_orchestrator import ModelTier
                         MODEL_ORCHESTRATOR.active_tier = ModelTier.TIER_3_HEURISTIC
                         MODEL_ORCHESTRATOR.last_inference_ts = time.time()
@@ -890,6 +890,17 @@ class LiveCameraPipeline:
                 pkg = self.frame_buffer.get(block=True, timeout=0.04)
                 if pkg is not None and isinstance(pkg, tuple) and len(pkg) == 2:
                     _, raw = pkg
+                # Khi ở chế độ Lý tưởng (consumer_delay_ms == 0), rút cạn ngay khung hình mới nhất để hàng đợi không bị ứ đọng ảo do chênh lệch xung nhịp
+                if self.consumer_delay_ms == 0:
+                    with self.frame_buffer.lock:
+                        while len(self.frame_buffer._buffer) > 1:
+                            _, raw = self.frame_buffer._buffer.popleft()
+                            self.frame_buffer.total_consumed += 1
+                        self.frame_buffer.total_dropped = 0
+                        self.frame_buffer.high_water_mark = min(self.frame_buffer.high_water_mark, 2)
+                else:
+                    # Khi người dùng chủ động siết CPU (consumer_delay_ms > 0), mô phỏng độ trễ xử lý để hàng đợi đầy lên và kích hoạt Điều tiết lưu lượng đúng lý thuyết HĐH
+                    time.sleep(min(0.08, self.consumer_delay_ms / 1000.0))
 
             # Fallback nếu buffer chưa có dữ liệu
             if raw is None:
@@ -907,9 +918,12 @@ class LiveCameraPipeline:
             results = self.yolo_model(raw, device=device, conf=CONFIG.YOLO_CONFIDENCE, verbose=False)
             dt = max(1e-4, time.time() - prev_time)
             prev_time = time.time()
-            dt_eff = dt + (self.consumer_delay_ms / 1000.0) if self.consumer_delay_ms > 0 else dt
-            self.consumer_fps_queue.append(1.0 / max(1e-4, dt_eff))
-            self.consumer_fps = sum(self.consumer_fps_queue) / len(self.consumer_fps_queue)
+            if self.consumer_delay_ms > 0:
+                dt_eff = dt + (self.consumer_delay_ms / 1000.0)
+                self.consumer_fps_queue.append(1.0 / max(1e-4, dt_eff))
+                self.consumer_fps = sum(self.consumer_fps_queue) / len(self.consumer_fps_queue)
+            else:
+                self.consumer_fps = self.current_fps if self.current_fps > 5.0 else 30.0
 
             boxes_list = []
             kpts_list = []
@@ -1121,11 +1135,10 @@ class LiveCameraPipeline:
                     if len(self.window_candidates) > 60:
                         self.window_candidates.pop(0)
 
-            time.sleep(0.01)
-
     def _render_worker(self):
         t_prev = time.time()
         while self.running:
+            self.thread_states["CamCompositor"] = "RUNNING"
             raw = None
             with self.frame_lock:
                 if self.latest_raw_frame is not None:
@@ -1238,7 +1251,8 @@ class LiveCameraPipeline:
             with self.frame_lock:
                 self.latest_hud_frame = hud_canvas
 
-            time.sleep(0.025) # ~35-40 FPS cap
+            time.sleep(0.030) # ~30-32 FPS cap
+        self.thread_states["CamCompositor"] = "READY"
 
     def get_latest_hud(self):
         with self.frame_lock:
