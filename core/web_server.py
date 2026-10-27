@@ -2194,6 +2194,18 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
                 if isinstance(pipe_live, dict):
                     JOBS[job_id]["pipeline_live"] = pipe_live
 
+            try:
+                import importlib
+                import core.token_guard as _tg_mod
+                import core.video_annotator as _va_mod
+                importlib.reload(_tg_mod)
+                importlib.reload(_va_mod)
+                ANNOTATOR_ENGINE.__class__ = _va_mod.VideoAnnotatorEngine
+                if getattr(ANNOTATOR_ENGINE, "_token_guard", None) is not None:
+                    ANNOTATOR_ENGINE._token_guard.__class__ = _tg_mod.TokenGuard
+            except Exception:
+                pass
+
             res = ANNOTATOR_ENGINE.process_video(
                 input_path=req.video_path,
                 output_path=output_path,

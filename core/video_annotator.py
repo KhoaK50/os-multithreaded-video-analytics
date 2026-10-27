@@ -32,6 +32,7 @@ from core.config import CONFIG
 from core.capture import ThreadSafeBoundedBuffer
 from core.enhancer import AutoLowLightEnhancer
 from core.optical_motion_engine import OpticalMotionEngine
+from core.token_guard import TokenGuard
 
 import queue
 import json
