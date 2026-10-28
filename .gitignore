@@ -272,3 +272,18 @@ ehthumbs.db
 snapshots/
 core/golden_cache.json
 outputs/
+
+# Local testing, personal reports, whitepapers & experiment artifacts (keep local only, do not push to GitHub)
+tests/
+assets/
+BACH_THU_KY_THUAT_HE_THONG.html
+BAO_CAO_CONG_NGHE_VA_KIEN_TRUC_HE_THONG.docx
+PROJECT.md
+TEST_INFRA.md
+TEST_READY.md
+build_full_word_report.py
+report_data_part1.py
+report_data_part2.py
+summary.json
+whitepaper_math_index.txt
+*.docx
