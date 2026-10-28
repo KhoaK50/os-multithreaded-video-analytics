@@ -103,6 +103,53 @@ def get_ffmpeg_bin() -> str:
         return "ffmpeg"
 
 
+_CACHED_HW_ENCODER_FLAGS: Dict[str, Optional[List[str]]] = {"cuda": None, "cpu": None}
+
+
+def get_optimal_h264_encoder_profiles(is_cpu_mode: bool = False) -> List[List[str]]:
+    """
+    Trả về danh sách cấu hình mã hóa H.264 tối ưu theo phần cứng:
+    - Chế độ GPU rời (CUDA): Ưu tiên NVIDIA NVENC (h264_nvenc) -> libx264 ultrafast.
+    - Chế độ Card tích hợp (iGPU / CPU): Tự động dò và lưu đệm (cache) bộ mã hóa phần cứng
+      Intel QuickSync (h264_qsv) hoặc AMD AMF (h264_amf) trước khi dùng libx264 ultrafast đa luồng.
+    """
+    cache_key = "cpu" if is_cpu_mode else "cuda"
+    cached = _CACHED_HW_ENCODER_FLAGS.get(cache_key)
+    cpu_fallback = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-threads", "0"]
+    if cached is not None:
+        return [cached, cpu_fallback] if cached != cpu_fallback else [cpu_fallback]
+
+    ffmpeg_bin = get_ffmpeg_bin()
+    candidates = (
+        [
+            ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "24"],
+            ["-c:v", "h264_amf", "-usage", "transcoding", "-quality", "speed"],
+        ]
+        if is_cpu_mode
+        else [
+            ["-c:v", "h264_nvenc", "-preset", "p1", "-cq", "24"],
+            ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "24"],
+            ["-c:v", "h264_amf", "-usage", "transcoding", "-quality", "speed"],
+        ]
+    )
+    for flags in candidates:
+        try:
+            probe_cmd = [
+                ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=256x256:r=30:d=0.1",
+                *flags, "-pix_fmt", "yuv420p", "-f", "null", "-"
+            ]
+            res = subprocess.run(probe_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+            if res.returncode == 0:
+                _CACHED_HW_ENCODER_FLAGS[cache_key] = flags
+                return [flags, cpu_fallback]
+        except Exception:
+            continue
+
+    _CACHED_HW_ENCODER_FLAGS[cache_key] = cpu_fallback
+    return [cpu_fallback]
+
+
 def resolve_redirect_url(url: str) -> str:
     """
     Theo vết và giải mã các đường dẫn rút gọn như vt.tiktok.com, vm.tiktok.com, youtu.be, fb.watch, bit.ly...
@@ -1985,10 +2032,25 @@ class VideoAnnotatorEngine:
         last_deck_sample_ts = 0.0
         raw_to_canonical_map: Dict[int, int] = {}
 
-        # Xử lý 100% từng khung hình (infer_stride = 1), tuyệt đối không nhảy cóc frame để bảo toàn trọn vẹn logic động học & Bạch thư.
-        # Tăng tốc độc lập bằng phần cứng: Tensor Core FP16 (half=True), mã hóa phần cứng NVIDIA NVENC (h264_nvenc) và bộ đệm ROI/HUD.
-        infer_stride = 1
-        stride_scale = 1.0
+        # Thích ứng thông minh theo phần cứng:
+        # - Trên GPU rời (cuda:0): Xử lý 100% từng khung hình (infer_stride = 1, imgsz = 640).
+        # - Trên máy chỉ có Card tích hợp / CPU (self.device == "cpu"): Bật nội suy nhịp đôi (infer_stride = 2, imgsz = 512)
+        #   và phân bổ luồng CPU hợp lý để giải phóng nghẽn cổ chai mà giữ nguyên 100% độ nét khung hình & chất lượng điểm số.
+        is_cpu_mode = (str(self.device).lower() == "cpu")
+        if is_cpu_mode:
+            try:
+                import torch
+                logical_cores = os.cpu_count() or 4
+                torch.set_num_threads(max(2, min(6, logical_cores - 2 if logical_cores > 4 else logical_cores)))
+            except Exception:
+                pass
+            try:
+                cv2.setUseOptimized(True)
+            except Exception:
+                pass
+        infer_stride = 2 if is_cpu_mode else 1
+        stride_scale = 1.0 / float(infer_stride)
+        infer_imgsz = 512 if is_cpu_mode else 640
 
         # STAGE 1: Video Reader Producer Thread (I/O Bound)
         def reader_worker():
@@ -2099,6 +2161,7 @@ class VideoAnnotatorEngine:
                         current_seg = segments_data[seg_idx]
                         for ent in last_frame_entities:
                             c_id_key = ent["canonical_id"]
+                            stabilizer.canonical_counts[c_id_key] = stabilizer.canonical_counts.get(c_id_key, 0) + 1
                             if c_id_key not in current_seg["persons_history"]:
                                 current_seg["persons_history"][c_id_key] = {
                                     "actions": [],
@@ -2113,10 +2176,28 @@ class VideoAnnotatorEngine:
                             current_seg["persons_history"][c_id_key]["actions"].append(ent["action"])
                             current_seg["persons_history"][c_id_key]["angles"].append(ent["angle"])
                             current_seg["persons_history"][c_id_key]["max_threat"] = max(current_seg["persons_history"][c_id_key]["max_threat"], ent["threat_score"])
+                            current_seg["persons_history"][c_id_key]["kinetic_spikes"].append(ent.get("kinetic_spike", 0.0))
+                            current_seg["persons_history"][c_id_key]["interaction_scores"].append(ent.get("interaction_score", 0.0))
+                            c_partners_map = current_seg["persons_history"][c_id_key].setdefault("clash_partners", {})
+                            for p_cid in ent.get("clash_partners", []):
+                                c_partners_map[p_cid] = c_partners_map.get(p_cid, 0) + 1
                             if ent.get("role") == "attacker" or ent["is_danger"]:
                                 current_seg["persons_history"][c_id_key]["danger_count"] += 1
                             elif ent.get("role") == "defender":
                                 current_seg["persons_history"][c_id_key]["defender_count"] += 1
+
+                        if last_frame_danger:
+                            current_seg["has_danger"] = True
+
+                        seg_len_s = max(0.1, current_seg["end_sec"] - current_seg["start_sec"])
+                        seg_ratio = (current_time_sec - current_seg["start_sec"]) / seg_len_s
+                        if len(segments_data) == 1:
+                            if "phase_start" not in current_seg["phase_frames"] and seg_ratio >= 0.15:
+                                current_seg["phase_frames"]["phase_start"] = _downscale_preview_frame(frame, active_roi=active_video_roi)
+                            if "phase_mid" not in current_seg["phase_frames"] and seg_ratio >= 0.50:
+                                current_seg["phase_frames"]["phase_mid"] = _downscale_preview_frame(frame, active_roi=active_video_roi)
+                            if "phase_end" not in current_seg["phase_frames"] and seg_ratio >= 0.85:
+                                current_seg["phase_frames"]["phase_end"] = _downscale_preview_frame(frame, active_roi=active_video_roi)
 
                         sec_slot = round((current_time_sec - start_time) * 2) / 2.0
                         if sec_slot not in heatmap_samples or last_frame_threat_score > heatmap_samples[sec_slot]:
@@ -2138,7 +2219,7 @@ class VideoAnnotatorEngine:
                     if motion_res.get("is_scene_cut", False) and anomaly_ranker is not None:
                         anomaly_ranker.reset_velocities()
 
-                    # Chạy YOLOv8-Pose kết hợp ByteTrack trên GPU RTX 5060 (conf=0.25)
+                    # Chạy YOLOv8-Pose kết hợp ByteTrack trên GPU RTX 5060 hoặc CPU thích ứng (conf=0.25)
                     try:
                         results = self.model.track(
                             frame,
@@ -2146,6 +2227,7 @@ class VideoAnnotatorEngine:
                             tracker="bytetrack.yaml",
                             device=self.device,
                             conf=0.25,
+                            imgsz=infer_imgsz,
                             verbose=False
                         )
                     except Exception as e_track:
@@ -2162,6 +2244,7 @@ class VideoAnnotatorEngine:
                                     tracker="bytetrack.yaml",
                                     device="cpu",
                                     conf=0.25,
+                                    imgsz=512,
                                     verbose=False
                                 )
                             except Exception:
@@ -2169,6 +2252,7 @@ class VideoAnnotatorEngine:
                                     frame,
                                     device="cpu",
                                     conf=0.25,
+                                    imgsz=512,
                                     verbose=False
                                 )
                         else:
@@ -2177,6 +2261,7 @@ class VideoAnnotatorEngine:
                                     frame,
                                     device=self.device,
                                     conf=0.25,
+                                    imgsz=infer_imgsz,
                                     verbose=False
                                 )
                             except Exception:
@@ -2907,12 +2992,13 @@ class VideoAnnotatorEngine:
                     # Lấy mẫu candidate_keyframes đa pha (mốc 15%, 50%, 85% hoặc mỗi 1.5 giây)
                     current_rel_sec = round(current_time_sec - start_time, 2)
                     sample_stride = max(1, int(1.5 * input_fps))
-                    is_milestone = worker_frame_count in [
+                    milestone_targets = [
                         int(0.15 * target_total_frames),
                         int(0.50 * target_total_frames),
                         int(0.85 * target_total_frames)
                     ]
-                    if (is_milestone or (worker_frame_count % sample_stride == 0) or len(candidate_keyframes) == 0) and current_rel_sec not in candidate_keyframes:
+                    is_milestone = any(abs(worker_frame_count - mt) < infer_stride for mt in milestone_targets)
+                    if (is_milestone or ((worker_frame_count % sample_stride) < infer_stride) or len(candidate_keyframes) == 0) and current_rel_sec not in candidate_keyframes:
                         candidate_keyframes.add_candidate(
                             current_rel_sec,
                             _downscale_preview_frame(frame, active_roi=active_video_roi),
@@ -3078,10 +3164,7 @@ class VideoAnnotatorEngine:
         try:
             ffmpeg_bin = get_ffmpeg_bin()
             end_ts_str = str(end_time if end_time else start_time + clip_duration)
-            encoder_profiles = [
-                ["-c:v", "h264_nvenc", "-preset", "p1", "-cq", "24"],
-                ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-threads", "0"],
-            ]
+            encoder_profiles = get_optimal_h264_encoder_profiles(is_cpu_mode=is_cpu_mode)
             for enc_flags in encoder_profiles:
                 if has_orig_audio:
                     cmd = [

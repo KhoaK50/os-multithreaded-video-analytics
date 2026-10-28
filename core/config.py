@@ -87,17 +87,11 @@ class SystemConfig:
             dev = "cpu"
             if torch.cuda.is_available():
                 try:
-                    import subprocess, sys
-                    cmd = [
-                        sys.executable,
-                        "-c",
-                        "from ultralytics import YOLO; import numpy as np; m = YOLO('yolov8n-pose.pt'); dummy = np.zeros((64, 64, 3), dtype=np.uint8); m(dummy, device='cuda:0', verbose=False)"
-                    ]
-                    res = subprocess.run(cmd, capture_output=True, timeout=8)
-                    if res.returncode == 0:
-                        dev = "cuda:0"
-                    else:
-                        dev = "cpu"
+                    x = torch.zeros((1, 3, 16, 16), device="cuda:0")
+                    w = torch.zeros((1, 3, 3, 3), device="cuda:0")
+                    _ = torch.nn.functional.conv2d(x, w)
+                    torch.cuda.synchronize()
+                    dev = "cuda:0"
                 except Exception:
                     dev = "cpu"
             self._cached_device = dev

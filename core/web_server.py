@@ -51,7 +51,7 @@ from pydantic import BaseModel
 
 from core.config import CONFIG
 from core.cyber_hud import CyberHUDRenderer
-from core.video_annotator import VideoAnnotatorEngine, download_web_video, probe_web_video, check_video_has_audio, get_ffmpeg_bin
+from core.video_annotator import VideoAnnotatorEngine, download_web_video, probe_web_video, check_video_has_audio, get_ffmpeg_bin, get_optimal_h264_encoder_profiles
 from core.token_guard import TokenGuard
 from core.enhancer import CameraEnhancer
 from core.model_orchestrator import get_model_orchestrator, ModelTier
@@ -873,12 +873,21 @@ class LiveCameraPipeline:
 
     def _ai_worker(self):
         device = CONFIG.DEVICE
+        is_cpu_mode = (str(device).lower() == "cpu")
+        if is_cpu_mode:
+            try:
+                import torch
+                logical_cores = os.cpu_count() or 4
+                torch.set_num_threads(max(2, min(4, logical_cores // 2)))
+            except Exception:
+                pass
+        live_imgsz = 480 if is_cpu_mode else 640
         if self.yolo_model is None:
             try:
                 from ultralytics import YOLO
                 self.yolo_model = YOLO(CONFIG.YOLO_MODEL_NAME)
                 dummy = np.zeros((480, 640, 3), dtype=np.uint8)
-                self.yolo_model(dummy, device=device, verbose=False)
+                self.yolo_model(dummy, device=device, imgsz=live_imgsz, verbose=False)
             except Exception as e_yolo:
                 print(f"[!] Loi nap YOLOv8-Pose: {e_yolo}")
         prev_time = time.time()
@@ -915,7 +924,7 @@ class LiveCameraPipeline:
             # Luồng AI gốc (Cột Trái - Chuẩn khuyến nghị) luôn chạy mượt ở 30 FPS làm mốc đối chứng chuẩn.
             # Độ trễ giả lập (consumer_delay_ms) chỉ áp dụng cho Luồng Tùy Chỉnh Tài Nguyên (Cột Phải).
             self.thread_states["CamEdgeAI"] = "THROTTLED" if self.consumer_delay_ms > 0 else "RUNNING"
-            results = self.yolo_model(raw, device=device, conf=CONFIG.YOLO_CONFIDENCE, verbose=False)
+            results = self.yolo_model(raw, device=device, imgsz=live_imgsz, conf=CONFIG.YOLO_CONFIDENCE, verbose=False)
             dt = max(1e-4, time.time() - prev_time)
             prev_time = time.time()
             if self.consumer_delay_ms > 0:
@@ -1137,6 +1146,7 @@ class LiveCameraPipeline:
 
     def _render_worker(self):
         t_prev = time.time()
+        last_cpu_poll_ts = 0.0
         while self.running:
             self.thread_states["CamCompositor"] = "RUNNING"
             raw = None
@@ -1153,71 +1163,28 @@ class LiveCameraPipeline:
                 kpts = list(self.latest_kpts)
                 bio = dict(self.biomechanics)
 
-            # Cập nhật CPU EMA
-            instant_cpu = psutil.cpu_percent()
-            self.cpu_smoothed = 0.85 * self.cpu_smoothed + 0.15 * instant_cpu
-
-            # Cập nhật FPS
+            # Cập nhật FPS & lấy mẫu CPU EMA định kỳ mỗi 0.5s (tránh gọi PDH kernel counter 30 lần/giây)
             now = time.time()
+            if (now - last_cpu_poll_ts) >= 0.5:
+                last_cpu_poll_ts = now
+                instant_cpu = psutil.cpu_percent()
+                self.cpu_smoothed = 0.85 * self.cpu_smoothed + 0.15 * instant_cpu
+
             dt = max(1e-4, now - t_prev)
             t_prev = now
             self.fps_queue.append(1.0 / dt)
             self.current_fps = sum(self.fps_queue) / len(self.fps_queue)
 
-            # Lấy VRAM từ NVML
-            vram_mb, vram_total = 0, 0
-            if NVML_AVAILABLE:
-                try:
-                    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-                    info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    vram_mb = int(info.used / (1024 * 1024))
-                    vram_total = int(info.total / (1024 * 1024))
-                except Exception:
-                    pass
-
-            tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
-            buf_stats = self.frame_buffer.get_stats() if hasattr(self, "frame_buffer") else {
-                "size": 0, "capacity": 16, "total_dropped": 0, "drop_rate_pct": 0.0, "latency_ms": 0.0
-            }
-            telemetry = {
-                "cpu_percent": self.cpu_smoothed,
-                "ram_percent": psutil.virtual_memory().percent,
-                "gpu_vram_mb": vram_mb,
-                "gpu_vram_total_mb": vram_total,
-                "actual_fps": self.current_fps,
-                "queue_size": buf_stats["size"],
-                "queue_max": buf_stats["capacity"],
-                "dropped_frames": buf_stats["total_dropped"],
-                "raw_queue_size": buf_stats["size"],
-                "drop_count": buf_stats["total_dropped"],
-                "drop_rate_pct": buf_stats["drop_rate_pct"],
-                "queue_latency_ms": buf_stats["latency_ms"],
-                "active_persons": len(boxes),
-                "active_model_tier": tier_info.get("active_tier", "tier_1"),
-                "active_tier_name": tier_info.get("tier_name", "gemini-3.8-flash"),
-                "cooldown_remaining": tier_info.get("cooldown_remaining", 0.0)
-            }
-
-            diagnosis = {
-                "action": bio["posture"],
-                "context": f"Góc thân: {bio['angle']:.0f}° | {bio['alert']}",
-                "danger_level": "NGUY HIEM" if bio["is_danger"] else "AN TOAN",
-                "danger_score": 9 if bio["is_danger"] else 1,
-                "danger_reason": bio["alert"],
-                "timestamp": time.strftime("%H:%M:%S"),
-                "model_tier_str": tier_info.get("tier_badge", "Tier-1 Gemini 3.8")
-            }
-
             is_danger = bio.get("is_danger", False)
             status_color = (68, 68, 239) if is_danger else (255, 240, 0)
-            danger_score = 9 if is_danger else 1
             danger_level = "NGUY HIEM" if is_danger else "AN TOAN"
 
             # Giữ nguyên độ phân giải gốc 1:1 của cảm biến (1920x1080 hoặc 1280x720) để tránh nội suy phóng đại hạt nhiễu
+            # Tái sử dụng trực tiếp bản sao raw đã copy ở trên để tiết kiệm băng thông RAM
             raw_h, raw_w = raw.shape[:2]
             if raw_w >= 1280 and raw_h >= 720:
                 target_w, target_h = raw_w, raw_h
-                cam_viewport = raw.copy()
+                cam_viewport = raw
             else:
                 target_w, target_h = 1280, 720
                 cam_viewport = cv2.resize(raw, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
@@ -2224,16 +2191,19 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
             raw_trimmed_filename = f"raw_trimmed_{job_id}_{os.path.basename(req.video_path)}"
             raw_trimmed_path = os.path.abspath(os.path.join(RECORDINGS_DIR, raw_trimmed_filename))
             has_audio = check_video_has_audio(req.video_path)
+            is_cpu_enc = (str(getattr(ANNOTATOR_ENGINE, "device", "cpu")).lower() == "cpu")
+            best_enc_flags = get_optimal_h264_encoder_profiles(is_cpu_mode=is_cpu_enc)[0]
             cmd_raw = [
                 get_ffmpeg_bin(), "-y",
                 "-ss", str(req.start_time),
                 "-to", str(req.end_time),
-                "-i", req.video_path
+                "-i", req.video_path,
+                *best_enc_flags
             ]
             if has_audio:
-                cmd_raw.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac"])
+                cmd_raw.extend(["-c:a", "aac"])
             else:
-                cmd_raw.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an"])
+                cmd_raw.extend(["-an"])
             cmd_raw.extend(["-pix_fmt", "yuv420p", "-movflags", "+faststart", raw_trimmed_path])
 
             try:

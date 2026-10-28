@@ -251,13 +251,13 @@ class OpticalMotionEngine:
         med_v = float(np.median(v))
         u_rel = u - med_u
         v_rel = v - med_v
-        self.last_u_rel = u_rel
-        self.last_v_rel = v_rel
-
         # Tính độ lớn vận tốc tương đối (Magnitude) theo pixel/giây
         mag = np.sqrt(u_rel ** 2 + v_rel ** 2)
         fps_scale = 1.0 / dt
-        mag_scaled = mag * fps_scale / 30.0  # Chuẩn hóa về thang chuẩn 30fps
+        step_norm = fps_scale / 30.0
+        mag_scaled = mag * step_norm  # Chuẩn hóa về thang chuẩn 30fps
+        self.last_u_rel = u_rel * step_norm
+        self.last_v_rel = v_rel * step_norm
 
         # Công thức 5 Bạch thư: Toán tử Phân kỳ Quang lưu div(V) = ∂v_x/∂x + ∂v_y/∂y
         du_dx = np.gradient(u_rel, axis=1)
@@ -281,8 +281,9 @@ class OpticalMotionEngine:
         num_active_pixels = int(np.sum(high_motion_mask))
 
         # Tinh hoa 1: Motion History Image (MHI) & Temporal Decay Map (Công thức 7.5 Bạch thư)
+        decay_step = max(1.0, min(3.0, round(1.0 / max(0.25, step_norm))))
         self.mhi_map[high_motion_mask] = float(self.tau_frames)
-        self.mhi_map[~high_motion_mask] = np.maximum(0.0, self.mhi_map[~high_motion_mask] - 1.0)
+        self.mhi_map[~high_motion_mask] = np.maximum(0.0, self.mhi_map[~high_motion_mask] - decay_step)
 
         active_mhi_pixels = int(np.sum(self.mhi_map > (self.tau_frames * 0.35)))
         mhi_persistence = float(np.clip(active_mhi_pixels / max(25.0, float(num_active_pixels or 1)), 0.0, 1.0))
