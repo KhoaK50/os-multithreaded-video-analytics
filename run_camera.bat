@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 > nul
 echo =========================================================================
-echo   KHOI DONG TRUNG TAM GIAM SAT AI - OPEN HUD (1280x720)
-echo   Hoc phan: He dieu hanh - Bao cao Do an Thuc nghiem
+echo   KHOI DONG GIAM SAT CAMERA TRUC TIEP (WEBCAM SOURCE 0 - 30 FPS)
+echo   Giao dien Web Hop nhat: http://127.0.0.1:8000
 echo =========================================================================
 echo.
-python main.py --mode hud
+python main.py --source 0
 pause

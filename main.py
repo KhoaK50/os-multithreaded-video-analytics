@@ -141,11 +141,16 @@ def main():
     video_source = int(args.source) if args.source.isdigit() else args.source
 
     if args.mode == "hud":
-        print("[*] Đang khởi động Cửa sổ OpenCV Desktop Cyber Command Center...")
-        from tests.test_command_center import CyberCommandCenterApp
-        app = CyberCommandCenterApp(video_source=video_source)
-        app.start()
-    else:
+        try:
+            print("[*] Đang khởi động Cửa sổ OpenCV Desktop Cyber Command Center...")
+            from tests.test_command_center import CyberCommandCenterApp
+            app = CyberCommandCenterApp(video_source=video_source)
+            app.start()
+            return
+        except ImportError:
+            print("[!] Mô-đun thử nghiệm HUD độc lập không khả dụng trên bản phân phối chuẩn. Tự động chuyển sang Giao diện Web Hợp nhất...")
+
+    if True:
         client_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
         url = f"http://{client_host}:{args.port}"
         print("=" * 70)

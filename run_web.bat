@@ -1,8 +1,8 @@
 @echo off
 chcp 65001 > nul
 echo =========================================================================
-echo   KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT VIDEO ĐA LUỒNG (GIAO DIỆN HỢP NHẤT)
-echo   Học phần: Hệ điều hành — Báo cáo Đồ án Thực nghiệm
+echo   HE THONG GIAM SAT HANH VI VIDEO DA LUONG ^& DIEU PHOI TAI NGUYEN HDH
+echo   Giao dien Web Hop nhat: http://127.0.0.1:8000
 echo =========================================================================
 echo.
 python main.py
