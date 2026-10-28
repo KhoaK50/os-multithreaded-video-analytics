@@ -2100,6 +2100,7 @@ class VideoAnnotatorEngine:
             last_frame_threat_score = 0.0
             last_detected_persons_count = 0
             last_frame_entities = []
+            last_infer_frame_idx = 0
             try:
                 while not stop_pipeline.is_set():
                     item = raw_buffer.get(block=True, timeout=0.1)
@@ -2213,6 +2214,9 @@ class VideoAnnotatorEngine:
                         continue
 
                     current_draw_ops = []
+                    actual_step = max(1, worker_frame_count - last_infer_frame_idx) if last_infer_frame_idx > 0 else infer_stride
+                    last_infer_frame_idx = worker_frame_count
+                    eff_stride_scale = 1.0 / float(actual_step)
 
                     # Động cơ dòng quang học Farneback (Trụ cột 2: Dense Optical Flow Motion Engine)
                     motion_res = optical_engine.process_frame(frame, current_time_sec, orig_w, orig_h)
@@ -2327,7 +2331,7 @@ class VideoAnnotatorEngine:
     
                             # Nếu bật lọc tiêu điểm bất thường (Top-4 Saliency Focus)
                             if anomaly_ranker is not None:
-                                candidates = anomaly_ranker.update_frame(candidates, orig_w, orig_h, stride_scale=stride_scale)
+                                candidates = anomaly_ranker.update_frame(candidates, orig_w, orig_h, stride_scale=eff_stride_scale)
                             else:
                                 for cand in candidates:
                                     cand["is_focus"] = True

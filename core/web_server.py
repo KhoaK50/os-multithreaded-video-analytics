@@ -1639,6 +1639,9 @@ def get_camera_settings():
 
 @app.get("/api/telemetry")
 def get_telemetry():
+    if not LIVE_CAMERA.running:
+        instant_cpu = psutil.cpu_percent()
+        LIVE_CAMERA.cpu_smoothed = 0.80 * LIVE_CAMERA.cpu_smoothed + 0.20 * instant_cpu
     vram_mb, vram_total = 0, 0
     if NVML_AVAILABLE:
         try:
