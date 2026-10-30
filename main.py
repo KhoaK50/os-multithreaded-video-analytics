@@ -70,8 +70,8 @@ def open_browser_when_ready(url: str, timeout: float = 30.0, check_interval: flo
     return False
 
 
-def free_port_if_occupied(port: int, host: str = "127.0.0.1"):
-    """Tự động kiểm tra và giải phóng cổng nếu có tiến trình máy chủ cũ còn kẹt (dùng psutil an toàn, không gọi taskkill shell)."""
+def free_port_if_occupied(port: int, host: str = "127.0.0.1") -> int:
+    """Tự động đóng luồng camera COM, giải phóng cổng nếu có tiến trình cũ còn kẹt và trả về cổng sẵn sàng."""
     import socket
     try:
         import psutil
@@ -81,10 +81,18 @@ def free_port_if_occupied(port: int, host: str = "127.0.0.1"):
                 pid = conn.pid
                 if pid and pid != os.getpid():
                     try:
+                        req_stop = urllib.request.Request(
+                            f"http://{host}:{port}/api/camera/toggle?action=stop",
+                            method="POST"
+                        )
+                        urllib.request.urlopen(req_stop, timeout=1.2).read()
+                    except Exception:
+                        pass
+                    try:
                         print(f"[*] Phát hiện tiến trình cũ (PID {pid}) đang chiếm cổng {port}. Đang tự động giải phóng...")
                         proc = psutil.Process(pid)
                         proc.terminate()
-                        proc.wait(timeout=2.0)
+                        proc.wait(timeout=2.5)
                         killed_any = True
                     except Exception:
                         try:
@@ -97,11 +105,22 @@ def free_port_if_occupied(port: int, host: str = "127.0.0.1"):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     try:
                         s.bind((host, port))
-                        break
+                        return port
                     except OSError:
                         time.sleep(0.15)
     except Exception:
         pass
+
+    for candidate_port in range(port, port + 10):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, candidate_port))
+                if candidate_port != port:
+                    print(f"[*] Cổng {port} đang chờ Windows giải phóng tài nguyên USB driver -> Tự động chuyển sang cổng {candidate_port}.")
+                return candidate_port
+            except OSError:
+                continue
+    return port
 
 
 def main():
@@ -164,7 +183,8 @@ def main():
         print("=" * 70)
 
         # Tự động giải phóng cổng 8000 nếu có tiến trình máy chủ cũ còn kẹt
-        free_port_if_occupied(args.port, client_host)
+        active_port = free_port_if_occupied(args.port, client_host)
+        url = f"http://{client_host}:{active_port}"
 
         if not args.no_browser:
             threading.Thread(target=open_browser_when_ready, args=(url,), daemon=True).start()
@@ -172,7 +192,7 @@ def main():
         import uvicorn
         from core.web_server import app, LIVE_CAMERA
         LIVE_CAMERA.video_source = video_source
-        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+        uvicorn.run(app, host=args.host, port=active_port, log_level="warning")
 
 
 if __name__ == "__main__":

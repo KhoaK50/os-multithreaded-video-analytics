@@ -51,7 +51,7 @@ from pydantic import BaseModel
 
 from core.config import CONFIG
 from core.cyber_hud import CyberHUDRenderer
-from core.video_annotator import VideoAnnotatorEngine, download_web_video, probe_web_video, check_video_has_audio, get_ffmpeg_bin, get_optimal_h264_encoder_profiles
+from core.video_annotator import VideoAnnotatorEngine, suppress_duplicate_pose_boxes, download_web_video, probe_web_video, check_video_has_audio, get_ffmpeg_bin, get_optimal_h264_encoder_profiles
 from core.token_guard import TokenGuard
 from core.enhancer import CameraEnhancer
 from core.model_orchestrator import get_model_orchestrator, ModelTier
@@ -124,6 +124,7 @@ class LiveCameraPipeline:
             "alert": "Khu vực an toàn"
         }
         self.prev_wrists = None
+        self.violent_motion_streak = 0
 
         # Telemetry & OS Kernel Lab State (Synchronization & Bounded Buffer)
         self.cpu_smoothed = psutil.cpu_percent()
@@ -152,6 +153,7 @@ class LiveCameraPipeline:
         self.last_logged_action = ""
         self.last_log_time = 0.0
         self.window_candidates = []
+        self.recent_candidates = deque(maxlen=40)
         self.last_candidate_ts = 0.0
         self.buffer_policy = "drop_oldest"
         self.snapshots_dir = os.path.join(RECORDINGS_DIR, "snapshots")
@@ -333,42 +335,137 @@ class LiveCameraPipeline:
             return None
 
     def capture_manual_snapshot(self):
-        """Chụp ảnh bằng chứng thủ công theo lệnh người dùng và phân tích sâu bằng Gemini."""
+        """
+        Chụp ảnh bằng chứng thủ công theo lệnh người dùng:
+        Ghép chuỗi 4 pha chuyển động 2x2 gần nhất (recent_candidates + khung hình tức thời)
+        và phân tích đồng bộ qua Model Orchestrator để chất lượng nhận định đồng nhất với luồng định kỳ.
+        """
         with self.frame_lock:
             frame = self.latest_raw_frame.copy() if self.latest_raw_frame is not None else None
-        if frame is None:
+            recent_pool = list(self.recent_candidates) if getattr(self, "recent_candidates", None) else list(self.window_candidates)
+        if frame is None or frame.size == 0:
             return None
+
+        now_t = time.time()
         with self.ai_lock:
             bio = dict(self.biomechanics)
-        tier_info = MODEL_ORCHESTRATOR.get_active_tier_info()
-        active_tier_key = tier_info.get("active_tier", "tier_1")
-        entry = self._record_behavior_log(
-            frame=frame,
-            posture=bio.get("posture", "Ngồi thẳng bình thường"),
-            angle=bio.get("angle", 90.0),
-            alert=bio.get("alert", "Đang phân tích chi tiết hành vi bằng Gemini..."),
-            is_danger=bio.get("is_danger", False),
-            severity="danger" if bio.get("is_danger", False) else "safe",
-            model_tier=active_tier_key
-        )
-        if entry is not None and not type(MODEL_ORCHESTRATOR.client).__module__.startswith("unittest.mock"):
-            def _enrich_manual(target_entry, f_img, b_snap):
+
+        candidates_y = [c for c in recent_pool if (now_t - float(c[0])) <= 6.0]
+        if not candidates_y or (now_t - float(candidates_y[-1][0])) >= 0.08:
+            candidates_y.append((now_t, 2.2, frame.copy(), dict(bio)))
+
+        def _normalize_tier_key(raw_tier: Any) -> str:
+            s = str(raw_tier or "tier_1")
+            if "Tier-1" in s or s == "tier_1":
+                return "tier_1"
+            if "Tier-2" in s or s == "tier_2":
+                return "tier_2"
+            if "Tier-3" in s or s == "tier_3":
+                return "tier_3"
+            return "tier_1"
+
+        try:
+            os.makedirs(self.snapshots_dir, exist_ok=True)
+            self.action_counter += 1
+            cur_idx = self.action_counter
+            self.last_log_time = now_t
+            snap_time_str = time.strftime("%H:%M:%S")
+
+            quad_y, peak_frame_y, peak_bio_y = self.extract_kinematic_quad(candidates_y)
+            if peak_frame_y is None:
+                peak_frame_y = frame
+            if not peak_bio_y:
+                peak_bio_y = bio
+
+            snap_name = f"snap_manual_{cur_idx:04d}_{int(now_t)}.jpg"
+            snap_path = os.path.join(self.snapshots_dir, snap_name)
+            cv2.imwrite(snap_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+
+            buf_cap = self.frame_buffer.capacity if hasattr(self, "frame_buffer") else 16
+            candidates_z = self.filter_surviving_candidates_for_z(
+                candidates_y,
+                cap=buf_cap,
+                delay_ms=self.consumer_delay_ms,
+                policy=getattr(self, "buffer_policy", "drop_oldest")
+            )
+            _, peak_frame_z, _ = self.extract_kinematic_quad(candidates_z)
+            if peak_frame_z is None:
+                peak_frame_z = frame
+            snap_z_name = f"snap_manual_z_{cur_idx:04d}_{int(now_t)}.jpg"
+            snap_z_path = os.path.join(self.snapshots_dir, snap_z_name)
+            cv2.imwrite(snap_z_path, peak_frame_z, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+            composite_2x2 = self.build_temporal_quad_image(quad_y, frame)
+
+            tier_info_before = MODEL_ORCHESTRATOR.get_active_tier_info()
+            active_tier_before = tier_info_before.get("active_tier", "tier_1")
+            heur_fallback = self._synthesize_heuristic_action(
+                peak_bio_y.get("posture", "Ngồi thẳng bình thường"), peak_bio_y
+            )
+
+            act_val = heur_fallback.get("action", "Ngồi thẳng bình thường")
+            desc_val = heur_fallback.get("description", "Người dùng đang giữ tư thế ổn định trước camera.")
+            pred_val = heur_fallback.get("prediction_next_4s", "Tiếp tục giữ nguyên tư thế trong 4 giây tới.")
+            deg_light = heur_fallback.get("degraded_light")
+            deg_heavy = heur_fallback.get("degraded_heavy")
+            sev_val = heur_fallback.get("severity", "danger" if peak_bio_y.get("is_danger", False) else "safe")
+            if sev_val not in ("safe", "warning", "danger"):
+                sev_val = "safe"
+            model_tier_val = "tier_3"
+
+            should_call_cloud = (
+                (self.running or self.is_client_streaming)
+                and MODEL_ORCHESTRATOR.client is not None
+                and not type(MODEL_ORCHESTRATOR.client).__module__.startswith("unittest.mock")
+            )
+            if should_call_cloud:
                 try:
-                    res = MODEL_ORCHESTRATOR.execute_live_analysis(f_img, b_snap)
+                    res = MODEL_ORCHESTRATOR.execute_live_analysis(composite_2x2, peak_bio_y)
+                    t_info = MODEL_ORCHESTRATOR.get_active_tier_info()
+                    if t_info["active_tier"] == "tier_3" and MODEL_ORCHESTRATOR.client is None:
+                        self.gemini_status = "heuristic_offline"
+                    elif t_info["is_cooldown"]:
+                        self.gemini_status = "failover_tier2" if t_info["active_tier"] == "tier_2" else "quota_exceeded"
+                    else:
+                        self.gemini_status = "active"
+
                     if isinstance(res, dict):
-                        with self.ai_lock:
-                            if res.get("action"):
-                                target_entry["action"] = res["action"]
-                            if res.get("description"):
-                                target_entry["description"] = res["description"]
-                            if res.get("prediction_next_4s"):
-                                target_entry["prediction_next_4s"] = res["prediction_next_4s"]
-                            if res.get("severity") in ("safe", "warning", "danger"):
-                                target_entry["severity"] = res["severity"]
-                except Exception:
-                    pass
-            threading.Thread(target=_enrich_manual, args=(entry, frame.copy(), dict(bio)), daemon=True).start()
-        return entry
+                        act_val = res.get("action") or act_val
+                        desc_val = res.get("description") or desc_val
+                        pred_val = res.get("prediction_next_4s") or pred_val
+                        deg_light = res.get("degraded_light") or deg_light
+                        deg_heavy = res.get("degraded_heavy") or deg_heavy
+                        if res.get("severity") in ("safe", "warning", "danger"):
+                            sev_val = res["severity"]
+                        model_tier_val = _normalize_tier_key(res.get("model_tier", active_tier_before))
+                except Exception as e_snap_ai:
+                    print(f"[!] Loi phan tich AI cho Snapshot thu cong #{cur_idx:03d}: {e_snap_ai}")
+
+            code_prefix = "DANGER" if sev_val == "danger" else ("WARN" if sev_val == "warning" else "NORM")
+            entry = {
+                "id": f"#{cur_idx:03d}",
+                "timestamp": snap_time_str,
+                "code": f"{code_prefix}-{cur_idx:02d}",
+                "action": act_val,
+                "description": desc_val,
+                "prediction_next_4s": pred_val,
+                "degraded_light": deg_light,
+                "degraded_heavy": deg_heavy,
+                "snapshot_url": f"/api/snapshots/{snap_name}",
+                "degraded_snapshot_url": f"/api/snapshots/{snap_z_name}",
+                "severity": sev_val,
+                "model_tier": model_tier_val,
+            }
+            self.last_logged_action = act_val
+            with self.ai_lock:
+                self.action_logs.insert(0, entry)
+                if len(self.action_logs) > 100:
+                    self.action_logs.pop()
+            print(f"[+] Chup Snapshot thu cong #{cur_idx:03d}: {act_val} -> {snap_name}")
+            return entry
+        except Exception as e:
+            print(f"[!] Loi chup Snapshot thu cong: {e}")
+            return None
 
     def _open_hardware_camera(self):
         cam_w = getattr(CONFIG, "CAMERA_WIDTH", 1280)
@@ -463,6 +560,12 @@ class LiveCameraPipeline:
             with self.frame_lock:
                 self.latest_raw_frame = None
                 self.latest_hud_frame = None
+                self.window_candidates.clear()
+                if hasattr(self, "recent_candidates"):
+                    self.recent_candidates.clear()
+            with self.ai_lock:
+                self.latest_boxes = []
+                self.latest_kpts = []
             if hasattr(self, "frame_buffer"):
                 self.frame_buffer.clear()
             print("[+] Live Camera Pipeline da giai phong camera an toan.")
@@ -710,7 +813,7 @@ class LiveCameraPipeline:
                         "snapshot_url": f"/api/snapshots/{snap_name}",
                         "degraded_snapshot_url": f"/api/snapshots/{snap_z_name}",
                         "severity": init_sev,
-                        "model_tier": active_tier_before if MODEL_ORCHESTRATOR.client is not None else "tier_3_local",
+                        "model_tier": "tier_3",
                     }
 
                     # Nếu lượt gọi trước còn đang hoàn tất nốt những mili-giây cuối, chờ tối đa 6.0s để không bỏ lỡ lượt gọi Gemini thật
@@ -787,7 +890,7 @@ class LiveCameraPipeline:
                         )
                         t_worker.start()
                         # Đợi Gemini hoàn tất phân tích chi tiết hành vi trước khi ghi vào bảng sự kiện
-                        done_ev.wait(timeout=15.0)
+                        done_ev.wait(timeout=34.0)
                     elif MODEL_ORCHESTRATOR.client is None:
                         from core.model_orchestrator import ModelTier
                         MODEL_ORCHESTRATOR.active_tier = ModelTier.TIER_3_HEURISTIC
@@ -953,16 +1056,28 @@ class LiveCameraPipeline:
                 kpts_data = res.keypoints
 
                 if boxes is not None and len(boxes) > 0:
+                    live_candidates = []
                     for i, box in enumerate(boxes):
                         conf = float(box.conf[0].item())
                         x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
-                        # Lọc box nhỏ / bóng phản chiếu
                         if (x2 - x1) * (y2 - y1) < (raw.shape[0] * raw.shape[1] * 0.015):
                             continue
-                        boxes_list.append((x1, y1, x2, y2, f"ID #{i+1:02d}", conf))
+                        cand_kpts = None
+                        if kpts_data is not None and i < len(kpts_data):
+                            cand_kpts = kpts_data[i].data[0].cpu().numpy()
+                        live_candidates.append({
+                            "bbox": (x1, y1, x2, y2),
+                            "conf": conf,
+                            "kpts": cand_kpts,
+                            "raw_id": i + 1,
+                        })
+                    live_candidates = suppress_duplicate_pose_boxes(live_candidates, raw.shape[1], raw.shape[0])
+                    for cand in live_candidates:
+                        bx1, by1, bx2, by2 = cand["bbox"]
+                        boxes_list.append((bx1, by1, bx2, by2, "", cand["conf"]))
 
-                    if kpts_data is not None and len(kpts_data) > 0:
-                        kpts = kpts_data[0].data[0].cpu().numpy()
+                    if live_candidates and live_candidates[0].get("kpts") is not None:
+                        kpts = live_candidates[0]["kpts"]
                         kpts_list = [(pt[0], pt[1], pt[2]) for pt in kpts]
 
                         base_conf = float(np.mean([pt[2] for pt in kpts]))
@@ -994,25 +1109,32 @@ class LiveCameraPipeline:
                         bio_state["angle"] = torso_angle
 
                         # Vận tốc cổ tay hai bên (Left & Right Wrist Velocity) + Độ nâng cao bàn tay (Hand Elevation)
-                        curr_r = (float(r_wrist[0]), float(r_wrist[1])) if r_wrist[2] > 0.3 else None
-                        curr_l = (float(l_wrist[0]), float(l_wrist[1])) if l_wrist[2] > 0.3 else None
+                        curr_r = (float(r_wrist[0]), float(r_wrist[1])) if r_wrist[2] > 0.35 else None
+                        curr_l = (float(l_wrist[0]), float(l_wrist[1])) if l_wrist[2] > 0.35 else None
+                        dt_vel = max(0.030, dt)
                         wrist_speed = 0.0
                         if isinstance(self.prev_wrists, dict):
                             if curr_r and self.prev_wrists.get("r"):
                                 wrist_speed = max(
                                     wrist_speed,
-                                    math.hypot(curr_r[0] - self.prev_wrists["r"][0], curr_r[1] - self.prev_wrists["r"][1]) / max(1e-4, dt)
+                                    math.hypot(curr_r[0] - self.prev_wrists["r"][0], curr_r[1] - self.prev_wrists["r"][1]) / dt_vel
                                 )
                             if curr_l and self.prev_wrists.get("l"):
                                 wrist_speed = max(
                                     wrist_speed,
-                                    math.hypot(curr_l[0] - self.prev_wrists["l"][0], curr_l[1] - self.prev_wrists["l"][1]) / max(1e-4, dt)
+                                    math.hypot(curr_l[0] - self.prev_wrists["l"][0], curr_l[1] - self.prev_wrists["l"][1]) / dt_vel
                                 )
                         elif isinstance(self.prev_wrists, tuple) and curr_r:
                             dist = math.hypot(curr_r[0] - self.prev_wrists[0], curr_r[1] - self.prev_wrists[1])
-                            wrist_speed = dist / max(1e-4, dt)
+                            wrist_speed = dist / dt_vel
                         self.prev_wrists = {"r": curr_r, "l": curr_l}
                         curr_wrist = curr_r or curr_l
+
+                        strike_thresh = max(1650.0, sh_w * 5.6)
+                        if wrist_speed > strike_thresh and curr_wrist and (nose[2] > 0.25 and math.hypot(curr_wrist[0] - nose[0], curr_wrist[1] - nose[1]) > 0.55 * sh_w):
+                            self.violent_motion_streak = getattr(self, "violent_motion_streak", 0) + 1
+                        else:
+                            self.violent_motion_streak = 0
 
                         # Điểm nâng cao bàn tay (Hand Elevation Bonus) để bắt đỉnh cử chỉ vẫy tay / giơ ngón cái / chạm mặt
                         active_wrist_ys = []
@@ -1036,10 +1158,10 @@ class LiveCameraPipeline:
                             severity = "danger"
                             clarity_score = base_conf + 0.8
 
-                        # 2. Cử chỉ bất thường / Vung tay mạnh
-                        elif wrist_speed > 520.0 and curr_wrist and (nose[2] > 0.25 and math.hypot(curr_wrist[0] - nose[0], curr_wrist[1] - nose[1]) > 100):
+                        # 2. Vung đấm / Xô xát mạnh (chỉ kích hoạt khi vận tốc cực cao duy trì liên tiếp >= 3 frame)
+                        elif self.violent_motion_streak >= 3:
                             bio_state["is_danger"] = True
-                            bio_state["posture"] = "Cử chỉ bất thường / Vung tay mạnh"
+                            bio_state["posture"] = "Vung tay mạnh liên tục"
                             bio_state["alert"] = f"VẬN TỐC TAY ĐỘT BIẾN ({int(wrist_speed)} px/s)"
                             severity = "danger"
                             clarity_score = base_conf + 0.7
@@ -1128,6 +1250,11 @@ class LiveCameraPipeline:
                 severity = "warning"
                 clarity_score = 0.8
 
+            if bio_state.get("is_danger") and boxes_list:
+                b0 = boxes_list[0]
+                danger_tag = "TÉ NGÃ" if "Té ngã" in str(bio_state.get("posture", "")) else "XÔ XÁT"
+                boxes_list[0] = (b0[0], b0[1], b0[2], b0[3], danger_tag, b0[5])
+
             with self.ai_lock:
                 self.latest_boxes = boxes_list
                 self.latest_kpts = kpts_list
@@ -1139,10 +1266,13 @@ class LiveCameraPipeline:
                 self.last_candidate_ts = now_cand_ts
                 torso_dev_bonus = min(0.6, abs(90.0 - float(bio_state.get("angle", 90.0))) / 45.0) if bio_state.get("angle", 0.0) > 0 else 0.0
                 kinematic_score = float(clarity_score + min(1.8, wrist_speed / 220.0) + hand_elev_bonus + torso_dev_bonus)
+                cand_item = (now_cand_ts, kinematic_score, raw.copy(), dict(bio_state))
                 with self.frame_lock:
-                    self.window_candidates.append((now_cand_ts, kinematic_score, raw.copy(), dict(bio_state)))
+                    self.window_candidates.append(cand_item)
                     if len(self.window_candidates) > 60:
                         self.window_candidates.pop(0)
+                    if hasattr(self, "recent_candidates"):
+                        self.recent_candidates.append(cand_item)
 
     def _render_worker(self):
         t_prev = time.time()
@@ -1661,6 +1791,7 @@ def get_telemetry():
     with LIVE_CAMERA.ai_lock:
         bio_copy = dict(LIVE_CAMERA.biomechanics)
         logs_copy = list(LIVE_CAMERA.action_logs)
+        has_person = bool(LIVE_CAMERA.latest_boxes or LIVE_CAMERA.latest_kpts)
 
     # Thống kê phân bổ rủi ro từ danh sách sự kiện phiên trực tiếp
     safe_cnt = 0
@@ -1681,15 +1812,19 @@ def get_telemetry():
         "danger": danger_cnt
     }
 
-    recent_angle = bio_copy.get("angle", 90.0)
-    if bio_copy.get("is_danger", False):
+    cam_active = bool(LIVE_CAMERA.running or LIVE_CAMERA.is_client_streaming)
+    recent_angle = float(bio_copy.get("angle", 0.0) or 0.0)
+    posture_label = str(bio_copy.get("posture", "") or "")
+    if not cam_active or not has_person or recent_angle <= 0.0 or "Vắng mặt" in posture_label:
+        curr_ergo = None
+    elif bio_copy.get("is_danger", False):
         curr_ergo = 25.0
-    elif 75.0 <= recent_angle <= 105.0:
-        curr_ergo = 94.0
-    elif 45.0 <= recent_angle < 75.0:
-        curr_ergo = 76.0
     else:
-        curr_ergo = 58.0
+        angle_deviation = abs(90.0 - recent_angle)
+        posture_penalty = 12.0 if ("Nghiêng" in posture_label or "Căng thẳng" in posture_label) else (
+            6.0 if "Cúi" in posture_label else 0.0
+        )
+        curr_ergo = round(max(30.0, min(99.0, 98.0 - angle_deviation * 1.15 - posture_penalty)), 1)
 
     quota_stats = tier_info.get("quota_stats") or MODEL_ORCHESTRATOR.quota_tracker.get_stats()
     tier1_m = "gemini-3.1-flash-lite"
@@ -1702,7 +1837,7 @@ def get_telemetry():
     rpm_lim = quota_stats.get("rpm_limit", 15)
 
     active_tier_key = tier_info.get("active_tier", "tier_1")
-    if LIVE_CAMERA.running and LIVE_CAMERA.action_logs:
+    if LIVE_CAMERA.running and LIVE_CAMERA.action_logs and (tier_info.get("is_cooldown") or MODEL_ORCHESTRATOR.client is None):
         raw_logged_tier = str(LIVE_CAMERA.action_logs[0].get("model_tier", "") or "").lower()
         if "tier_3" in raw_logged_tier or "local" in raw_logged_tier or "heuristic" in raw_logged_tier:
             active_tier_key = "tier_3"
@@ -2146,7 +2281,8 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
         try:
             def on_progress(cur, total, fps, stage="Đang phân tích khung hình & trích xuất tư thế...", pipe_live=None):
                 # Frame analysis maps strictly to 0% - 90%
-                if stage and "hội chẩn" in stage.lower():
+                stg_low = stage.lower() if stage else ""
+                if "hội chẩn" in stg_low or "gemini" in stg_low or "phân tích ngữ cảnh" in stg_low:
                     pct = 95.0
                 elif stage and "mã hóa" in stage.lower():
                     pct = 92.0
@@ -2166,11 +2302,19 @@ def start_video_processing(req: ProcessRequest, background_tasks: BackgroundTask
 
             try:
                 import importlib
+                import core.cyber_hud as _ch_mod
+                import core.optical_motion_engine as _om_mod
                 import core.token_guard as _tg_mod
                 import core.video_annotator as _va_mod
+                importlib.reload(_ch_mod)
+                importlib.reload(_om_mod)
                 importlib.reload(_tg_mod)
                 importlib.reload(_va_mod)
                 ANNOTATOR_ENGINE.__class__ = _va_mod.VideoAnnotatorEngine
+                if getattr(ANNOTATOR_ENGINE, "hud", None) is not None:
+                    ANNOTATOR_ENGINE.hud.__class__ = _ch_mod.CyberHUDRenderer
+                if getattr(LIVE_CAMERA, "hud", None) is not None:
+                    LIVE_CAMERA.hud.__class__ = _ch_mod.CyberHUDRenderer
                 if getattr(ANNOTATOR_ENGINE, "_token_guard", None) is not None:
                     ANNOTATOR_ENGINE._token_guard.__class__ = _tg_mod.TokenGuard
             except Exception:

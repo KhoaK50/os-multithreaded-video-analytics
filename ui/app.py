@@ -44,14 +44,15 @@ st.set_page_config(
 # --- CUSTOM CSS RADIX DARK THEME (CHỐNG AI SLOP, TYPOGRAPHY CHUẨN) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
     
     html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
     
     code, pre {
-        font-family: 'JetBrains Mono', monospace !important;
+        font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+        font-variant-numeric: tabular-nums;
     }
 
     /* Card container styles */

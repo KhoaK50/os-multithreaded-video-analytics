@@ -6,8 +6,8 @@
     <title>Hệ Thống Giám Sát Video Đa Luồng — Hệ Điều Hành</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=2.8.0">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=2.9.0">
 </head>
 <body>
     <!-- HEADER BAR -->
@@ -83,9 +83,6 @@
                     <!-- Live Camera Action Bar directly below video -->
                     <div class="stream-control-bar">
                         <div class="control-group-left">
-                            <button class="btn btn-sm btn-outline" id="btn-manual-snap" onclick="captureManualSnapshot()" title="Chụp lại khung hình ngay lập tức và lưu vào nhật ký">
-                                <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> <span>Chụp Snapshot</span>
-                            </button>
                             <button class="btn btn-sm btn-outline active-toggle" id="btn-toggle-mirror" onclick="toggleCameraEnhancer('mirror')" title="Đang bật lật gương — Nhấn để tắt">
                                 <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg> <span>Lật gương: Đang bật</span>
                             </button>
@@ -121,7 +118,7 @@
                             </div>
                         </div>
                         <div class="header-status-badge" style="display:flex; align-items:center; gap:8px;">
-                            <span id="model-tier-badge" class="badge badge-safe mono">Tier-1 Gemini 3.8</span>
+                            <span id="model-tier-badge" class="badge badge-safe mono">Mô hình 1 · Tier-1</span>
                             <button class="modal-close-btn" onclick="toggleInlineTelemetryPanel()" title="Thu gọn bảng thông số Hệ điều hành" aria-label="Thu gọn bảng thông số"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>
                         </div>
                     </div>
@@ -131,7 +128,7 @@
                         <div class="telemetry-item">
                             <div class="telemetry-label">
                                 <span class="telemetry-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
-                                <span data-os-term="producer-thread">Luồng Thu Hình (Producer)</span>
+                                <span data-os-term="producer-thread">Producer · Luồng Thu Hình</span>
                             </div>
                             <div class="telemetry-value-row">
                                 <span class="telemetry-main-val mono" id="live-fps">30.0 FPS</span>
@@ -143,7 +140,7 @@
                         <div class="telemetry-item">
                             <div class="telemetry-label">
                                 <span class="telemetry-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></span>
-                                <span data-os-term="consumer-thread">Luồng Xử Lý AI (Consumer)</span>
+                                <span data-os-term="consumer-thread">Consumer · Luồng Xử Lý AI</span>
                             </div>
                             <div class="telemetry-value-row">
                                 <span class="telemetry-main-val mono" id="live-consumer-fps">30.0 FPS</span>
@@ -155,10 +152,10 @@
                         <div class="telemetry-item">
                             <div class="telemetry-label">
                                 <span class="telemetry-icon"><svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
-                                <span data-os-term="bounded-buffer">Hàng Đợi Đệm (Buffer)</span>
+                                <span data-os-term="bounded-buffer">Bounded-Buffer · Hàng Đợi</span>
                             </div>
                             <div class="telemetry-value-row">
-                                <span class="telemetry-main-val mono" id="live-queue">0 / 16 khung</span>
+                                <span class="telemetry-main-val mono" id="live-queue">0 / 16 frames</span>
                                 <span class="telemetry-sub-meta mono" id="live-hwm-badge">Đỉnh: 0</span>
                             </div>
                             <div class="meter-bar">
@@ -170,10 +167,10 @@
                         <div class="telemetry-item">
                             <div class="telemetry-label">
                                 <span class="telemetry-icon"><svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-                                <span data-os-term="flow-control">Điều Tiết Lưu Lượng</span>
+                                <span data-os-term="flow-control">Flow Control · Drop Frame</span>
                             </div>
                             <div class="telemetry-value-row">
-                                <span class="telemetry-main-val mono" id="live-drop-frames">0 khung</span>
+                                <span class="telemetry-main-val mono" id="live-drop-frames">0 frames</span>
                                 <span class="telemetry-sub-meta mono" id="live-drop-rate">Bỏ qua: 0.0%</span>
                             </div>
                         </div>
@@ -195,10 +192,10 @@
                                 </div>
                                 <div class="hw-stat">
                                     <span class="hw-name">VRAM:</span>
-                                    <span class="hw-val mono" id="live-vram">0.0 / 8.0 GB</span>
+                                    <span class="hw-val mono" id="live-vram">0.0/8.0 GB</span>
                                 </div>
                                 <div class="hw-stat">
-                                    <span class="hw-name">Thiết bị:</span>
+                                    <span class="hw-name">GPU:</span>
                                     <span class="hw-val mono" id="live-gpu-name">Đang dò...</span>
                                 </div>
                             </div>
@@ -226,7 +223,7 @@
                                 </div>
                                 <div class="thread-state-row" title="Luồng 3 (CamCompositor): Vẽ khung xương, khung định danh và phát luồng video trực tiếp lên trình duyệt">
                                     <div class="ts-info">
-                                        <span class="ts-name">Luồng 3 · Kết xuất hiển thị</span>
+                                        <span class="ts-name">Luồng 3 · Render hiển thị</span>
                                     </div>
                                     <span class="badge badge-neutral mono" id="ts-badge-compositor">Sẵn sàng</span>
                                 </div>
@@ -241,7 +238,7 @@
 
                         <div class="os-kernel-box">
                             <div class="os-kernel-box-header">
-                                <span class="os-kernel-box-title">Nguyên Ngữ Đồng Bộ Hóa</span>
+                                <span class="os-kernel-box-title">Đồng Bộ Đa Luồng · Mutex &amp; Monitor</span>
                             </div>
                             <div class="sync-primitives-grid">
                                 <div class="sync-stat-card">
@@ -249,15 +246,15 @@
                                     <strong class="sync-stat-val mono" id="os-sync-mutex">0 lượt</strong>
                                 </div>
                                 <div class="sync-stat-card">
-                                    <span class="sync-stat-label">Đánh thức Monitor</span>
+                                    <span class="sync-stat-label">Monitor Signal · Đánh thức</span>
                                     <strong class="sync-stat-val mono" id="os-sync-signals">0 tín hiệu</strong>
                                 </div>
                                 <div class="sync-stat-card">
-                                    <span class="sync-stat-label">Chờ điều kiện</span>
+                                    <span class="sync-stat-label">Condition Wait · Tạm chờ</span>
                                     <strong class="sync-stat-val mono" id="os-sync-waits">0 lượt chờ</strong>
                                 </div>
                                 <div class="sync-stat-card">
-                                    <span class="sync-stat-label">Trần RAM Hàng Đợi</span>
+                                    <span class="sync-stat-label">Giới hạn RAM Buffer</span>
                                     <strong class="sync-stat-val mono" id="os-sync-ram-ceiling">42.19 MB</strong>
                                 </div>
                             </div>
@@ -303,8 +300,8 @@
                         </div>
                         <div class="session-stat-pill pill-ergo">
                             <span class="stat-icon"><svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                            <span class="stat-label">Công Thái Học:</span>
-                            <strong class="mono" id="session-ergo-score">94 / 100</strong>
+                            <span class="stat-label">Độ ổn định tư thế:</span>
+                            <strong class="mono" id="session-ergo-score">—</strong>
                         </div>
                     </div>
 
@@ -312,10 +309,10 @@
                         <table class="behavior-table">
                             <thead>
                                 <tr>
-                                    <th style="width: 85px;">STT / MÃ</th>
+                                    <th style="width: 95px;">MÃ SỰ KIỆN</th>
                                     <th style="width: 95px;">THỜI GIAN</th>
                                     <th style="width: 140px;">TẦNG MÔ HÌNH</th>
-                                    <th style="width: 180px;">TƯ THẾ CÔNG THÁI HỌC</th>
+                                    <th style="width: 180px;">TƯ THẾ &amp; HÀNH VI</th>
                                     <th>MÔ TẢ NGỮ CẢNH</th>
                                     <th style="width: 220px;">DỰ ĐOÁN 4S TỚI</th>
                                     <th style="width: 125px; text-align: center;">BẰNG CHỨNG ẢNH</th>
@@ -326,7 +323,7 @@
                                     <td colspan="7" class="empty-cell">
                                         <div class="empty-state-box">
                                             <span class="empty-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
-                                            <p class="empty-title">Chưa có bản ghi nhận diện tư thế công thái học</p>
+                                            <p class="empty-title">Chưa có bản ghi nhận diện tư thế &amp; hành vi</p>
                                             <span class="empty-sub">Khởi động camera hoặc nạp luồng video để hệ thống bắt đầu thu nhận khung hình và phân tích hành vi theo chu kỳ 4 giây.</span>
                                         </div>
                                     </td>
@@ -361,7 +358,6 @@
                             <span>Khử nhiễu: Đang tắt</span>
                         </button>
                         <button class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Đặt lại mặc định</button>
-                        <button class="btn btn-xs btn-outline" onclick="captureManualSnapshot()">Chụp Snapshot</button>
                         <button class="btn btn-xs btn-outline" id="btn-split-toggle-cam" onclick="toggleCamera()">Bật / Tắt Camera</button>
                         <button class="btn btn-xs btn-primary" id="btn-exit-live-parallel" onclick="exitLiveParallelSplit()">
                             <svg class="ui-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -375,33 +371,33 @@
                     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                             <span class="badge badge-safe mono" id="live-os-case-badge">CASE 1 · CHUẨN LÝ TƯỞNG</span>
-                            <span style="font-size: 12.5px; color: var(--text-secondary);" id="live-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, không rơi khung, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</span>
+                            <span style="font-size: 12.5px; color: var(--text-secondary);" id="live-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, 0% drop frame, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Case 1: Chuẩn Lý Tưởng</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(2, 220, 'drop_oldest')">Case 2: Đệm Hẹp &amp; Thiếu CPU</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 160, 'block_fifo')">Case 3: Phình Đệm &amp; Trễ FIFO</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(128, 0, 'drop_oldest')">Case 4: Thừa RAM 128 Khung</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(2, 220, 'drop_oldest')">Case 2: Buffer Hẹp &amp; Nghẽn CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 160, 'block_fifo')">Case 3: Bufferbloat &amp; Trễ FIFO</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(128, 0, 'drop_oldest')">Case 4: Thừa Buffer 128 Frames</button>
                         </div>
                     </div>
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">1. Bộ nhớ Đệm RAM · Bounded-Buffer N</span>
-                                <strong class="sit-ctrl-val mono" id="os-lab-cap-display">16 khung · 42.19 MB</strong>
+                                <span class="sit-ctrl-label">1. Dung lượng Buffer RAM · Bounded-Buffer N</span>
+                                <strong class="sit-ctrl-val mono" id="os-lab-cap-display">16 frames · 42.19 MB</strong>
                             </div>
                             <input type="range" id="os-lab-cap-slider" class="os-lab-slider" min="1" max="128" step="1" value="16" style="--slider-pct: 11.8%;" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(false)" />
                             <div class="slider-scale-ticks mono">
-                                <span>1 khung · 2.6 MB</span>
+                                <span>1 frame · 2.6 MB</span>
                                 <span>Chuẩn: 16 · 42.2 MB</span>
-                                <span>64 khung</span>
-                                <span>128 khung</span>
+                                <span>64 frames</span>
+                                <span>128 frames</span>
                             </div>
                         </div>
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">2. Hạn ngạch CPU Consumer · CPU Share</span>
+                                <span class="sit-ctrl-label">2. Giới hạn CPU Consumer · Độ trễ xử lý</span>
                                 <strong class="sit-ctrl-val mono" id="os-lab-delay-display">100% CPU · 0 ms</strong>
                             </div>
                             <input type="range" id="os-lab-delay-slider" class="os-lab-slider" min="0" max="500" step="5" value="0" style="--slider-pct: 0%;" oninput="onOSLabSliderInput()" onchange="commitOSLabConfig(true)" />
@@ -415,12 +411,12 @@
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">3. Cơ chế Thay thế Đệm · Buffer Policy</span>
+                                <span class="sit-ctrl-label">3. Chính sách tràn Buffer · Buffer Policy</span>
                                 <span class="sit-ctrl-hint" id="os-lab-policy-display">Bám sát thực tế</span>
                             </div>
                             <select id="os-lab-policy-select" class="os-lab-select" onchange="onOSLabPolicyChange()">
-                                <option value="drop_oldest" selected>Ưu tiên khung mới · Ghi đè ảnh cũ khi tràn đệm</option>
-                                <option value="block_fifo">Giữ tuần tự FIFO · Chờ tuần tự gây trễ pha</option>
+                                <option value="drop_oldest" selected>Drop-Oldest · Ưu tiên frame mới, bỏ frame cũ khi đầy</option>
+                                <option value="block_fifo">FIFO Blocking · Xếp hàng tuần tự, giữ frame cũ</option>
                             </select>
                         </div>
                     </div>
@@ -434,7 +430,7 @@
                                 <span class="badge badge-safe">LUỒNG CHUẨN KHUYẾN NGHỊ</span>
                                 <strong class="pcol-name" id="live-split-y-hw-title">Cấu Hình Chuẩn Hệ Thống</strong>
                             </div>
-                            <span class="pcol-config-lock mono">16 khung · 42.19 MB · 0 ms · Ưu tiên ảnh mới</span>
+                            <span class="pcol-config-lock mono">16 frames · 42.19 MB · 0 ms · Drop-Oldest</span>
                         </div>
 
                         <!-- 1. Khung Hình Camera Luồng Chuẩn (16:9) -->
@@ -451,8 +447,8 @@
                             <div class="pcol-telemetry-strip">
                                 <span>Tốc độ: <strong class="mono tag-safe" id="live-split-y-fps">30.0 FPS</strong></span>
                                 <span>Độ trễ: <strong class="mono" id="live-split-y-lat">33 ms</strong></span>
-                                <span>Rơi khung: <strong class="mono tag-safe">0.0%</strong></span>
-                                <span>RAM Đệm: <strong class="mono">42.19 MB</strong></span>
+                                <span>Drop frame: <strong class="mono tag-safe">0.0%</strong></span>
+                                <span>RAM Buffer: <strong class="mono">42.19 MB</strong></span>
                             </div>
                         </div>
 
@@ -481,8 +477,8 @@
                                     <strong class="mono" id="live-y-danger-count">0</strong>
                                 </div>
                                 <div class="session-stat-pill pill-ergo">
-                                    <span class="stat-label">Công Thái Học:</span>
-                                    <strong class="mono" id="live-y-rep-ergo">100 / 100</strong>
+                                    <span class="stat-label">Độ ổn định tư thế:</span>
+                                    <strong class="mono" id="live-y-rep-ergo">—</strong>
                                 </div>
                             </div>
 
@@ -490,7 +486,7 @@
                                 <table class="behavior-table">
                                     <thead>
                                         <tr>
-                                            <th style="width: 70px;">MÃ</th>
+                                            <th style="width: 85px;">MÃ SỰ KIỆN</th>
                                             <th style="width: 82px;">THỜI GIAN</th>
                                             <th style="width: 110px;">MÔ HÌNH</th>
                                             <th style="width: 145px;">TƯ THẾ</th>
@@ -512,7 +508,7 @@
                                 <span class="badge badge-warning" id="live-split-z-badge">LUỒNG TÙY CHỈNH TÀI NGUYÊN</span>
                                 <strong class="pcol-name" id="live-split-z-title">Cấu Hình Tùy Chỉnh Đang Áp Dụng</strong>
                             </div>
-                            <span class="pcol-config-lock mono" id="live-split-z-config-text">16 khung · 42.19 MB · 0 ms · Ưu tiên ảnh mới</span>
+                            <span class="pcol-config-lock mono" id="live-split-z-config-text">16 frames · 42.19 MB · 0 ms · Drop-Oldest</span>
                         </div>
 
                         <!-- 1. Khung Hình Camera Luồng Tùy Chỉnh (16:9) -->
@@ -529,8 +525,8 @@
                             <div class="pcol-telemetry-strip">
                                 <span>Tốc độ: <strong class="mono" id="live-split-z-fps">30.0 FPS</strong></span>
                                 <span>Độ trễ: <strong class="mono" id="live-split-z-lat">33 ms</strong></span>
-                                <span>Rơi khung: <strong class="mono" id="live-split-z-drop">0.0%</strong></span>
-                                <span>RAM Đệm: <strong class="mono" id="live-split-z-ram">42.19 MB</strong></span>
+                                <span>Drop frame: <strong class="mono" id="live-split-z-drop">0.0%</strong></span>
+                                <span>RAM Buffer: <strong class="mono" id="live-split-z-ram">42.19 MB</strong></span>
                             </div>
                         </div>
 
@@ -559,8 +555,8 @@
                                     <strong class="mono" id="live-z-danger-count">0</strong>
                                 </div>
                                 <div class="session-stat-pill pill-ergo">
-                                    <span class="stat-label">Công Thái Học:</span>
-                                    <strong class="mono" id="live-z-rep-ergo">100 / 100</strong>
+                                    <span class="stat-label">Độ ổn định tư thế:</span>
+                                    <strong class="mono" id="live-z-rep-ergo">—</strong>
                                 </div>
                             </div>
 
@@ -568,7 +564,7 @@
                                 <table class="behavior-table">
                                     <thead>
                                         <tr>
-                                            <th style="width: 70px;">MÃ</th>
+                                            <th style="width: 85px;">MÃ SỰ KIỆN</th>
                                             <th style="width: 82px;">THỜI GIAN</th>
                                             <th style="width: 110px;">MÔ HÌNH</th>
                                             <th style="width: 145px;">TƯ THẾ</th>
@@ -754,35 +750,35 @@
                 <div class="split-inline-tuner" id="video-preflight-os-tuner" style="margin-top: 12px; margin-bottom: 14px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <span class="badge badge-warning mono">THẾ GIỚI SONG SONG</span>
-                            <strong style="font-size: 13px;">Cấu Hình Tài Nguyên Nhánh Đối Chứng Ngay Từ Khi Nạp Video</strong>
+                            <span class="badge badge-warning mono">CHẾ ĐỘ ĐỐI CHIẾU</span>
+                            <strong style="font-size: 13px;">Cấu Hình Tài Nguyên Luồng So Sánh Trước Khi Chạy</strong>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-ideal" onclick="selectPreflightZPreset('ideal', 16, 0, 'drop_oldest')">Case 1: Chuẩn Lý Tưởng</button>
-                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-starve" onclick="selectPreflightZPreset('starve', 2, 220, 'drop_oldest')">Case 2: Đệm Hẹp &amp; Thiếu CPU</button>
-                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-bloat" onclick="selectPreflightZPreset('bloat', 64, 160, 'block_fifo')">Case 3: Phình Đệm &amp; Trễ FIFO</button>
-                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-overram" onclick="selectPreflightZPreset('overram', 128, 0, 'drop_oldest')">Case 4: Thừa RAM 128 Khung</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-starve" onclick="selectPreflightZPreset('starve', 2, 220, 'drop_oldest')">Case 2: Buffer Hẹp &amp; Nghẽn CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-bloat" onclick="selectPreflightZPreset('bloat', 64, 160, 'block_fifo')">Case 3: Bufferbloat &amp; Trễ FIFO</button>
+                            <button type="button" class="btn btn-xs btn-outline preflight-z-btn" id="pf-btn-overram" onclick="selectPreflightZPreset('overram', 128, 0, 'drop_oldest')">Case 4: Thừa Buffer 128 Frames</button>
                         </div>
                     </div>
-                    <div style="margin-bottom: 10px; font-size: 12.5px; color: var(--text-secondary);" id="pf-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, không rơi khung, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</div>
+                    <div style="margin-bottom: 10px; font-size: 12.5px; color: var(--text-secondary);" id="pf-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, 0% drop frame, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</div>
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">1. Bộ nhớ Đệm RAM · Bounded-Buffer N</span>
-                                <strong class="sit-ctrl-val mono" id="pf-z-cap-val">16 khung · 42.19 MB</strong>
+                                <span class="sit-ctrl-label">1. Dung lượng Buffer RAM · Bounded-Buffer N</span>
+                                <strong class="sit-ctrl-val mono" id="pf-z-cap-val">16 frames · 42.19 MB</strong>
                             </div>
                             <input type="range" id="pf-z-cap-slider" class="os-lab-slider" min="1" max="128" step="1" value="16" style="--slider-pct: 11.8%;" oninput="onPreflightZControlInput()" />
                             <div class="slider-scale-ticks mono">
-                                <span>1 khung · 2.6 MB</span>
+                                <span>1 frame · 2.6 MB</span>
                                 <span>Chuẩn: 16 · 42.2 MB</span>
-                                <span>64 khung</span>
-                                <span>128 khung</span>
+                                <span>64 frames</span>
+                                <span>128 frames</span>
                             </div>
                         </div>
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">2. Hạn ngạch CPU Consumer · CPU Share</span>
+                                <span class="sit-ctrl-label">2. Giới hạn CPU Consumer · Độ trễ xử lý</span>
                                 <strong class="sit-ctrl-val mono" id="pf-z-delay-val">100% CPU · 0 ms</strong>
                             </div>
                             <input type="range" id="pf-z-delay-slider" class="os-lab-slider" min="0" max="500" step="5" value="0" style="--slider-pct: 0%;" oninput="onPreflightZControlInput()" />
@@ -796,12 +792,12 @@
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">3. Cơ chế Thay thế Đệm · Buffer Policy</span>
+                                <span class="sit-ctrl-label">3. Chính sách tràn Buffer · Buffer Policy</span>
                                 <span class="sit-ctrl-hint" id="pf-z-policy-hint">Bám sát thực tế</span>
                             </div>
                             <select id="pf-z-policy-select" class="os-lab-select" onchange="onPreflightZControlInput()">
-                                <option value="drop_oldest" selected>Ưu tiên khung mới · Ghi đè ảnh cũ khi tràn đệm</option>
-                                <option value="block_fifo">Giữ tuần tự FIFO · Chờ tuần tự gây trễ pha</option>
+                                <option value="drop_oldest" selected>Drop-Oldest · Ưu tiên frame mới, bỏ frame cũ khi đầy</option>
+                                <option value="block_fifo">FIFO Blocking · Xếp hàng tuần tự, giữ frame cũ</option>
                             </select>
                         </div>
                     </div>
@@ -821,13 +817,13 @@
                     <div class="card-title-group">
                         <div class="card-title">
                             <span class="indicator-pulse"></span>
-                            <span id="proc-title">Đang Thực Thi Đường Ống Đa Luồng Trên GPU</span>
+                            <span id="proc-title">Đang Chạy Pipeline Đa Luồng Trên GPU</span>
                         </div>
                     </div>
                     <div class="proc-header-badges">
-                        <button type="button" class="btn btn-xs btn-live-inspector" id="btn-open-live-pipeline" onclick="openLivePipelineModal()" title="Mở cửa sổ quan sát trực tiếp quy trình nạp khung xương và băng chuyền khung hình xếp chồng chéo">
+                        <button type="button" class="btn btn-xs btn-live-inspector" id="btn-open-live-pipeline" onclick="openLivePipelineModal()" title="Mở cửa sổ quan sát trực tiếp quy trình xử lý từng khung hình và ghép chuyển động">
                             <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                            <span>Trực Quan Hóa Đường Ống Khung Hình</span>
+                            <span>Xem Chi Tiết Frame Pipeline</span>
                         </button>
                         <span id="proc-eta-badge" class="badge badge-neutral mono">Dự kiến còn: Đang tính...</span>
                         <span id="proc-fps-badge" class="badge badge-safe mono">-- FPS</span>
@@ -837,18 +833,18 @@
                     <div class="progress-bar-fill" id="proc-progress-fill" style="width: 0%;"></div>
                 </div>
                 <div class="progress-status-row">
-                    <span id="proc-frames-text" class="mono">Khung hình: 0 / 0</span>
+                    <span id="proc-frames-text" class="mono">Frame: 0 / 0</span>
                     <span id="proc-eta-detail" class="mono">Đã chạy: 0 giây • Dự kiến hoàn tất: Đang ước tính...</span>
                     <span id="proc-pct-text" class="mono">0.0%</span>
                 </div>
                 <div class="os-pipe-live-strip mono">
                     <div class="os-pipe-stage-pill active-stage" id="pipe-pill-reader">
-                        <strong>Bước 1 · Đọc khung hình</strong>
+                        <strong>Bước 1 · Đọc Frame</strong>
                         <span id="pipe-live-reader">0 / 0</span>
                     </div>
                     <span class="os-pipe-arrow">➔</span>
                     <div class="os-pipe-buf-pill" id="pipe-pill-rawbuf">
-                        <strong>Đệm đầu vào</strong>
+                        <strong>Input Buffer</strong>
                         <span id="pipe-live-rawbuf">0 / 16</span>
                     </div>
                     <span class="os-pipe-arrow">➔</span>
@@ -858,13 +854,13 @@
                     </div>
                     <span class="os-pipe-arrow">➔</span>
                     <div class="os-pipe-buf-pill" id="pipe-pill-writerbuf">
-                        <strong>Đệm đầu ra</strong>
+                        <strong>Output Buffer</strong>
                         <span id="pipe-live-writerbuf">0 / 16</span>
                     </div>
                     <span class="os-pipe-arrow">➔</span>
                     <div class="os-pipe-stage-pill active-stage" id="pipe-pill-writer">
                         <strong>Bước 3 · Xuất video</strong>
-                        <span id="pipe-live-writer">0 khung</span>
+                        <span id="pipe-live-writer">0 frames</span>
                     </div>
                 </div>
             </div>
@@ -874,7 +870,7 @@
                 <div class="card-header">
                     <div class="card-title">
                         <span class="step-num">3</span>
-                        <span>Kết Quả Kết Xuất &amp; Báo Cáo Đa Luồng Hệ Điều Hành</span>
+                        <span>Kết Quả Phân Tích &amp; Báo Cáo Pipeline Đa Luồng</span>
                     </div>
                     <div class="export-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <button type="button" class="btn btn-outline" id="btn-launch-video-parallel" onclick="enterVideoParallelSplit()" title="Chia đôi màn hình 50/50 để tùy chỉnh thông số Hệ điều hành trực tiếp và so sánh kết quả AI">
@@ -942,13 +938,13 @@
                     <div class="narrative-header">
                         <div class="narrative-title-group">
                             <div class="narrative-title">
-                                <span>Báo Cáo Thực Thi Đường Ống Đa Luồng Hệ Điều Hành</span>
+                                <span>Báo Cáo Thực Thi Pipeline Đa Luồng</span>
                                 <span class="badge badge-safe mono" id="os-rep-speedup-badge">Tăng tốc đa luồng: 1.35x</span>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-xs btn-live-inspector" id="btn-reopen-live-pipeline" onclick="openLivePipelineModal()" title="Xem băng chuyền khung hình xếp chồng chéo và nhật ký điều phối luồng Hệ điều hành">
+                        <button type="button" class="btn btn-xs btn-live-inspector" id="btn-reopen-live-pipeline" onclick="openLivePipelineModal()" title="Xem chi tiết quy trình xử lý khung hình qua 3 bước và bộ đệm trung gian">
                             <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                            <span>Mô Phỏng Băng Chuyền Khung Hình</span>
+                            <span>Xem Chi Tiết Frame Pipeline</span>
                         </button>
                     </div>
 
@@ -961,15 +957,15 @@
                             <strong class="os-stage-role">Luồng Đọc &amp; Giải Mã I/O</strong>
                             <div class="os-stage-metrics mono">
                                 <span>Thời gian I/O: <strong id="os-st1-time">0.00s</strong></span>
-                                <span>Thông lượng: <strong id="os-st1-fps">0.0 FPS</strong></span>
+                                <span>Throughput: <strong id="os-st1-fps">0.0 FPS</strong></span>
                             </div>
                         </div>
 
                         <div class="os-buffer-node">
-                            <span class="os-buf-title mono">Bộ đệm đầu vào · 16 khung</span>
+                            <span class="os-buf-title mono">Input Buffer · 16 frames</span>
                             <div class="os-buf-stats mono">
                                 <span>Mức đỉnh: <strong id="os-buf1-hwm">0 / 16</strong></span>
-                                <span>Khóa đồng bộ: <strong id="os-buf1-mutex">0</strong></span>
+                                <span>Khóa Mutex: <strong id="os-buf1-mutex">0</strong></span>
                                 <span>Lượt chờ: <strong id="os-buf1-wait">0</strong></span>
                             </div>
                         </div>
@@ -987,10 +983,10 @@
                         </div>
 
                         <div class="os-buffer-node">
-                            <span class="os-buf-title mono">Bộ đệm đầu ra · 16 khung</span>
+                            <span class="os-buf-title mono">Output Buffer · 16 frames</span>
                             <div class="os-buf-stats mono">
                                 <span>Mức đỉnh: <strong id="os-buf2-hwm">0 / 16</strong></span>
-                                <span>Khóa đồng bộ: <strong id="os-buf2-mutex">0</strong></span>
+                                <span>Khóa Mutex: <strong id="os-buf2-mutex">0</strong></span>
                                 <span>Lượt chờ: <strong id="os-buf2-wait">0</strong></span>
                             </div>
                         </div>
@@ -1000,10 +996,10 @@
                                 <span class="os-stage-tag mono">STAGE 3 · CONSUMER</span>
                                 <span class="badge badge-safe mono">VideoPipeWriter</span>
                             </div>
-                            <strong class="os-stage-role">Luồng Kết Xuất &amp; Ghi Luồng Đĩa</strong>
+                            <strong class="os-stage-role">Luồng Render &amp; Ghi File MP4</strong>
                             <div class="os-stage-metrics mono">
                                 <span>Thời gian Ghi: <strong id="os-st3-time">0.00s</strong></span>
-                                <span>Thông lượng: <strong id="os-st3-fps">0.0 FPS</strong></span>
+                                <span>Throughput: <strong id="os-st3-fps">0.0 FPS</strong></span>
                             </div>
                         </div>
                     </div>
@@ -1026,7 +1022,7 @@
                             <strong class="os-sum-val mono" id="os-rep-sync-total">0 locks · 0 signals</strong>
                         </div>
                         <div class="os-sum-cell">
-                            <span class="os-sum-label">Giới hạn bộ nhớ đệm</span>
+                            <span class="os-sum-label">Giới hạn RAM Buffer</span>
                             <strong class="os-sum-val mono" id="os-rep-ram-bound">84.38 MB · An toàn bộ nhớ</strong>
                         </div>
                     </div>
@@ -1079,7 +1075,7 @@
                         <div class="subcard-title">Danh Sách Phân Đoạn Hành Vi Theo Dòng Thời Gian</div>
                         <!-- Entity Filter Bar -->
                         <div class="entity-filter-bar" id="entity-filter-container">
-                            <span class="filter-label">Lọc đối tượng:</span>
+                            <span class="filter-label">Lọc mức độ:</span>
                             <button class="filter-chip active" id="filter-chip-all" onclick="filterByEntity('all')">Tất cả</button>
                         </div>
                     </div>
@@ -1087,7 +1083,7 @@
                         <table class="app-table timeline-table">
                             <thead>
                                 <tr>
-                                    <th style="width: 130px;">PHÂN ĐOẠN</th>
+                                    <th style="width: 150px;">PHÂN ĐOẠN</th>
                                     <th>BỐI CẢNH &amp; HÀNH VI TỪNG ĐỐI TƯỢNG</th>
                                     <th style="width: 190px; min-width: 185px;">MỨC ĐỘ &amp; CHỈ SỐ</th>
                                     <th style="width: 110px; text-align: center;">BẰNG CHỨNG</th>
@@ -1176,7 +1172,7 @@
                         <!-- Event-Centric Flow Streams — Băng Chuyền Diễn Biến Sự Kiện Toàn Cảnh -->
                         <div class="chart-box full-chart-box" id="actor-tracks-box">
                             <div class="chart-header-row">
-                                <div class="chart-title">Băng Chuyền Diễn Biến Sự Kiện Toàn Cảnh</div>
+                                <div class="chart-title">Timeline Diễn Biến Sự Kiện Toàn Cảnh</div>
                                 <span class="chart-hint">Nhấp chuột vào khối sự kiện để tua video đến phân đoạn</span>
                             </div>
                             <div id="multi-track-actor-timeline" class="multi-track-wrapper event-flow-wrapper">
@@ -1219,33 +1215,33 @@
                     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                             <span class="badge badge-safe mono" id="vid-os-case-badge">CASE 1 · CHUẨN LÝ TƯỞNG</span>
-                            <span style="font-size: 12.5px; color: var(--text-secondary);" id="vid-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, không rơi khung, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</span>
+                            <span style="font-size: 12.5px; color: var(--text-secondary);" id="vid-os-case-desc">Cân bằng Producer–Consumer: 30 FPS mượt liên tục, 0% drop frame, AI nhận diện trọn vẹn mọi nhịp cử chỉ.</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(16, 0, 'drop_oldest')">Case 1: Chuẩn Lý Tưởng</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(2, 220, 'drop_oldest')">Case 2: Đệm Hẹp &amp; Thiếu CPU</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 160, 'block_fifo')">Case 3: Phình Đệm &amp; Trễ FIFO</button>
-                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(128, 0, 'drop_oldest')">Case 4: Thừa RAM 128 Khung</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(2, 220, 'drop_oldest')">Case 2: Buffer Hẹp &amp; Nghẽn CPU</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(64, 160, 'block_fifo')">Case 3: Bufferbloat &amp; Trễ FIFO</button>
+                            <button type="button" class="btn btn-xs btn-outline" onclick="applySplitResourcePreset(128, 0, 'drop_oldest')">Case 4: Thừa Buffer 128 Frames</button>
                         </div>
                     </div>
                     <div class="sit-controls-grid">
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">1. Bộ nhớ Đệm RAM · Bounded-Buffer N</span>
-                                <strong class="sit-ctrl-val mono" id="vid-z-cap-val">16 khung · 42.19 MB</strong>
+                                <span class="sit-ctrl-label">1. Dung lượng Buffer RAM · Bounded-Buffer N</span>
+                                <strong class="sit-ctrl-val mono" id="vid-z-cap-val">16 frames · 42.19 MB</strong>
                             </div>
                             <input type="range" id="vid-z-cap-slider" class="os-lab-slider" min="1" max="128" step="1" value="16" style="--slider-pct: 11.8%;" oninput="onVideoZControlInput()" />
                             <div class="slider-scale-ticks mono">
-                                <span>1 khung · 2.6 MB</span>
+                                <span>1 frame · 2.6 MB</span>
                                 <span>Chuẩn: 16 · 42.2 MB</span>
-                                <span>64 khung</span>
-                                <span>128 khung</span>
+                                <span>64 frames</span>
+                                <span>128 frames</span>
                             </div>
                         </div>
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">2. Hạn ngạch CPU Consumer · CPU Share</span>
+                                <span class="sit-ctrl-label">2. Giới hạn CPU Consumer · Độ trễ xử lý</span>
                                 <strong class="sit-ctrl-val mono" id="vid-z-delay-val">100% CPU · 0 ms</strong>
                             </div>
                             <input type="range" id="vid-z-delay-slider" class="os-lab-slider" min="0" max="500" step="5" value="0" style="--slider-pct: 0%;" oninput="onVideoZControlInput()" />
@@ -1259,12 +1255,12 @@
 
                         <div class="sit-control-box">
                             <div class="sit-ctrl-head">
-                                <span class="sit-ctrl-label">3. Cơ chế Thay thế Đệm · Buffer Policy</span>
+                                <span class="sit-ctrl-label">3. Chính sách tràn Buffer · Buffer Policy</span>
                                 <span class="sit-ctrl-hint" id="vid-z-policy-hint">Bám sát thực tế</span>
                             </div>
                             <select id="vid-z-policy-select" class="os-lab-select" onchange="onVideoZControlInput()">
-                                <option value="drop_oldest" selected>Ưu tiên khung mới · Ghi đè ảnh cũ khi tràn đệm</option>
-                                <option value="block_fifo">Giữ tuần tự FIFO · Chờ tuần tự gây trễ pha</option>
+                                <option value="drop_oldest" selected>Drop-Oldest · Ưu tiên frame mới, bỏ frame cũ khi đầy</option>
+                                <option value="block_fifo">FIFO Blocking · Xếp hàng tuần tự, giữ frame cũ</option>
                             </select>
                         </div>
                     </div>
@@ -1278,7 +1274,7 @@
                                 <span class="badge badge-safe">LUỒNG CHUẨN KHUYẾN NGHỊ</span>
                                 <strong class="pcol-name" id="split-vid-y-hw-title">Cấu Hình Chuẩn Hệ Thống</strong>
                             </div>
-                            <span class="pcol-config-lock mono">16 khung · 42.19 MB · 0 ms · Ưu tiên ảnh mới</span>
+                            <span class="pcol-config-lock mono">16 frames · 42.19 MB · 0 ms · Drop-Oldest</span>
                         </div>
 
                         <!-- 1. Video Render Luồng Chuẩn -->
@@ -1288,8 +1284,8 @@
                             </div>
                             <div class="pcol-telemetry-strip">
                                 <span>Tốc độ Render: <strong class="mono tag-safe">30.0 FPS</strong></span>
-                                <span>Khung Đỉnh Điểm: <strong class="tag-safe">Bảo toàn 100%</strong></span>
-                                <span>RAM Đệm: <strong class="mono">42.19 MB</strong></span>
+                                <span>Frame Đỉnh Điểm: <strong class="tag-safe">Bảo toàn 100%</strong></span>
+                                <span>RAM Buffer: <strong class="mono">42.19 MB</strong></span>
                             </div>
                             <div class="pcol-mini-timeline-wrap">
                                 <span class="pmt-label">Bản đồ nhiệt dòng thời gian · Luồng Chuẩn:</span>
@@ -1328,7 +1324,7 @@
                                 <table class="app-table timeline-table">
                                     <thead>
                                         <tr>
-                                            <th style="width: 105px;">PHÂN ĐOẠN</th>
+                                            <th style="width: 130px;">PHÂN ĐOẠN</th>
                                             <th>BỐI CẢNH &amp; HÀNH VI</th>
                                             <th style="width: 150px;">MỨC ĐỘ &amp; ĐIỂM</th>
                                             <th style="width: 90px; text-align: center;">ẢNH</th>
@@ -1347,7 +1343,7 @@
                                 <span class="badge badge-warning" id="split-vid-z-badge">LUỒNG TÙY CHỈNH TÀI NGUYÊN</span>
                                 <strong class="pcol-name" id="split-vid-z-title">Cấu Hình Tùy Chỉnh Đang Áp Dụng</strong>
                             </div>
-                            <span class="pcol-config-lock mono" id="split-vid-z-config-text">16 khung · 42.19 MB · 0 ms · Ưu tiên ảnh mới</span>
+                            <span class="pcol-config-lock mono" id="split-vid-z-config-text">16 frames · 42.19 MB · 0 ms · Drop-Oldest</span>
                         </div>
 
                         <!-- 1. Video Render Luồng Tùy Chỉnh -->
@@ -1357,8 +1353,8 @@
                             </div>
                             <div class="pcol-telemetry-strip">
                                 <span>Tốc độ Render: <strong class="mono" id="split-vid-z-fps">30.0 FPS</strong></span>
-                                <span>Khung Rơi / Trôi: <strong class="mono" id="split-vid-z-drop">0.0%</strong></span>
-                                <span>RAM Đệm: <strong class="mono" id="split-vid-z-ram">42.19 MB</strong></span>
+                                <span>Drop / Trễ frame: <strong class="mono" id="split-vid-z-drop">0.0%</strong></span>
+                                <span>RAM Buffer: <strong class="mono" id="split-vid-z-ram">42.19 MB</strong></span>
                             </div>
                             <div class="pcol-mini-timeline-wrap">
                                 <span class="pmt-label" id="split-vid-z-tl-label">Bản đồ nhiệt dòng thời gian · Luồng Tùy Chỉnh:</span>
@@ -1397,7 +1393,7 @@
                                 <table class="app-table timeline-table">
                                     <thead>
                                         <tr>
-                                            <th style="width: 105px;">PHÂN ĐOẠN</th>
+                                            <th style="width: 130px;">PHÂN ĐOẠN</th>
                                             <th>BỐI CẢNH &amp; HÀNH VI</th>
                                             <th style="width: 150px;">MỨC ĐỘ &amp; ĐIỂM</th>
                                             <th style="width: 90px; text-align: center;">ẢNH</th>
@@ -1418,7 +1414,7 @@
         <div class="modal-container segment-modal-container" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div class="modal-title">
-                    <span class="modal-badge mono" id="seg-modal-id">#SEG-01</span>
+                    <span class="modal-badge mono" id="seg-modal-id">Phân đoạn 01</span>
                     <span id="seg-modal-timerange" class="mono text-muted" style="margin-left: 8px; font-size: 13px;">00:00 - 00:04</span>
                     <span id="seg-modal-severity-badge" class="badge badge-safe" style="margin-left: 10px;">AN TOÀN</span>
                 </div>
@@ -1443,7 +1439,7 @@
                     <h4 class="seg-modal-section-title">Phân tích diễn biến ngữ cảnh</h4>
                     <p class="seg-modal-narrative-text" id="seg-modal-narrative">--</p>
                     <div id="seg-modal-focal-box" class="sdn-focal-actors hidden">
-                        <span class="sdn-focal-label">Tiêu điểm vi sai:</span> <span id="seg-modal-focal-text">--</span>
+                        <span class="sdn-focal-label">Đối tượng trọng tâm:</span> <span id="seg-modal-focal-text">--</span>
                     </div>
                     <div id="seg-modal-pred-box" class="sdn-prediction mono hidden">
                         <span class="sdn-pred-tag">Dự đoán 4s tiếp theo:</span> <span id="seg-modal-pred-text">--</span>
@@ -1482,20 +1478,20 @@
                         <span class="os-ribbon-lbl">Tốc độ xử lý:</span>
                         <strong id="os-modal-fps">-- FPS</strong>
                         <span class="os-ribbon-sep">·</span>
-                        <strong id="os-modal-ms">-- ms/khung</strong>
+                        <strong id="os-modal-ms">-- ms/frame</strong>
                     </div>
                     <div class="os-ribbon-pill">
-                        <span class="os-ribbon-lbl">Bộ đệm đầu vào:</span>
+                        <span class="os-ribbon-lbl">Input Buffer:</span>
                         <strong id="os-modal-rawbuf-text">0 / 16</strong>
                         <div class="os-ribbon-mini-bar"><div id="os-modal-rawbuf-bar" class="os-live-buf-fill raw-fill" style="width: 0%;"></div></div>
                     </div>
                     <div class="os-ribbon-pill">
-                        <span class="os-ribbon-lbl">Bộ đệm kết xuất:</span>
+                        <span class="os-ribbon-lbl">Output Buffer:</span>
                         <strong id="os-modal-writerbuf-text">0 / 16</strong>
                         <div class="os-ribbon-mini-bar"><div id="os-modal-writerbuf-bar" class="os-live-buf-fill writer-fill" style="width: 0%;"></div></div>
                     </div>
                     <div class="os-ribbon-pill">
-                        <span class="os-ribbon-lbl">Đồng bộ luồng:</span>
+                        <span class="os-ribbon-lbl">Mutex &amp; Monitor:</span>
                         <strong id="os-modal-mutex">0 lượt</strong>
                         <span class="os-ribbon-sep">·</span>
                         <strong id="os-modal-cond">0 / 0</strong>
@@ -1509,12 +1505,12 @@
                         <div class="os-live-monitor-header">
                             <div class="os-live-monitor-title">
                                 <span class="indicator-pulse" id="os-modal-pulse-dot"></span>
-                                <span class="mono" id="os-modal-monitor-label">CỘT 1 · XEM 1 KHUNG HÌNH RỜI RẠC (ẢNH TĨNH)</span>
+                                <span class="mono" id="os-modal-monitor-label">CỘT 1 · XEM 1 FRAME RỜI RẠC · ẢNH TĨNH</span>
                             </div>
                             <div class="os-xray-controls mono">
                                 <button type="button" class="flip-ctrl-btn active" id="btn-left-pose" onclick="setLeftFrameLayer('pose')">Ảnh Đã Quét Khớp Xương</button>
                                 <button type="button" class="flip-ctrl-btn" id="btn-left-raw" onclick="setLeftFrameLayer('raw')">Ảnh Gốc Ban Đầu</button>
-                                <span id="os-modal-frame-counter" class="os-frame-counter-pill">Khung #0 / 0</span>
+                                <span id="os-modal-frame-counter" class="os-frame-counter-pill">Frame #0 / 0</span>
                                 <span id="os-modal-time-readout" class="os-time-pill">00:00</span>
                             </div>
                         </div>
@@ -1527,7 +1523,7 @@
                             </div>
                             <div id="os-modal-viewport-empty" class="os-live-viewport-empty">
                                 <svg class="ui-icon empty-svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                                <span class="mono">Đang nạp khung hình thực tế đầu tiên từ đường ống...</span>
+                                <span class="mono">Đang nạp frame thực tế đầu tiên từ pipeline...</span>
                             </div>
                         </div>
                         <div class="os-live-hud-overlay mono">
@@ -1594,15 +1590,15 @@
                         <!-- 3-Stage OS Pipeline Partition Bar aligned with the 10-column grid -->
                         <div class="os-pipeline-span-bar mono">
                             <div class="os-stage-span span-stage3">
-                                <span class="span-badge">BƯỚC 3 · GHI VIDEO ĐẦU RA (Consumer)</span>
+                                <span class="span-badge">STAGE 3 · CONSUMER · GHI VIDEO MP4</span>
                                 <span class="span-desc">Đã ghép xong chuyển động &amp; lưu vào tệp MP4 · t₁ ➔ t₃</span>
                             </div>
                             <div class="os-stage-span span-buffer">
-                                <span class="span-badge">BỘ ĐỆM TRUNG GIAN (Buffer · 16 khung)</span>
-                                <span class="span-desc">Giữ trong bộ nhớ để đối chiếu vị trí giữa các khung · t₄ ➔ t₇</span>
+                                <span class="span-badge">BOUNDED-BUFFER · 16 FRAMES</span>
+                                <span class="span-desc">Giữ trong RAM để đối chiếu vị trí giữa các frame · t₄ ➔ t₇</span>
                             </div>
                             <div class="os-stage-span span-stage2">
-                                <span class="span-badge">BƯỚC 1 &amp; 2 · ĐỌC &amp; QUÉT KHỚP XƯƠNG (Producer)</span>
+                                <span class="span-badge">STAGE 1 &amp; 2 · PRODUCER &amp; POSE AI</span>
                                 <span class="span-desc">Vừa tách từ video &amp; nhận diện 17 khớp cơ thể · t₈ ➔ t₁₀</span>
                             </div>
                         </div>
@@ -1632,7 +1628,7 @@
             </div>
             <div class="modal-body">
                 <div class="modal-image-wrapper">
-                    <img id="modal-img" src="" alt="Bằng chứng ảnh công thái học" />
+                    <img id="modal-img" src="" alt="Ảnh chụp bằng chứng hành vi" />
                 </div>
                 <div class="modal-meta-box">
                     <div class="meta-row">
@@ -1686,8 +1682,8 @@
                             <span class="dm-val mono" id="drawer-fps">30.0 FPS</span>
                         </div>
                         <div class="drawer-metric-card">
-                            <span class="dm-label">Hàng đợi đệm</span>
-                            <span class="dm-val mono" id="drawer-queue">0 / 16 khung</span>
+                            <span class="dm-label">Bounded-Buffer</span>
+                            <span class="dm-val mono" id="drawer-queue">0 / 16 frames</span>
                         </div>
                         <div class="drawer-metric-card">
                             <span class="dm-label">Tải CPU</span>
@@ -1763,6 +1759,6 @@
     <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="custom-toast-container" class="custom-toast-container" aria-live="polite"></div>
 
-    <script src="/static/app.js?v=2.8.0"></script>
+    <script src="/static/app.js?v=2.9.0"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@ Hỗ trợ Unicode tiếng Việt đầy đủ bằng Pillow, loại bỏ lỗi 
 """
 
 import os
+import re
 import cv2
 import numpy as np
 import time
@@ -339,13 +340,19 @@ class CyberHUDRenderer:
         cv2.line(img, (x2, y2), (x2 - corner_len, y2), color_bgr, thickness)
         cv2.line(img, (x2, y2), (x2, y2 - corner_len), color_bgr, thickness)
 
-        # 3. Nhãn định danh gọn (chỉ hiển thị mã ID ngắn như ID #01, không vẽ tâm ngắm hay chú thích dài đè lên hình)
+        # 3. Nhãn trạng thái hành vi ngắn gọn (tuyệt đối không vẽ mã số cố định ID #01..#04 để tránh nhảy nhãn khi cắt cảnh/vật lộn)
         if label:
             lbl_strip = label.strip().strip("[]").strip()
-            if ":" in lbl_strip:
-                lbl_strip = lbl_strip.split(":", 1)[0].strip()
-            if lbl_strip.upper().startswith("ID"):
-                tag_y = max(0, y1 - 20)
+            if ":" in lbl_strip and lbl_strip.upper().startswith("ID"):
+                lbl_strip = lbl_strip.split(":", 1)[1].strip()
+            is_numeric_id = bool(
+                re.match(r'^ID\s*#?\d+$', lbl_strip, flags=re.IGNORECASE)
+                or lbl_strip.upper().startswith("ID #")
+            )
+            if lbl_strip and not is_numeric_id:
+                if len(lbl_strip) > 28:
+                    lbl_strip = lbl_strip[:28].strip()
+                tag_y = max(0, y1 - 22)
                 self.draw_unicode_text(
                     img,
                     lbl_strip.upper(),
@@ -558,8 +565,8 @@ class CyberHUDRenderer:
                 return "Tier-1 Gemini 3.8"
             elif "tier_2" in s_lower or "tier-2" in s_lower or "gemini 3.5" in s_lower or "gemini-3.5" in s_lower or "gemini 1" in s_lower or "gemini-1" in s_lower:
                 return "Tier-2 Gemini 3.5 Failover"
-            elif "tier_3" in s_lower or "tier-3" in s_lower or "heuristic" in s_lower or "arbiter" in s_lower or "tự hành" in s_lower:
-                return "AI Tự Hành (Local Heuristic)"
+            elif "tier_3" in s_lower or "tier-3" in s_lower or "heuristic" in s_lower or "arbiter" in s_lower or "tự hành" in s_lower or "local" in s_lower:
+                return "Local Fallback · Tier-3"
             else:
                 return s.replace("●", "").strip()
 

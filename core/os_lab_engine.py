@@ -107,11 +107,11 @@ class OSLabEngine:
         # Tác động nhân quả lên phân tích AI:
         # Nếu rớt khung hình > 20%, mất đỉnh xung lực gia tốc va chạm dE/dt -> Điểm nguy hiểm bị sai lệch
         if drop_rate_pct >= 25.0:
-            kinetic_fidelity = "GIẢM TẦN SUẤT MẪU (Rơi khung hình)"
+            kinetic_fidelity = "GIẢM TẦN SUẤT LẤY MẪU · DROP FRAME"
             threat_score_impact = -4.2  # Bỏ lọt hành vi bạo lực
             simulated_threat_score = round(max(1.8, 8.8 + threat_score_impact), 1)
-            ai_diagnosis = f"Cảnh báo: Tỷ lệ rớt khung hình {drop_rate_pct}% làm giảm tần suất lấy mẫu. Điểm nguy hiểm ước lượng giảm từ 8.8 xuống {simulated_threat_score}."
-            status_badge = "CẢNH BÁO RƠI KHUNG"
+            ai_diagnosis = f"Cảnh báo: Tỷ lệ drop frame {drop_rate_pct}% làm giảm tần suất lấy mẫu. Điểm nguy hiểm ước lượng giảm từ 8.8 xuống {simulated_threat_score}."
+            status_badge = "CẢNH BÁO DROP FRAME"
             badge_class = "tag-warning"
         elif latency_ms >= 1500:
             kinetic_fidelity = "ĐẦY ĐỦ NHƯNG BỊ TRỄ NẶNG (Bufferbloat)"
@@ -536,7 +536,7 @@ class OSLabEngine:
             vid_speed_class = "tag-danger"
             vid_stab = f"Cận trên an toàn: Tự động ngắt tràn (Circuit Breaker ≤ {HARD_RAM_CEILING_MB}MB)"
             vid_stab_class = "tag-warning"
-            vid_acc = "Bỏ sót phân đoạn xung đột ngắn (< 1.5s) do rơi khung hàng loạt"
+            vid_acc = "Bỏ sót phân đoạn xung đột ngắn dưới 1.5s do drop frame hàng loạt"
             vid_acc_class = "tag-danger"
 
         overall_badge = "TRẠNG THÁI: TỐI ƯU CÂN BẰNG (Z ≡ Y)" if (delay == 0 and cap == 16 and pol == "drop_oldest") else (
@@ -645,10 +645,10 @@ class OSLabEngine:
         ram_used_mb = stats.get("ram_active_mb", round(cap * 2.64, 2))
 
         if delay == 0:
-            verdict = "Đạt chuẩn vận hành thời gian thực 30 FPS trên phần cứng hệ thống (0 khung rơi, độ trễ tối thiểu)."
+            verdict = "Đạt chuẩn vận hành thời gian thực 30 FPS trên phần cứng hệ thống · 0 drop frame, độ trễ tối thiểu."
             is_safe = True
         elif delay <= 80:
-            verdict = f"Cảnh báo: Tốc độ Consumer đạt ~{measured_cons_fps} FPS, rơi {dropped_frames} khung ({drop_rate}%). Hệ thống xả đệm để duy trì luồng."
+            verdict = f"Cảnh báo: Tốc độ Consumer đạt ~{measured_cons_fps} FPS, drop {dropped_frames} frames ({drop_rate}%). Hệ thống xả Buffer để duy trì luồng."
             is_safe = True
         else:
             verdict = f"Nguy cơ đình trệ: Tốc độ Consumer tụt dốc, trễ tích lũy {measured_latency_ms} ms. Cơ chế cận trên bảo vệ RAM không vượt quá {HARD_RAM_CEILING_MB}MB."

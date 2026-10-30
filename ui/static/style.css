@@ -60,9 +60,9 @@
     --btn-success-bg: #1e7e4e;
     --btn-success-hover: #16653f;
 
-    --font-ui: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-heading: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-mono: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+    --font-ui: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-heading: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-body: var(--font-ui);
     --border-color: var(--border-subtle);
     --text-main: var(--text-primary);
@@ -183,7 +183,8 @@ body {
 .font-mono {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: 0;
 }
 
 button,
@@ -197,7 +198,7 @@ textarea {
     display: none !important;
 }
 
-/* Typography Hierarchy - Anti-AI Slop Standards */
+/* Typography Hierarchy - Unified Be Vietnam Pro */
 h1, h2, h3, h4, h5, h6,
 .brand-title,
 .card-title,
@@ -205,21 +206,29 @@ h1, h2, h3, h4, h5, h6,
 .report-title,
 .segments-title,
 .narrative-title,
+.narrative-col-title,
 .drawer-title,
 .chart-title,
+.heatmap-title,
+.os-kernel-box-title,
+.os-stage-role,
+.os-live-modal-heading,
+.os-conveyor-title,
+.seg-modal-section-title,
 .url-title,
 .modal-title,
 .empty-title,
 .sdn-title {
     font-family: var(--font-heading);
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: -0.015em;
-    line-height: 1.25;
+    line-height: 1.28;
 }
 
 h1, .brand-title {
     font-weight: 700;
     letter-spacing: -0.02em;
+    line-height: 1.2;
 }
 
 .ui-icon {
@@ -581,8 +590,8 @@ h1, .brand-title {
 
 .hw-mini-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px 12px;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    gap: 6px 8px;
     width: 100%;
 }
 
@@ -590,7 +599,7 @@ h1, .brand-title {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 11.5px;
+    font-size: 11px;
     white-space: nowrap;
     min-width: 0;
 }
@@ -926,14 +935,32 @@ h1, .brand-title {
 
 .log-code-badge {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 700;
-    padding: 2px 6px;
+    padding: 2px 7px;
     border-radius: 4px;
     background: var(--bg-subtle);
     color: var(--accent-blue-text);
     border: 1px solid var(--border-subtle);
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}
+
+.log-code-badge.badge-code-danger {
+    color: var(--accent-crimson-text, #ef4444);
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.log-code-badge.badge-code-warn {
+    color: var(--accent-amber-text, #f59e0b);
+    border-color: rgba(245, 158, 11, 0.4);
+    background: rgba(245, 158, 11, 0.08);
 }
 
 .snapshot-thumb {
@@ -2453,9 +2480,27 @@ h1, .brand-title {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.filter-chip.filter-tier-danger.active {
+    background: var(--accent-crimson-bg);
+    color: var(--accent-crimson-text);
+    border-color: var(--accent-crimson);
+}
+
+.filter-chip.filter-tier-warning.active {
+    background: var(--accent-amber-bg);
+    color: var(--accent-amber-text);
+    border-color: var(--accent-amber);
+}
+
+.filter-chip.filter-tier-safe.active {
+    background: var(--accent-emerald-bg);
+    color: var(--accent-emerald-text);
+    border-color: var(--accent-emerald);
+}
+
 .timeline-table .seg-range-badge {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 700;
     background: var(--bg-surface-elevated);
     padding: 3px 8px;
@@ -2463,6 +2508,17 @@ h1, .brand-title {
     border: 1px solid var(--border-subtle);
     color: var(--accent-blue-text);
     display: inline-block;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}
+
+.seg-id-sub {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 3px;
+    white-space: nowrap;
 }
 
 .entity-item-row {
@@ -3046,23 +3102,50 @@ tr.active-segment-row {
     border-color: var(--border-strong);
 }
 
+.actor-chip-card.actor-tone-danger {
+    border-left: 3px solid var(--accent-crimson);
+}
+
+.actor-chip-card.actor-tone-warning {
+    border-left: 3px solid var(--accent-amber);
+}
+
+.actor-chip-card.actor-tone-safe {
+    border-left: 3px solid var(--accent-emerald);
+}
+
 .actor-chip-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
 .actor-chip-identity {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
 }
 
 .actor-chip-id {
     font-weight: 700;
     color: var(--accent-blue-text);
-    font-size: 0.76rem;
+    font-size: 0.8rem;
+    letter-spacing: -0.01em;
+}
+
+.actor-chip-id.actor-tone-danger {
+    color: var(--accent-crimson-text);
+}
+
+.actor-chip-id.actor-tone-warning {
+    color: var(--accent-amber-text);
+}
+
+.actor-chip-id.actor-tone-safe {
+    color: var(--accent-emerald-text);
 }
 
 .actor-chip-role {
@@ -4740,6 +4823,7 @@ tr.active-segment-row {
 .seg-actor-chip {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 3px 9px;
     border-radius: 4px;
@@ -4770,13 +4854,28 @@ tr.active-segment-row {
 
 .seg-chip-id {
     font-weight: 700;
-    font-size: 11px;
+    font-size: 11.5px;
     color: var(--accent-blue-text);
+}
+
+.seg-actor-chip.tag-danger .seg-chip-id {
+    color: var(--accent-crimson-text);
+}
+
+.seg-actor-chip.tag-warning .seg-chip-id {
+    color: var(--accent-amber-text);
+}
+
+.seg-actor-chip.tag-safe .seg-chip-id {
+    color: var(--accent-emerald-text);
 }
 
 .seg-chip-name {
     font-weight: 600;
-    color: var(--text-primary);
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding-left: 6px;
+    border-left: 1px solid var(--border-strong);
 }
 
 .seg-chip-act {

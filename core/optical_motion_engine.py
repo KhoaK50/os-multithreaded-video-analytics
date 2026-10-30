@@ -55,12 +55,14 @@ class OpticalMotionEngine:
         self.last_v_rel: Optional[np.ndarray] = None
         self.last_div_map: Optional[np.ndarray] = None
         self.active_roi: Optional[Tuple[int, int, int, int]] = None
+        self.recent_luma_diffs: List[float] = []
 
     def set_active_roi(self, roi: Optional[Tuple[int, int, int, int]]):
         """Thiết lập vùng hình ảnh hoạt động (loại bỏ viền đen Letterbox/Pillarbox)."""
         if roi != self.active_roi:
             self.active_roi = roi
             self.prev_gray = None
+            self.recent_luma_diffs.clear()
 
     def reset(self):
         """Khởi tạo lại trạng thái dòng quang học khi bắt đầu video mới."""
@@ -72,6 +74,7 @@ class OpticalMotionEngine:
         self.last_v_rel = None
         self.last_div_map = None
         self.active_roi = None
+        self.recent_luma_diffs.clear()
 
     def compute_centripetal_convergence(
         self,
@@ -204,22 +207,71 @@ class OpticalMotionEngine:
             self.prev_timestamp = timestamp
             return self._empty_result()
 
-        # Phát hiện chuyển cảnh đột ngột (Hard Camera Cut / Shot Boundary) trong video cắt ghép:
-        # Bao gồm cả chuyển góc máy trong cùng một phòng học (cùng tông màu tường nhưng >44% diện tích lệch > 22).
+        # Phát hiện khung hình trùng lặp do chuyển đổi tần số quét (24->30fps / 15->30fps pulldown)
         luma_diff = np.abs(small_gray.astype(np.float32) - self.prev_gray.astype(np.float32))
         mean_luma_diff = float(np.mean(luma_diff))
+        if mean_luma_diff < 0.45:
+            res_dup = self._empty_result()
+            res_dup["is_duplicate_frame"] = True
+            return res_dup
+
+        # Phát hiện chuyển cảnh đột ngột thực sự (Hard Camera Cut / Shot Boundary) trong video cắt ghép,
+        # đồng thời miễn nhiễm với rung lắc / lia máy quay cầm tay (Handheld Camera Shake / Whip-Pan):
         pct_large_diff = float(np.mean(luma_diff > 42.0))
         pct_med_diff = float(np.mean(luma_diff > 22.0))
+        is_hard_cut = False
         if mean_luma_diff > 18.5 or pct_large_diff > 0.25 or pct_med_diff > 0.44:
+            med_recent = float(np.median(self.recent_luma_diffs[-8:])) if len(self.recent_luma_diffs) >= 3 else 6.0
+            pct_stationary = float(np.mean(luma_diff < 6.0))
+            h1 = cv2.calcHist([self.prev_gray], [0], None, [32], [0, 256])
+            h2 = cv2.calcHist([small_gray], [0], None, [32], [0, 256])
+            hist_corr = float(cv2.compareHist(h1, h2, cv2.HISTCMP_CORREL))
+
+            if (
+                (mean_luma_diff > max(19.5, med_recent * 2.55) or (mean_luma_diff > 58.0 and hist_corr < 0.35))
+                and pct_stationary < 0.24
+            ):
+                # Khử dịch chuyển tịnh tiến 2D của máy quay bằng tương quan pha (Phase Correlation)
+                cw = max(32, self.target_w // 4)
+                ch = max(18, self.target_h // 4)
+                g_sub = cv2.resize(small_gray, (cw, ch)).astype(np.float32)
+                p_sub = cv2.resize(self.prev_gray, (cw, ch)).astype(np.float32)
+                (sx, sy), _ = cv2.phaseCorrelate(p_sub, g_sub)
+                dx = int(round(sx * (self.target_w / float(cw))))
+                dy = int(round(sy * (self.target_h / float(ch))))
+                am_eff = mean_luma_diff
+                apm_eff = pct_med_diff
+                if abs(dx) < int(self.target_w * 0.35) and abs(dy) < int(self.target_h * 0.35):
+                    x1_p, x2_p = max(0, -dx), min(self.target_w, self.target_w - dx)
+                    y1_p, y2_p = max(0, -dy), min(self.target_h, self.target_h - dy)
+                    x1_g, x2_g = x1_p + dx, x2_p + dx
+                    y1_g, y2_g = y1_p + dy, y2_p + dy
+                    if (x2_p - x1_p) >= 32 and (y2_p - y1_p) >= 18:
+                        ald = np.abs(
+                            small_gray[y1_g:y2_g, x1_g:x2_g].astype(np.float32)
+                            - self.prev_gray[y1_p:y2_p, x1_p:x2_p].astype(np.float32)
+                        )
+                        am_eff = min(mean_luma_diff, float(np.mean(ald)))
+                        apm_eff = min(pct_med_diff, float(np.mean(ald > 22.0)))
+
+                if am_eff > 19.0 and (hist_corr < 0.84 or apm_eff > 0.45 or am_eff > 36.0):
+                    is_hard_cut = True
+
+        if is_hard_cut:
             self.prev_gray = small_gray
             self.prev_timestamp = timestamp
             self.mhi_map.fill(0.0)
             self.prev_kinetic_energy = 0.0
             self.last_u_rel = None
             self.last_v_rel = None
+            self.recent_luma_diffs.clear()
             res_cut = self._empty_result()
             res_cut["is_scene_cut"] = True
             return res_cut
+
+        self.recent_luma_diffs.append(mean_luma_diff)
+        if len(self.recent_luma_diffs) > 16:
+            self.recent_luma_diffs.pop(0)
 
         # Tính thời gian delta để chuẩn hóa vận tốc theo giây
         dt = max(1e-3, timestamp - self.prev_timestamp)
@@ -382,7 +434,8 @@ class OpticalMotionEngine:
             "centripetal_convergence": round(cluster_convergence, 2),
             "flow_divergence": round(flow_divergence, 2),
             "is_divergence_collision": is_divergence_collision,
-            "is_scene_cut": False
+            "is_scene_cut": False,
+            "is_duplicate_frame": False
         }
 
     @staticmethod
@@ -400,5 +453,6 @@ class OpticalMotionEngine:
             "centripetal_convergence": 0.0,
             "flow_divergence": 0.0,
             "is_divergence_collision": False,
-            "is_scene_cut": False
+            "is_scene_cut": False,
+            "is_duplicate_frame": False
         }

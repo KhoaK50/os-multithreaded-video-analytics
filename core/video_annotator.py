@@ -567,6 +567,204 @@ def download_web_video(
     }
 
 
+def suppress_duplicate_pose_boxes(
+    raw_candidates: List[Dict[str, Any]],
+    frame_w: int,
+    frame_h: int
+) -> List[Dict[str, Any]]:
+    """
+    Khử hộp bao con lồng nhau, mảnh chi/mũ áo rời rạc và hộp gộp cầu nối 2 người (Pose-Aware Containment NMS).
+    Bảo toàn 100% hai chủ thể thật đang ôm vật lộn sát nhau khi có hai tâm đầu-vai và bộ khung xương độc lập.
+    """
+    if not raw_candidates:
+        return []
+
+    frame_area = max(1.0, float(frame_w * frame_h))
+    enriched = []
+
+    for cand in raw_candidates:
+        bbox_val = cand.get("bbox") if cand.get("bbox") is not None else cand.get("box")
+        if not bbox_val or len(bbox_val) < 4:
+            continue
+        x1, y1, x2, y2 = bbox_val
+        bw = max(1, x2 - x1)
+        bh = max(1, y2 - y1)
+        area = float(bw * bh)
+        conf = float(cand.get("conf", 0.0))
+        kpts = cand.get("kpts")
+
+        if area < 0.004 * frame_area:
+            continue
+
+        valid_kpts = 0
+        core_upper_kpts = 0
+        torso_kpts = 0
+        hs_center = None
+
+        if kpts is not None and len(kpts) >= 17:
+            valid_kpts = sum(1 for p in kpts if float(p[2]) > 0.30)
+            upper_pts = [
+                (float(kpts[idx][0]), float(kpts[idx][1]))
+                for idx in (0, 1, 2, 3, 4, 5, 6)
+                if float(kpts[idx][2]) > 0.30
+            ]
+            core_upper_kpts = len(upper_pts)
+            torso_pts = [
+                (float(kpts[idx][0]), float(kpts[idx][1]))
+                for idx in (5, 6, 11, 12)
+                if float(kpts[idx][2]) > 0.30
+            ]
+            torso_kpts = len(torso_pts)
+            if len(upper_pts) >= 2:
+                hs_center = (
+                    sum(p[0] for p in upper_pts) / len(upper_pts),
+                    sum(p[1] for p in upper_pts) / len(upper_pts)
+                )
+            elif len(upper_pts) == 1 and torso_kpts >= 1:
+                hs_center = upper_pts[0]
+            elif torso_kpts >= 2:
+                hs_center = (
+                    sum(p[0] for p in torso_pts) / len(torso_pts),
+                    sum(p[1] for p in torso_pts) / len(torso_pts)
+                )
+
+            if conf < 0.38 and valid_kpts < 4:
+                continue
+            if core_upper_kpts == 0 and torso_kpts < 2 and conf < 0.52:
+                continue
+            if area < 0.008 * frame_area and (conf < 0.48 or valid_kpts < 6):
+                continue
+        else:
+            if conf < 0.42 or area < 0.010 * frame_area:
+                continue
+
+        area_factor = min(1.0, math.sqrt(area / (0.06 * frame_area)))
+        if kpts is not None and len(kpts) >= 17:
+            pose_quality = (
+                conf * 0.45 +
+                (min(valid_kpts, 12) / 12.0) * 0.30 +
+                (torso_kpts / 4.0) * 0.15 +
+                area_factor * 0.10
+            )
+        else:
+            pose_quality = conf * 0.75 + area_factor * 0.25
+
+        enriched.append({
+            "cand": cand,
+            "bbox": (x1, y1, x2, y2),
+            "area": area,
+            "bh": float(bh),
+            "conf": conf,
+            "kpts": kpts,
+            "valid_kpts": valid_kpts,
+            "torso_kpts": torso_kpts,
+            "hs_center": hs_center,
+            "pose_quality": pose_quality
+        })
+
+    if len(enriched) <= 1:
+        return [item["cand"] for item in enriched]
+
+    enriched.sort(key=lambda item: item["pose_quality"], reverse=True)
+    accepted = []
+
+    def _shared_keypoint_ratio(kpts_a, kpts_b, ref_h: float) -> float:
+        if kpts_a is None or kpts_b is None or len(kpts_a) < 17 or len(kpts_b) < 17:
+            return 0.0
+        joint_thresh = max(14.0, 0.12 * ref_h)
+        both_valid = 0
+        shared_cnt = 0
+        for idx in range(17):
+            if float(kpts_a[idx][2]) > 0.30 and float(kpts_b[idx][2]) > 0.30:
+                both_valid += 1
+                d_j = math.hypot(
+                    float(kpts_a[idx][0]) - float(kpts_b[idx][0]),
+                    float(kpts_a[idx][1]) - float(kpts_b[idx][1])
+                )
+                if d_j <= joint_thresh:
+                    shared_cnt += 1
+        if both_valid == 0:
+            return 0.0
+        return shared_cnt / float(both_valid)
+
+    for item_b in enriched:
+        bx1, by1, bx2, by2 = item_b["bbox"]
+        area_b = item_b["area"]
+        suppress = False
+        bridging_inter_sum = 0.0
+        bridging_overlap_actors = 0
+        max_shared_kpt = 0.0
+
+        for item_a in accepted:
+            ax1, ay1, ax2, ay2 = item_a["bbox"]
+            area_a = item_a["area"]
+            ix1 = max(ax1, bx1)
+            iy1 = max(ay1, by1)
+            ix2 = min(ax2, bx2)
+            iy2 = min(ay2, by2)
+            inter = float(max(0, ix2 - ix1) * max(0, iy2 - iy1))
+            if inter <= 0.0:
+                continue
+
+            iou = inter / max(1.0, area_a + area_b - inter)
+            contain_b_in_a = inter / max(1.0, area_b)
+            contain_a_in_b = inter / max(1.0, area_a)
+            ref_h = max(35.0, item_a["bh"], item_b["bh"])
+            shared_ratio = _shared_keypoint_ratio(item_a["kpts"], item_b["kpts"], ref_h)
+            max_shared_kpt = max(max_shared_kpt, shared_ratio)
+
+            hs_a = item_a["hs_center"]
+            hs_b = item_b["hs_center"]
+            hs_dist = math.hypot(hs_a[0] - hs_b[0], hs_a[1] - hs_b[1]) if (hs_a and hs_b) else 0.0
+            has_independent_skeleton = (
+                hs_a is not None and
+                hs_b is not None and
+                hs_dist >= 0.19 * ref_h and
+                item_b["valid_kpts"] >= 5 and
+                item_b["torso_kpts"] >= 2 and
+                item_b["conf"] >= 0.34 and
+                shared_ratio < 0.48 and
+                area_b >= 0.20 * area_a
+            )
+
+            # 1. Trùng lắp hộp bao gần như hoàn toàn hoặc chia sẻ cùng một bộ khớp xương
+            if iou > 0.72:
+                suppress = True
+                break
+            if iou > 0.45 and not has_independent_skeleton:
+                suppress = True
+                break
+
+            # 2. Hộp bao con (khuỷu tay, đầu/mũ, mảng áo ngực) nằm lọt bên trong hộp người thật
+            if contain_b_in_a > 0.74 and not has_independent_skeleton:
+                suppress = True
+                break
+            if contain_b_in_a > 0.56 and (shared_ratio >= 0.55 or hs_b is None or (hs_a and hs_b and hs_dist < 0.18 * ref_h)):
+                suppress = True
+                break
+
+            # 3. Hộp bao lớn nhiễu bao trùm lên một hộp người thật rõ nét hơn mà trùng tâm đầu-vai/khớp xương
+            if contain_a_in_b > 0.80 and (not has_independent_skeleton or item_b["conf"] < 0.52):
+                suppress = True
+                break
+
+            if (inter / max(1.0, min(area_a, area_b))) > 0.25:
+                bridging_overlap_actors += 1
+                bridging_inter_sum += inter
+
+        # 4. Hộp cầu nối gộp chung 2 chủ thể đang đứng sát nhau (Bridging 2-Person Union Box)
+        if not suppress and bridging_overlap_actors >= 2:
+            if (bridging_inter_sum / max(1.0, area_b)) > 0.58 and (
+                item_b["conf"] < 0.62 or max_shared_kpt >= 0.45 or item_b["valid_kpts"] < 9
+            ):
+                suppress = True
+
+        if not suppress:
+            accepted.append(item_b)
+
+    return [item["cand"] for item in accepted]
+
+
 
 class SpatialTrackStabilizer:
     """
@@ -762,7 +960,7 @@ class SpatialTrackStabilizer:
             if h <= 0.40 * max_h:
                 self.canonical_roles[c_id] = "Người quan sát ở xa"
             else:
-                self.canonical_roles[c_id] = f"Đối tượng #{c_id:02d}"
+                self.canonical_roles[c_id] = "Hoạt động bình thường"
 
     def apply_gemini_actors(self, detected_actors: List[Dict[str, Any]], frame_w: int = 1280, frame_h: int = 720):
         """Áp dụng Visual Grounding từ Gemini Vision vào các canonical IDs thực tế dựa trên vị trí không gian, vóc dáng và nhãn tag_id."""
@@ -871,9 +1069,10 @@ class SpatialTrackStabilizer:
                     self._bind_actor_to_cid(best_cid, actor)
 
     def _bind_actor_to_cid(self, c_id: int, actor: Dict[str, Any]):
-        raw_role = actor.get("role") or self.canonical_roles.get(c_id, f"Chủ thể #{c_id:02d}")
+        raw_role = actor.get("role") or self.canonical_roles.get(c_id, "Hoạt động bình thường")
         cleaned_role = re.sub(r'/(?:người\s*)?ngoài\s*cuộc', '', raw_role, flags=re.IGNORECASE).strip()
-        self.canonical_roles[c_id] = cleaned_role or "An toàn"
+        cleaned_role = re.sub(r'\bID\s*#?\d+\b', '', cleaned_role, flags=re.IGNORECASE).strip(' ·/-:()')
+        self.canonical_roles[c_id] = cleaned_role or "Hoạt động bình thường"
         act = actor.get("true_action")
         if act:
             self.canonical_custom_actions[c_id] = act
@@ -882,13 +1081,17 @@ class SpatialTrackStabilizer:
             self.canonical_postures[c_id] = posture
         label = actor.get("actor_label")
         if label:
-            self.canonical_actor_labels[c_id] = label
+            clean_lbl = re.sub(r'\bID\s*#?\d+\b', '', str(label), flags=re.IGNORECASE).strip(' ·/-:()')
+            if clean_lbl:
+                self.canonical_actor_labels[c_id] = clean_lbl
         anchor = actor.get("distinctive_anchor")
         if anchor:
-            self.canonical_anchors[c_id] = anchor
+            clean_anc = re.sub(r'\bID\s*#?\d+\b', '', str(anchor), flags=re.IGNORECASE).strip(' ·/-:()[]')
+            if clean_anc:
+                self.canonical_anchors[c_id] = clean_anc
 
     def get_role(self, c_id: int) -> str:
-        return self.canonical_roles.get(c_id, f"Chủ thể #{c_id:02d}")
+        return self.canonical_roles.get(c_id, "Hoạt động bình thường")
 
     def get_actor_label(self, c_id: int) -> str:
         return self.canonical_actor_labels.get(c_id) or self.get_role(c_id)
@@ -919,7 +1122,7 @@ class SpatialTrackStabilizer:
         return anchor.strip()
 
     def compute_spatial_anchor(self, bbox: Tuple[int, int, int, int], frame_w: int, frame_h: int) -> str:
-        """Xác định mỏ neo vị trí không gian chuẩn xác ("Bên trái", "Bàn đầu", "Trung tâm", "Bên phải")."""
+        """Xác định mỏ neo vị trí không gian trung lập chuẩn xác ("Bên trái", "Trung tâm", "Bên phải", "Phía trước", "Phía sau")."""
         if not bbox or frame_w <= 0 or frame_h <= 0:
             return ""
         x1, y1, x2, y2 = bbox
@@ -928,15 +1131,15 @@ class SpatialTrackStabilizer:
         nx = cx / float(frame_w)
         ny = cy / float(frame_h)
 
-        if nx < 0.35:
+        if nx < 0.36:
             return "Bên trái"
-        elif nx > 0.65:
+        elif nx > 0.64:
             return "Bên phải"
         else:
-            if ny > 0.60:
-                return "Bàn đầu"
-            elif ny < 0.38:
-                return "Hàng sau"
+            if ny > 0.68:
+                return "Phía trước"
+            elif ny < 0.34:
+                return "Phía sau"
             else:
                 return "Trung tâm"
 
@@ -950,8 +1153,8 @@ class SpatialTrackStabilizer:
     ) -> str:
         """
         Lấy mỏ neo phân biệt tuân thủ tuyệt đối quy chuẩn R2:
-        - Vị trí không gian: "Bên trái", "Bàn đầu", "Trung tâm", "Bên phải", "Hàng sau"
-        - Vai trò nhân quả: "Khiêu khích", "Bị xô", "Can ngăn"
+        - Vị trí không gian trung lập: "Bên trái", "Trung tâm", "Bên phải", "Phía trước", "Phía sau"
+        - Vai trò nhân quả: "Khiêu khích", "Phòng vệ", "Can ngăn"
         - Loại bỏ 100% màu áo / đồng phục
         - Ổn định temporal hysteresis chống rung giật mỏ neo
         """
@@ -1011,6 +1214,10 @@ class SpatioTemporalSkeletonFilter:
         self.window_size = window_size
         self.ema_alpha = ema_alpha
         self.track_windows = {}  # cid -> {"kpts_history": deque, "angles": deque, "last_smoothed": list}
+
+    def reset(self):
+        """Làm sạch lịch sử làm mượt khung xương khi có chuyển góc quay đột ngột (Hard Camera Cut)."""
+        self.track_windows.clear()
 
     def update_skeleton(self, c_id: int, raw_kpts: Optional[np.ndarray]) -> Optional[np.ndarray]:
         """
@@ -1202,6 +1409,7 @@ class KinematicAnomalyRanker:
             kinetic_spike = 0.0
             mechanical_power = 0.0
             wrist_vec = (0.0, 0.0)
+            limb_vecs = []
             body_vec = (0.0, 0.0)
             prev_kpts = st["prev_kpts"]
             prev_joint_vels = st.get("prev_joint_vels", {})
@@ -1268,15 +1476,19 @@ class KinematicAnomalyRanker:
                     if 1.12 < area_ratio <= 1.48 and (mechanical_power >= 160.0 or (area_ratio >= 1.25 and center_jump_per_frame <= 0.05)):
                         kinetic_spike = min(4.2, kinetic_spike + min(1.8, (area_ratio - 1.0) * 12.0 * stride_scale))
 
-                # Trích xuất véc-tơ dịch chuyển cổ tay hoặc khuỷu tay/đầu gối lớn nhất (Trụ cột 1: Hướng véc-tơ đòn đánh)
+                # Trích xuất véc-tơ dịch chuyển cho toàn bộ các khớp ra đòn chủ lực (Trụ cột 1: Hướng véc-tơ đòn đánh từng chi)
                 w_disps = []
+                limb_vecs = []
                 for w_idx in [9, 10, 7, 8, 15, 16]:
                     if w_idx < len(kpts) and w_idx < len(prev_kpts):
                         if kpts[w_idx][2] > 0.30 and prev_kpts[w_idx][2] > 0.30:
                             dx_w = kpts[w_idx][0] - prev_kpts[w_idx][0]
                             dy_w = kpts[w_idx][1] - prev_kpts[w_idx][1]
-                            if (math.hypot(dx_w, dy_w) / max(35.0, float(h))) * stride_scale <= 0.48:
+                            norm_l_spd = (math.hypot(dx_w, dy_w) / max(35.0, float(h))) * stride_scale
+                            if norm_l_spd <= 0.52:
                                 w_disps.append((dx_w, dy_w))
+                                if norm_l_spd >= 0.09:
+                                    limb_vecs.append((dx_w, dy_w, norm_l_spd))
                 if w_disps:
                     wrist_vec = max(w_disps, key=lambda v: math.hypot(v[0], v[1]))
 
@@ -1307,6 +1519,7 @@ class KinematicAnomalyRanker:
             det["equiv_vel_px"] = round(equiv_vel_px, 1)
             det["is_3sigma_strike"] = is_3sigma_strike
             det["wrist_vec"] = wrist_vec
+            det["limb_vecs"] = limb_vecs if "limb_vecs" in locals() else []
             det["body_vec"] = body_vec
             det["wrist_speed_norm"] = wrist_speed_norm
             det["posture_anomaly"] = posture_anomaly
@@ -1344,15 +1557,34 @@ class KinematicAnomalyRanker:
                 r_ab_y = cb_y - ca_y
                 norm_ab = math.hypot(r_ab_x, r_ab_y) + 1e-4
 
-                # Trụ cột 1 (Công thức 4 Bạch thư): Hệ số định hướng cos(alpha) = (F · v) / (||F|| ||v||) từ A tới B
+                # Trụ cột 1 (Công thức 4 Bạch thư): Hệ số định hướng cos(alpha) = (F · v) / (||F|| ||v||) xét trên toàn bộ các khớp ra đòn chủ lực
+                # (không bị chi đối trọng rút về phía sau che khuất véc-tơ nắm đấm đang phóng tới đối phương)
                 v_a = det_a.get("wrist_vec", (0.0, 0.0))
                 norm_va = math.hypot(v_a[0], v_a[1])
                 cos_a = (v_a[0] * r_ab_x + v_a[1] * r_ab_y) / (norm_va * norm_ab) if norm_va > 1e-4 else 0.0
+                w_speed_a = det_a.get("wrist_speed_norm", 0.0)
+                for lvx, lvy, lspd in det_a.get("limb_vecs", []):
+                    if lspd >= 0.10:
+                        lnorm = math.hypot(lvx, lvy)
+                        if lnorm > 1e-4:
+                            lcos = (lvx * r_ab_x + lvy * r_ab_y) / (lnorm * norm_ab)
+                            if lcos > cos_a:
+                                cos_a = lcos
+                                w_speed_a = max(w_speed_a * 0.85, lspd)
 
                 # Hệ số định hướng cos(alpha) từ B tới A
                 v_b = det_b.get("wrist_vec", (0.0, 0.0))
                 norm_vb = math.hypot(v_b[0], v_b[1])
                 cos_b = (-v_b[0] * r_ab_x - v_b[1] * r_ab_y) / (norm_vb * norm_ab) if norm_vb > 1e-4 else 0.0
+                w_speed_b = det_b.get("wrist_speed_norm", 0.0)
+                for lvx, lvy, lspd in det_b.get("limb_vecs", []):
+                    if lspd >= 0.10:
+                        lnorm = math.hypot(lvx, lvy)
+                        if lnorm > 1e-4:
+                            lcos = (-lvx * r_ab_x - lvy * r_ab_y) / (lnorm * norm_ab)
+                            if lcos > cos_b:
+                                cos_b = lcos
+                                w_speed_b = max(w_speed_b * 0.85, lspd)
 
                 # Vận tốc hội tụ tâm cơ thể (Body Center Convergence) giữa A và B
                 bva = det_a.get("body_vec", (0.0, 0.0))
@@ -1361,78 +1593,101 @@ class KinematicAnomalyRanker:
                 rel_bvy = bva[1] - bvb[1]
                 body_conv_norm = ((rel_bvx * r_ab_x + rel_bvy * r_ab_y) / norm_ab) / max(35.0, avg_h)
 
-                w_speed_a = det_a.get("wrist_speed_norm", 0.0)
-                w_speed_b = det_b.get("wrist_speed_norm", 0.0)
-
                 # Nón Sát Thương Vũ Khí Kéo Dài (Extended Weapon / Tool Reach Cone):
                 is_weapon_thrust_a = (
                     not det_a.get("is_passive", False) and
-                    size_ratio >= 0.55 and
+                    size_ratio >= 0.52 and
                     (
-                        ((iou > 0.01 or dist < 1.28 * avg_h) and cos_a > 0.52 and det_a["kinetic_spike"] >= 1.75 and (det_a.get("is_3sigma_strike", False) or 0.15 <= w_speed_a <= 0.48)) or
-                        (dist <= 1.60 * avg_h and cos_a > 0.52 and det_a["kinetic_spike"] >= 1.75 and det_a.get("is_3sigma_strike", False) and 0.20 <= w_speed_a <= 0.48)
+                        ((iou > 0.01 or dist < 1.28 * avg_h) and cos_a > 0.52 and det_a["kinetic_spike"] >= 1.75 and (det_a.get("is_3sigma_strike", False) or 0.15 <= w_speed_a <= 0.52)) or
+                        (dist <= 1.60 * avg_h and cos_a > 0.52 and det_a["kinetic_spike"] >= 1.75 and det_a.get("is_3sigma_strike", False) and 0.20 <= w_speed_a <= 0.52)
                     )
                 )
                 is_weapon_thrust_b = (
                     not det_b.get("is_passive", False) and
-                    size_ratio >= 0.55 and
+                    size_ratio >= 0.52 and
                     (
-                        ((iou > 0.01 or dist < 1.28 * avg_h) and cos_b > 0.52 and det_b["kinetic_spike"] >= 1.75 and (det_b.get("is_3sigma_strike", False) or 0.15 <= w_speed_b <= 0.48)) or
-                        (dist <= 1.60 * avg_h and cos_b > 0.52 and det_b["kinetic_spike"] >= 1.75 and det_b.get("is_3sigma_strike", False) and 0.20 <= w_speed_b <= 0.48)
+                        ((iou > 0.01 or dist < 1.28 * avg_h) and cos_b > 0.52 and det_b["kinetic_spike"] >= 1.75 and (det_b.get("is_3sigma_strike", False) or 0.15 <= w_speed_b <= 0.52)) or
+                        (dist <= 1.60 * avg_h and cos_b > 0.52 and det_b["kinetic_spike"] >= 1.75 and det_b.get("is_3sigma_strike", False) and 0.20 <= w_speed_b <= 0.52)
                     )
                 )
 
-                # Đòn đánh sải tay/chân thường (Hand/Limb strike - Công thức 4: cos_alpha > 0.45 & 3-sigma):
+                # Đòn đánh sải tay/chân thường (Hand/Limb strike - Công thức 4: cos_alpha > 0.44 & 3-sigma):
                 is_hand_strike_a = (
                     not det_a.get("is_passive", False) and
-                    size_ratio >= 0.55 and
-                    (iou > 0.04 or dist < 0.88 * avg_h) and
-                    cos_a > 0.44 and
+                    size_ratio >= 0.52 and
+                    (iou > 0.04 or dist < 0.92 * avg_h) and
+                    cos_a > 0.42 and
                     det_a["kinetic_spike"] >= 1.60 and
-                    (det_a.get("is_3sigma_strike", False) or 0.13 <= w_speed_a <= 0.48)
+                    (det_a.get("is_3sigma_strike", False) or 0.13 <= w_speed_a <= 0.52)
                 )
                 is_hand_strike_b = (
                     not det_b.get("is_passive", False) and
-                    size_ratio >= 0.55 and
-                    (iou > 0.04 or dist < 0.88 * avg_h) and
-                    cos_b > 0.44 and
+                    size_ratio >= 0.52 and
+                    (iou > 0.04 or dist < 0.92 * avg_h) and
+                    cos_b > 0.42 and
                     det_b["kinetic_spike"] >= 1.60 and
-                    (det_b.get("is_3sigma_strike", False) or 0.13 <= w_speed_b <= 0.48)
+                    (det_b.get("is_3sigma_strike", False) or 0.13 <= w_speed_b <= 0.52)
+                )
+
+                # Đòn vung tốc độ cao ở cự ly gần nhưng đối phương kịp lách né / chưa chạm thân (Dodged / Missed Close-Range Strike):
+                is_dodged_strike_a = (
+                    not det_a.get("is_passive", False) and
+                    size_ratio >= 0.46 and
+                    dist < 1.50 * avg_h and
+                    (cos_a > 0.34 or (body_conv_norm > 0.035 and dist < 1.18 * avg_h)) and
+                    det_a["kinetic_spike"] >= 1.75 and
+                    (det_a.get("is_3sigma_strike", False) or 0.13 <= w_speed_a <= 0.55) and
+                    (det_b["kinetic_spike"] >= 0.65 or iou > 0.01 or dist < 1.25 * avg_h or det_a.get("mechanical_power", 0.0) >= 240.0)
+                )
+                is_dodged_strike_b = (
+                    not det_b.get("is_passive", False) and
+                    size_ratio >= 0.46 and
+                    dist < 1.50 * avg_h and
+                    (cos_b > 0.34 or (body_conv_norm > 0.035 and dist < 1.18 * avg_h)) and
+                    det_b["kinetic_spike"] >= 1.75 and
+                    (det_b.get("is_3sigma_strike", False) or 0.13 <= w_speed_b <= 0.55) and
+                    (det_a["kinetic_spike"] >= 0.65 or iou > 0.01 or dist < 1.25 * avg_h or det_b.get("mechanical_power", 0.0) >= 240.0)
                 )
 
                 # A tấn công B:
-                if is_weapon_thrust_a or is_hand_strike_a:
+                if is_weapon_thrust_a or is_hand_strike_a or is_dodged_strike_a:
                     det_a["is_striking"] = True
-                    det_a["interaction_score"] = max(det_a["interaction_score"], 6.0 if is_weapon_thrust_a else 4.8)
+                    det_a["is_dodged_strike"] = bool(is_dodged_strike_a and not (is_weapon_thrust_a or is_hand_strike_a))
+                    strike_inter_a = 6.0 if is_weapon_thrust_a else (4.8 if is_hand_strike_a else 4.3)
+                    det_a["interaction_score"] = max(det_a["interaction_score"], strike_inter_a)
                     det_b["is_targeted"] = True
-                    det_b["interaction_score"] = max(det_b["interaction_score"], 3.5)
+                    det_b["interaction_score"] = max(det_b["interaction_score"], 3.5 if not det_a["is_dodged_strike"] else 3.2)
                     det_a["clash_partner_raw_ids"].add(det_b["raw_id"])
                     det_b["clash_partner_raw_ids"].add(det_a["raw_id"])
 
                 # B tấn công A:
-                if is_weapon_thrust_b or is_hand_strike_b:
+                if is_weapon_thrust_b or is_hand_strike_b or is_dodged_strike_b:
                     det_b["is_striking"] = True
-                    det_b["interaction_score"] = max(det_b["interaction_score"], 6.0 if is_weapon_thrust_b else 4.8)
+                    det_b["is_dodged_strike"] = bool(is_dodged_strike_b and not (is_weapon_thrust_b or is_hand_strike_b))
+                    strike_inter_b = 6.0 if is_weapon_thrust_b else (4.8 if is_hand_strike_b else 4.3)
+                    det_b["interaction_score"] = max(det_b["interaction_score"], strike_inter_b)
                     det_a["is_targeted"] = True
-                    det_a["interaction_score"] = max(det_a["interaction_score"], 3.5)
+                    det_a["interaction_score"] = max(det_a["interaction_score"], 3.5 if not det_b["is_dodged_strike"] else 3.2)
                     det_a["clash_partner_raw_ids"].add(det_b["raw_id"])
                     det_b["clash_partner_raw_ids"].add(det_a["raw_id"])
 
                 # Tương tác áp sát giằng co / xô đẩy / vật lộn cự ly gần:
-                # BẮT BUỘC thỏa mãn điều kiện định hướng Công thức 4 (cos_a > 0.32 hoặc cos_b > 0.32 hoặc 2 khối thân đang lao vào nhau body_conv_norm > 0.04)
-                # để 2 học sinh ngồi/đứng hàng trước - hàng sau trong lớp học (chồng lấp phối cảnh 2D nhưng chỉ tay hướng ngược lại cos < 0) KHÔNG BAO GIỜ bị phạt oan!
+                # BẮT BUỘC thỏa mãn điều kiện định hướng Công thức 4 hoặc giằng co năng lượng cực cao ở cự ly chồng lấp sát thân
+                # để 2 học sinh ngồi/đứng hàng trước - hàng sau trong lớp học (kinetic_spike < 0.6) KHÔNG BAO GIỜ bị phạt oan!
+                ka = det_a["kinetic_spike"]
+                kb = det_b["kinetic_spike"]
+                mp_max = max(det_a.get("mechanical_power", 0.0), det_b.get("mechanical_power", 0.0))
                 has_directional_clash = (
-                    (cos_a > 0.34 and det_a["kinetic_spike"] >= 1.55) or
-                    (cos_b > 0.34 and det_b["kinetic_spike"] >= 1.55) or
-                    (body_conv_norm > 0.042 and iou > 0.10) or
-                    (iou > 0.20 and (
-                        (det_a.get("is_3sigma_strike", False) and cos_a > 0.28) or
-                        (det_b.get("is_3sigma_strike", False) and cos_b > 0.28)
-                    ))
+                    (cos_a > 0.32 and ka >= 1.55) or
+                    (cos_b > 0.32 and kb >= 1.55) or
+                    (body_conv_norm > 0.040 and iou > 0.08) or
+                    (iou > 0.18 and (
+                        (det_a.get("is_3sigma_strike", False) and cos_a > 0.25) or
+                        (det_b.get("is_3sigma_strike", False) and cos_b > 0.25)
+                    )) or
+                    ((iou >= 0.13 or dist < 0.62 * avg_h) and min(ka, kb) >= 1.35 and max(ka, kb) >= 2.15 and mp_max >= 260.0)
                 )
-                if size_ratio >= 0.58 and (iou > 0.06 or dist < 0.80 * avg_h) and has_directional_clash:
-                    ka = det_a["kinetic_spike"]
-                    kb = det_b["kinetic_spike"]
+                if size_ratio >= 0.50 and (iou > 0.06 or dist < 0.85 * avg_h) and has_directional_clash:
                     max_k_ab = max(ka, kb)
                     min_k_ab = min(ka, kb)
                     if (max_k_ab >= 1.75 and min_k_ab >= 0.95) or (max_k_ab >= 2.15 and (iou > 0.10 or dist < 0.68 * avg_h)):
@@ -1529,19 +1784,24 @@ class TemporalActionStabilizer:
         if len(st["action_history"]) > self.window_size:
             st["action_history"].pop(0)
 
-        # 2. Xử lý máy trạng thái Hysteresis cho Đòn Đánh
+        # 2. Xử lý máy trạng thái Hysteresis cho Đòn Đánh (nhạy bén với đòn vung nhanh và lách né cự ly gần)
         is_raw_strike = (raw_danger and raw_role == "attacker") or (raw_role == "attacker" and kinetic >= 1.6) or (kinetic >= 2.2 and interaction >= 2.5)
         if is_raw_strike:
             st["strike_streak"] += max(1, int(frame_step))
-            # Kích hoạt tức thời (Impulse Shock Trigger):
-            # Chỉ khi có xung lực va chạm thực sự mạnh (kinetic >= 2.4 VÀ raw_role == "attacker" VÀ threat_score >= 8.0)
-            req_thresh = 1 if (kinetic >= 2.4 and raw_role == "attacker" and threat_score >= 8.0) else self.trigger_thresh
+            req_thresh = (
+                1 if (
+                    raw_role == "attacker" and raw_danger and (
+                        (kinetic >= 2.15 and threat_score >= 8.0) or
+                        (kinetic >= 1.75 and interaction >= 3.5)
+                    )
+                ) else self.trigger_thresh
+            )
             if st["strike_streak"] >= req_thresh:
                 st["stable_role"] = "attacker"
                 st["stable_danger"] = True
                 st["cooldown_left"] = self.cooldown_frames
         else:
-            st["strike_streak"] = 0
+            st["strike_streak"] = max(0, st["strike_streak"] - 1)
             if st["cooldown_left"] > 0:
                 st["cooldown_left"] = max(0, st["cooldown_left"] - max(1, int(frame_step)))
                 # Trong thời gian giảm chấn, giữ ở mức phòng vệ / cảnh giác (Vàng)
@@ -2031,6 +2291,7 @@ class VideoAnnotatorEngine:
         live_trace_logs: List[str] = []
         last_deck_sample_ts = 0.0
         raw_to_canonical_map: Dict[int, int] = {}
+        concurrent_person_samples: List[int] = []
 
         # Thích ứng thông minh theo phần cứng:
         # - Trên GPU rời (cuda:0): Xử lý 100% từng khung hình (infer_stride = 1, imgsz = 640).
@@ -2101,6 +2362,8 @@ class VideoAnnotatorEngine:
             last_detected_persons_count = 0
             last_frame_entities = []
             last_infer_frame_idx = 0
+            dup_since_last_infer = 0
+            last_close_pair_frame = -9999
             try:
                 while not stop_pipeline.is_set():
                     item = raw_buffer.get(block=True, timeout=0.1)
@@ -2131,6 +2394,18 @@ class VideoAnnotatorEngine:
                             frame = frame_infer
 
                     should_run_infer = ((worker_frame_count - 1) % infer_stride == 0) or (worker_frame_count == target_total_frames)
+                    motion_res = None
+                    if should_run_infer:
+                        # Động cơ dòng quang học Farneback (Trụ cột 2: Dense Optical Flow Motion Engine)
+                        motion_res = optical_engine.process_frame(frame, current_time_sec, orig_w, orig_h)
+                        if (
+                            motion_res.get("is_duplicate_frame", False)
+                            and last_infer_frame_idx > 0
+                            and worker_frame_count < target_total_frames
+                        ):
+                            dup_since_last_infer += 1
+                            should_run_infer = False
+
                     now_wall_sample = time.perf_counter()
                     should_sample_deck = should_run_infer and (
                         len(live_frame_deck) < 5 or
@@ -2214,14 +2489,14 @@ class VideoAnnotatorEngine:
                         continue
 
                     current_draw_ops = []
-                    actual_step = max(1, worker_frame_count - last_infer_frame_idx) if last_infer_frame_idx > 0 else infer_stride
+                    actual_step = max(1, (worker_frame_count - last_infer_frame_idx) - dup_since_last_infer) if last_infer_frame_idx > 0 else infer_stride
                     last_infer_frame_idx = worker_frame_count
+                    dup_since_last_infer = 0
                     eff_stride_scale = 1.0 / float(actual_step)
 
-                    # Động cơ dòng quang học Farneback (Trụ cột 2: Dense Optical Flow Motion Engine)
-                    motion_res = optical_engine.process_frame(frame, current_time_sec, orig_w, orig_h)
-                    if motion_res.get("is_scene_cut", False) and anomaly_ranker is not None:
-                        anomaly_ranker.reset_velocities()
+                    if motion_res is None:
+                        motion_res = optical_engine.process_frame(frame, current_time_sec, orig_w, orig_h)
+                    pending_scene_cut = bool(motion_res.get("is_scene_cut", False))
 
                     # Chạy YOLOv8-Pose kết hợp ByteTrack trên GPU RTX 5060 hoặc CPU thích ứng (conf=0.25)
                     try:
@@ -2283,20 +2558,16 @@ class VideoAnnotatorEngine:
                         kpts_data = res.keypoints
     
                         if boxes is not None and len(boxes) > 0:
-                            detected_persons_count = len(boxes)
-                            peak_concurrent_persons = max(peak_concurrent_persons, detected_persons_count)
-    
                             candidates = []
                             for p_idx, box in enumerate(boxes):
                                 conf = float(box.conf[0].item())
                                 x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
                                 raw_track_id = int(box.id[0].item()) if (hasattr(box, "id") and box.id is not None and len(box.id) > 0) else (p_idx + 1)
-                                all_raw_track_ids.add(raw_track_id)
-    
+
                                 kpts = None
                                 if kpts_data is not None and len(kpts_data) > p_idx:
                                     kpts = kpts_data[p_idx].data[0].cpu().numpy()
-    
+
                                 torso_angle = 90.0
                                 if kpts is not None:
                                     nose = kpts[0]
@@ -2317,7 +2588,7 @@ class VideoAnnotatorEngine:
                                         dy = abs(sh_y - nose[1]) if nose[2] > 0.25 else 50.0
                                     if dx + dy > 1e-4:
                                         torso_angle = math.degrees(math.atan2(dy, dx))
-    
+
                                 candidates.append({
                                     "p_idx": p_idx,
                                     "raw_id": raw_track_id,
@@ -2328,7 +2599,47 @@ class VideoAnnotatorEngine:
                                     "threat_score": 0.0,
                                     "person_danger": False
                                 })
-    
+
+                            # Khử hộp bao con lồng nhau, mảnh chi rời rạc và hộp gộp cầu nối 2 người (Pose-Aware Containment NMS)
+                            candidates = suppress_duplicate_pose_boxes(candidates, orig_w, orig_h)
+                            detected_persons_count = len(candidates)
+
+                            # Đối chiếu Scene Cut với tính liên tục ByteTrack: Nếu chủ thể tiền cảnh vẫn khớp IoU >= 0.35 trên cùng raw_id, đó là lia máy quay chứ không phải cắt cảnh
+                            if pending_scene_cut and anomaly_ranker is not None:
+                                has_continuous_track = False
+                                for c_chk in candidates:
+                                    st_prev = anomaly_ranker.track_states.get(c_chk["raw_id"])
+                                    pb = st_prev.get("prev_bbox") if st_prev else None
+                                    if pb is not None:
+                                        cb = c_chk["bbox"]
+                                        ix1, iy1 = max(pb[0], cb[0]), max(pb[1], cb[1])
+                                        ix2, iy2 = min(pb[2], cb[2]), min(pb[3], cb[3])
+                                        inter_a = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                                        if inter_a > 0:
+                                            ua = max(1, (pb[2] - pb[0]) * (pb[3] - pb[1]) + (cb[2] - cb[0]) * (cb[3] - cb[1]) - inter_a)
+                                            if (inter_a / float(ua)) >= 0.35:
+                                                has_continuous_track = True
+                                                break
+                                if has_continuous_track:
+                                    pending_scene_cut = False
+                                    motion_res["is_scene_cut"] = False
+                                else:
+                                    anomaly_ranker.reset_velocities()
+                                    st_skeleton_filter.reset()
+                                    pending_scene_cut = False
+
+                            for c_clean in candidates:
+                                all_raw_track_ids.add(c_clean["raw_id"])
+                            if detected_persons_count > 0:
+                                fg_count = sum(
+                                    1 for c_clean in candidates
+                                    if (c_clean["bbox"][2] - c_clean["bbox"][0]) * (c_clean["bbox"][3] - c_clean["bbox"][1]) >= 0.012 * orig_w * orig_h
+                                    or c_clean["conf"] >= 0.48
+                                )
+                                eff_frame_persons = max(1, fg_count)
+                                concurrent_person_samples.append(eff_frame_persons)
+                                peak_concurrent_persons = max(peak_concurrent_persons, eff_frame_persons)
+
                             # Nếu bật lọc tiêu điểm bất thường (Top-4 Saliency Focus)
                             if anomaly_ranker is not None:
                                 candidates = anomaly_ranker.update_frame(candidates, orig_w, orig_h, stride_scale=eff_stride_scale)
@@ -2352,7 +2663,7 @@ class VideoAnnotatorEngine:
                                         ba, bb = cand_a["bbox"], cand_b["bbox"]
                                         dist_ab = math.hypot((ba[0] + ba[2] - bb[0] - bb[2]) / 2.0, (ba[1] + ba[3] - bb[1] - bb[3]) / 2.0)
                                         avg_hab = max(35.0, ((ba[3] - ba[1]) + (bb[3] - bb[1])) / 2.0)
-                                        if dist_ab > 1.35 * avg_hab:
+                                        if dist_ab > 1.52 * avg_hab:
                                             continue
                                         checked_any_pair[i_a] = True
                                         checked_any_pair[i_b] = True
@@ -2379,7 +2690,9 @@ class VideoAnnotatorEngine:
                                             ccv_res.get("flow_divergence", 0.0) <= -5.5 or
                                             ccv_res.get("convergence_rate", 0.0) > 0.12 or
                                             cand_a.get("is_3sigma_strike", False) or
-                                            cand_b.get("is_3sigma_strike", False)
+                                            cand_b.get("is_3sigma_strike", False) or
+                                            cand_a.get("is_striking", False) or
+                                            cand_b.get("is_striking", False)
                                         ):
                                             has_active_pair[i_a] = True
                                             has_active_pair[i_b] = True
@@ -2391,6 +2704,34 @@ class VideoAnnotatorEngine:
                                         if cand_c["interaction_score"] < 2.2:
                                             cand_c["is_striking"] = False
                                             cand_c["is_targeted"] = False
+
+                                # Ghi nhận thời điểm gần nhất có cặp 2 người đối diện ở cự ly gần (phục vụ liên tục đòn đánh khi 1 người tạm lọt mép ống kính)
+                                for i_ca in range(len(candidates)):
+                                    for i_cb in range(i_ca + 1, len(candidates)):
+                                        ba_p, bb_p = candidates[i_ca]["bbox"], candidates[i_cb]["bbox"]
+                                        ha_p = max(1.0, float(ba_p[3] - ba_p[1]))
+                                        hb_p = max(1.0, float(bb_p[3] - bb_p[1]))
+                                        if min(ha_p, hb_p) / max(ha_p, hb_p) >= 0.38:
+                                            d_p = math.hypot((ba_p[0] + ba_p[2] - bb_p[0] - bb_p[2]) / 2.0, (ba_p[1] + ba_p[3] - bb_p[1] - bb_p[3]) / 2.0)
+                                            if d_p <= 1.52 * ((ha_p + hb_p) / 2.0):
+                                                last_close_pair_frame = worker_frame_count
+                                                break
+
+                            elif len(candidates) == 1 and not motion_res.get("is_scene_cut", False):
+                                # Liên tục động học giao tranh cận cảnh: Khi máy quay hẹp 1:1 làm đối phương tạm khuất mép khung hình trong <= 0.90s
+                                # mà chủ thể tiền cảnh vẫn tung đòn 3-Sigma công suất cực đại (>= 350), bảo toàn trạng thái ra đòn cự ly gần
+                                cand_solo = candidates[0]
+                                solo_bh = cand_solo["bbox"][3] - cand_solo["bbox"][1]
+                                if (
+                                    (worker_frame_count - last_close_pair_frame) <= max(14, int(0.90 * input_fps)) and
+                                    solo_bh >= int(0.50 * orig_h) and
+                                    cand_solo.get("kinetic_spike", 0.0) >= 2.15 and
+                                    cand_solo.get("mechanical_power", 0.0) >= 350.0 and
+                                    cand_solo.get("wrist_speed_norm", 0.0) >= 0.15
+                                ):
+                                    cand_solo["is_striking"] = True
+                                    cand_solo["is_dodged_strike"] = True
+                                    cand_solo["interaction_score"] = max(cand_solo.get("interaction_score", 0.0), 3.9)
 
                             # Kiểm chứng chéo giữa Dòng quang học (Optical Flow) và Khung xương (Skeleton Kinematics):
                             # Nếu YOLO nhìn thấy rõ người nhưng tất cả đều đứng/ngồi yên (kinetic_spike < 0.90 và interaction_score < 1.2),
@@ -2462,12 +2803,22 @@ class VideoAnnotatorEngine:
                                 # Nếu là người trong tiêu điểm (Top-K Focus):
                                 c_id = stabilizer.update(raw_track_id, (x1, y1, x2, y2), worker_frame_count, orig_w, orig_h)
                                 raw_to_canonical_map[raw_track_id] = c_id
-                                id_label = f"ID #{c_id:02d}"
-    
+                                spatial_pos = stabilizer.compute_spatial_anchor((x1, y1, x2, y2), orig_w, orig_h) or "Trung tâm"
+                                id_label = spatial_pos
+
                                 person_danger = False
-                                person_action = "Đang đứng / Hoạt động trong phòng"
+                                person_action = "Đang đứng / Hoạt động bình thường"
                                 person_threat_score = 0.0
-    
+                                stable_action = person_action
+                                stable_role = "bystander"
+                                stable_danger = False
+                                stable_threat_score = 0.0
+                                kinetic_spike = cand.get("kinetic_spike", 0.0)
+                                interaction_score = cand.get("interaction_score", 0.0)
+                                is_seated = False
+                                anchor = spatial_pos
+                                clean_box_label = ""
+
                                 if kpts is not None:
                                     # Kế thừa kiến trúc ST-GCN: Làm mượt tọa độ 17 khớp xương theo chuỗi thời gian (EMA Trajectory Filter)
                                     kpts = st_skeleton_filter.update_skeleton(c_id, kpts)
@@ -2497,7 +2848,7 @@ class VideoAnnotatorEngine:
                                         person_action = "Té ngã / Nằm bất động"
                                         person_threat_score = 9.0
                                         has_frame_danger = True
-                                        frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
+                                        frame_alert = f"PHÁT HIỆN TÉ NGÃ · {spatial_pos.upper()}"
                                     elif torso_angle < 45.0 and nose[2] > 0.25 and not person_danger:
                                         # Người cúi người làm việc hoặc nhặt đồ bình thường: Giữ ở mức an toàn
                                         person_action = "Cúi đầu / Tập trung"
@@ -2515,21 +2866,22 @@ class VideoAnnotatorEngine:
                                         hip_x = (l_hip[0] + r_hip[0]) / 2.0
                                         hip_y = (l_hip[1] + r_hip[1]) / 2.0
     
-                                    # Nhận diện tư thế ngồi (Sitting / Desk Occlusion):
+                                    # Nhận diện tư thế ngồi:
                                     # Trường hợp 1: Thấy cả chân và đầu gối gập ngang (Full body sitting)
                                     has_knee_kpts = (len(kpts) > 14 and kpts[13][2] > 0.35 and kpts[14][2] > 0.35)
                                     is_seated_full = (has_knee_kpts and l_hip[2] > 0.30 and abs(kpts[13][1] - l_hip[1]) < 0.30 * bbox_h and abs(kpts[13][0] - l_hip[0]) > 0.18 * bbox_w)
     
-                                    # Trường hợp 2: Bị bàn học / mặt bàn che khuất chân (Desk / Classroom Occlusion):
-                                    # Thường gặp trong lớp học/văn phòng: bbox thấp/bè (aspect_ratio < 1.62),
-                                    # trục thân thẳng đứng (60 <= torso_angle <= 120), đầu/vai rõ ràng, kinetic_spike thấp (< 0.85)
+                                    # Trường hợp 2: Bị mặt bàn che khuất thân dưới (không áp dụng cho người đứng cận cảnh bị cắt mép dưới khung hình)
+                                    is_bottom_cropped = (y2 >= int(0.90 * orig_h)) or (bbox_h >= int(0.58 * orig_h))
                                     is_seated_desk = (
-                                        (is_lower_occluded or not has_knee_kpts or aspect_ratio < 1.72) and
+                                        not is_bottom_cropped and
+                                        (is_lower_occluded or not has_knee_kpts) and
+                                        aspect_ratio < 1.58 and
+                                        bbox_h < int(0.46 * orig_h) and
                                         58.0 <= torso_angle <= 122.0 and
                                         (l_sh[2] > 0.28 or r_sh[2] > 0.28) and
                                         nose[2] > 0.28 and
-                                        kinetic_spike < 0.90 and
-                                        (is_lower_occluded or not has_knee_kpts or aspect_ratio < 1.65 or (l_hip[2] > 0.20 and abs(hip_y - y2) < 0.48 * bbox_h))
+                                        kinetic_spike < 0.82
                                     )
                                     is_seated = (is_seated_full or is_seated_desk)
 
@@ -2538,9 +2890,7 @@ class VideoAnnotatorEngine:
                                     # =========================================================================
                                     person_role_type = "bystander"
 
-                                    # 1. Trụ cột 5: Khóa Bất Biến Cho Người Ngồi Bàn / Đứng Yên (Bystander Invariance Lock)
-                                    # Người ngồi sau bàn học (is_seated) hoặc người đứng yên (kinetic_spike < 0.85):
-                                    # TUYỆT ĐỐI KHÔNG BAO GIỜ bị gán điểm nguy hiểm hay bôi đỏ dù xung quanh có xô xát
+                                    # 1. Trụ cột 5: Khóa Bất Biến Cho Người Ngồi / Đứng Yên (Bystander Invariance Lock)
                                     if (is_seated and kinetic_spike < 1.4) or (kinetic_spike < 0.85 and not cand.get("is_striking", False)):
                                         person_danger = False
                                         person_threat_score = 0.2
@@ -2550,7 +2900,7 @@ class VideoAnnotatorEngine:
                                         elif not is_lower_occluded and has_knee_kpts and aspect_ratio >= 1.85:
                                             person_action = "Đang đứng tự nhiên"
                                         else:
-                                            person_action = "Ngồi tại bàn / Tương tác tự nhiên"
+                                            person_action = "Hoạt động tự nhiên"
     
                                     # 2. Phát hiện Té ngã thực sự: Sụp đổ trục thân < 30 độ VÀ đầu nằm sát sàn (liên tục >= 15 frames)
                                     elif torso_angle < 30.0 and nose[2] > 0.30 and nose[1] > orig_h * 0.58 and not is_lower_occluded:
@@ -2561,46 +2911,42 @@ class VideoAnnotatorEngine:
                                             person_action = "Té ngã / Nằm bất động"
                                             person_threat_score = 9.0
                                             has_frame_danger = True
-                                            frame_alert = f"PHÁT HIỆN TÉ NGÃ ({id_label})"
+                                            frame_alert = f"PHÁT HIỆN TÉ NGÃ · {spatial_pos.upper()}"
     
-                                    # 3. Trụ cột 1 & 4: Kẻ Tấn Công / Ra Đòn (Striker / Attacker)
-                                    # BẮT BUỘC có véc-tơ ra đòn thực tế (cand["is_striking"]) VÀ gia tốc xung lực đột biến (kinetic_spike >= 1.55)
-                                    # VÀ BẮT BUỘC có đối tượng tương tác mục tiêu ở cự ly gần (interaction_score >= 1.5 hoặc is_targeted)
-                                    elif cand.get("is_striking", False) and kinetic_spike >= 1.55 and (interaction_score >= 1.5 or cand.get("is_targeted")):
+                                    # 3. Trụ cột 1 & 4: Chủ Động Tấn Công / Ra Đòn (Striker / Attacker - bao gồm cả cú đấm/đá áp sát đối phương né được)
+                                    elif cand.get("is_striking", False) and kinetic_spike >= 1.55 and (interaction_score >= 1.5 or cand.get("is_targeted") or cand.get("is_dodged_strike")):
                                         person_danger = True
                                         person_role_type = "attacker"
                                         person_action = "Vung tay ra đòn / Tấn công áp sát"
                                         person_threat_score = max(8.5, cand.get("threat_score", 8.5))
                                         has_frame_danger = True
-                                        frame_alert = f"CẢNH BÁO: VUNG TAY TẤN CÔNG ({id_label})"
+                                        frame_alert = f"CẢNH BÁO: VUNG TAY TẤN CÔNG · {spatial_pos.upper()}"
 
-                                    # 3b. Cử động tay nhanh khi ngồi tại bàn / thao tác đồ vật (Desk Object Manipulation)
+                                    # 3b. Cử động tay nhanh đơn lẻ không hướng tới người khác (Object Manipulation)
                                     elif kinetic_spike >= 1.8 and interaction_score < 1.2:
                                         person_danger = False
                                         person_role_type = "neutral"
                                         person_action = "Thao tác đồ vật / Cử động tay nhanh"
                                         person_threat_score = 1.0
     
-                                    # 4. Trụ cột 2: Nạn Nhân / Người Bị Tấn Công Phòng Vệ (Defender / Target)
-                                    # Đang bị nhắm tới VÀ có vận tốc phản ứng né tránh/thủ thế (kinetic_spike >= 1.0)
-                                    elif (cand.get("is_targeted", False) and kinetic_spike >= 1.0) or (interaction_score >= 2.5 and kinetic_spike >= 1.2 and (
+                                    # 4. Trụ cột 2: Phòng Vệ / Né Đòn (Defender / Target)
+                                    elif (cand.get("is_targeted", False) and kinetic_spike >= 0.85) or (interaction_score >= 2.4 and kinetic_spike >= 1.1 and (
                                         (l_wrist[2] > 0.20 and l_wrist[1] < hip_y and r_wrist[2] > 0.20 and r_wrist[1] < hip_y) or
                                         torso_angle > 95.0
                                     )):
                                         person_danger = False
                                         person_role_type = "defender"
                                         person_action = "Phòng vệ / Chắn đỡ né đòn"
-                                        person_threat_score = 4.5
+                                        person_threat_score = 4.8
     
                                     # 5. Xung Đột Thể Xác Giằng Co Chung (Physical Clash)
-                                    # BẮT BUỘC có va chạm cự ly cực gần VÀ có hành vi ra đòn hoặc né đòn giữa hai bên
                                     elif interaction_score >= 3.2 and kinetic_spike >= 1.85 and (cand.get("is_striking", False) or cand.get("is_targeted", False)):
                                         person_danger = True
                                         person_role_type = "attacker"
                                         person_action = "Xung đột thể xác / Giằng co va chạm"
                                         person_threat_score = 8.2
                                         has_frame_danger = True
-                                        frame_alert = f"CẢNH BÁO: XUNG ĐỘT THỂ XÁC ({id_label})"
+                                        frame_alert = f"CẢNH BÁO: XUNG ĐỘT THỂ XÁC · {spatial_pos.upper()}"
     
                                     # 6. Thủ thế đối đầu / Căng thẳng (Boxing Guard / Confrontation Stance)
                                     elif (interaction_score >= 1.5 and
@@ -2643,7 +2989,7 @@ class VideoAnnotatorEngine:
                                         # E. Nhóm Vận động / Sinh hoạt tự nhiên
                                         else:
                                             if kinetic_spike >= 0.85:
-                                                person_action = "Vận động trong phòng / Di chuyển"
+                                                person_action = "Đang di chuyển / Vận động tự nhiên"
                                             else:
                                                 person_action = "Sinh hoạt bình thường / Quan sát"
                                             person_threat_score = 0.2
@@ -2663,10 +3009,9 @@ class VideoAnnotatorEngine:
                                     stable_role = stab_res["role"]
                                     stable_danger = stab_res["is_danger"]
                                     color = stab_res["color"]
-                                    role_prefix = stab_res["role_prefix"]
                                     stable_threat_score = stab_res["threat_score"]
     
-                                    # Xác định mỏ neo phân biệt (Spatial Anchor hoặc Causal Role Anchor)
+                                    # Xác định mỏ neo vị trí không gian sạch sẽ (không chứa mã ID cố định)
                                     anchor = stabilizer.get_clean_anchor(
                                         c_id=c_id,
                                         bbox=(x1, y1, x2, y2),
@@ -2674,9 +3019,18 @@ class VideoAnnotatorEngine:
                                         frame_h=orig_h,
                                         causal_role=stable_role if (stable_danger and stable_threat_score >= 7.5) else None
                                     )
-                                    clean_box_label = id_label
+                                    if "Té ngã" in stable_action:
+                                        clean_box_label = "TÉ NGÃ"
+                                    elif stable_danger and (stable_role == "attacker" or "Vung tay" in stable_action or "Tấn công" in stable_action):
+                                        clean_box_label = "TẤN CÔNG"
+                                    elif stable_danger:
+                                        clean_box_label = "XÔ XÁT"
+                                    elif stable_role == "defender" and stable_threat_score >= 4.0:
+                                        clean_box_label = "PHÒNG VỆ"
+                                    else:
+                                        clean_box_label = ""
 
-                                    # Bounding Box góc ngoặc mượt mà: chỉ hiển thị mã ID ngắn gọn trên video
+                                    # Bounding Box góc ngoặc mượt mà: chỉ hiển thị trạng thái xung đột ngắn gọn khi cần, không gắn ID số
                                     self.hud.draw_corner_bracket_bbox(frame, x1, y1, x2, y2, color, clean_box_label, 0.0)
     
                                     # Khung xương 17 khớp nối thanh mảnh
@@ -2701,7 +3055,7 @@ class VideoAnnotatorEngine:
                                 if stable_danger:
                                     has_frame_danger = True
                                     if not frame_alert:
-                                        frame_alert = f"CẢNH BÁO: XUNG ĐỘT ({id_label})"
+                                        frame_alert = f"CẢNH BÁO: XUNG ĐỘT · {spatial_pos.upper()}"
     
                                 frame_threat_score = max(frame_threat_score, stable_threat_score)
                                 partner_raws = cand.get("clash_partner_raw_ids", set())
@@ -2718,7 +3072,7 @@ class VideoAnnotatorEngine:
                                     "kinetic_spike": kinetic_spike,
                                     "interaction_score": interaction_score,
                                     "bbox": (x1, y1, x2, y2),
-                                    "spatial_anchor": stabilizer.compute_spatial_anchor((x1, y1, x2, y2), orig_w, orig_h),
+                                    "spatial_anchor": spatial_pos,
                                     "anchor": anchor,
                                     "clean_box_label": clean_box_label
                                 })
@@ -2731,6 +3085,12 @@ class VideoAnnotatorEngine:
                                         p_cids.append(raw_to_canonical_map[pr_id])
                                 f_ent["clash_partners"] = p_cids
 
+                    if pending_scene_cut:
+                        if anomaly_ranker is not None:
+                            anomaly_ranker.reset_velocities()
+                        st_skeleton_filter.reset()
+                        pending_scene_cut = False
+
                     # Cơ chế Cứu hộ Đêm Tối / Khắc Nghiệt (Dark-Scene Optical Fail-Safe):
                     # Khi YOLO bị rớt box (0 người) do thiếu sáng, bóng đêm, mờ nhòe, che khuất.
                     # Không kích hoạt nhầm trên tường sáng màu khi máy quay lia nhanh trong video dài nhiều phân đoạn.
@@ -2739,8 +3099,9 @@ class VideoAnnotatorEngine:
                         if motion_res["is_violent_scuffle"] or motion_res["motion_threat_score"] >= 8.0:
                             has_frame_danger = True
                             frame_threat_score = motion_res["motion_threat_score"]
-                            frame_alert = "CẢNH BÁO: XUNG LỰC ĐỘNG HỌC BAN ĐÊM (XÔ XÁT)"
+                            frame_alert = "CẢNH BÁO: XUNG LỰC ĐỘNG HỌC BAN ĐÊM · XÔ XÁT"
                             peak_concurrent_persons = max(peak_concurrent_persons, 2)
+                            concurrent_person_samples.append(2)
 
                             act_bbox = motion_res["active_motion_bbox"]
                             if act_bbox is not None:
@@ -2752,13 +3113,13 @@ class VideoAnnotatorEngine:
                             self.hud.draw_corner_bracket_bbox(
                                 frame, bx1, by1, bx2, by2,
                                 (68, 68, 239), # Đỏ BGR
-                                "[XUNG LỰC ĐỘNG HỌC: XÔ XÁT BAN ĐÊM]", 0.0
+                                "XÔ XÁT BAN ĐÊM", 0.0
                             )
-                            current_draw_ops.append(("dark_bbox", bx1, by1, bx2, by2, (68, 68, 239), "[XUNG LỰC ĐỘNG HỌC: XÔ XÁT BAN ĐÊM]"))
+                            current_draw_ops.append(("dark_bbox", bx1, by1, bx2, by2, (68, 68, 239), "XÔ XÁT BAN ĐÊM"))
 
                             frame_entities.append({
                                 "canonical_id": 1,
-                                "id_label": "ID #01",
+                                "id_label": "Chủ động tấn công",
                                 "action": "Xô xát thể xác / Biến động động năng ban đêm",
                                 "role": "attacker",
                                 "angle": 90.0,
@@ -2767,12 +3128,12 @@ class VideoAnnotatorEngine:
                                 "kinetic_spike": motion_res["kinetic_energy"],
                                 "interaction_score": motion_res["turbulence_score"] * 5.0,
                                 "bbox": (bx1, by1, bx2, by2),
-                                "spatial_anchor": "Trung tâm",
+                                "spatial_anchor": "Bên trái",
                                 "clash_partners": [2]
                             })
                             frame_entities.append({
                                 "canonical_id": 2,
-                                "id_label": "ID #02",
+                                "id_label": "Phòng vệ / Đối kháng",
                                 "action": "Giằng co đối kháng / Phòng vệ ban đêm",
                                 "role": "defender",
                                 "angle": 90.0,
@@ -2781,7 +3142,7 @@ class VideoAnnotatorEngine:
                                 "kinetic_spike": motion_res["kinetic_energy"] * 0.8,
                                 "interaction_score": motion_res["turbulence_score"] * 5.0,
                                 "bbox": (bx1, by1, bx2, by2),
-                                "spatial_anchor": "Trung tâm",
+                                "spatial_anchor": "Bên phải",
                                 "clash_partners": [1]
                             })
 
@@ -2799,7 +3160,12 @@ class VideoAnnotatorEngine:
                         frame_ms = round((time.perf_counter() - t_c0) * 1000.0, 1)
                         rel_t = round(current_time_sec - start_time, 2)
                         t_lbl = format_time(current_time_sec - start_time)
-                        active_ids_str = ", ".join([e.get("id_label", "") for e in frame_entities[:4]]) if frame_entities else "Không có"
+                        active_roles_list = []
+                        for e in frame_entities[:4]:
+                            sp_lbl = e.get("spatial_anchor") or "Trung tâm"
+                            st_lbl = e.get("clean_box_label") or "Theo dõi"
+                            active_roles_list.append(f"{st_lbl} · {sp_lbl}")
+                        active_ids_str = ", ".join(active_roles_list) if active_roles_list else "Không có"
                         live_frame_deck.append({
                             "frame_idx": worker_frame_count,
                             "total_frames": target_total_frames,
@@ -2817,9 +3183,9 @@ class VideoAnnotatorEngine:
                             live_frame_deck.pop(0)
 
                         trace_line = (
-                            f"[VideoPipeInference] Khung #{worker_frame_count}/{target_total_frames} ({t_lbl}) · "
-                            f"Quét {detected_persons_count} khung xương 17 khớp ({active_ids_str}) trong {frame_ms}ms "
-                            f"➔ Đẩy vào writer_buffer ({writer_buffer.qsize()}/16)"
+                            f"[VideoPipeInference] Khung #{worker_frame_count}/{target_total_frames} · {t_lbl} · "
+                            f"Quét {detected_persons_count} khung xương 17 khớp [{active_ids_str}] trong {frame_ms}ms "
+                            f"➔ Đẩy vào writer_buffer [{writer_buffer.qsize()}/16]"
                         )
                         live_trace_logs.append(trace_line)
                         if len(live_trace_logs) > 4:
@@ -2846,7 +3212,7 @@ class VideoAnnotatorEngine:
                             current_seg["has_danger"] = True
                             has_frame_danger = True
                             if not frame_alert:
-                                frame_alert = "CẢNH BÁO: XUNG LỰC ĐỘNG HỌC BAN ĐÊM (XÔ XÁT)"
+                                frame_alert = "CẢNH BÁO: XUNG LỰC ĐỘNG HỌC BAN ĐÊM · XÔ XÁT"
                             frame_threat_score = max(frame_threat_score, motion_res["motion_threat_score"])
                             last_frame_danger = has_frame_danger
                             last_frame_threat_score = frame_threat_score
@@ -2938,19 +3304,22 @@ class VideoAnnotatorEngine:
                             current_seg["phase_frames"]["phase_end"] = _downscale_preview_frame(frame, active_roi=active_video_roi)
 
                     # Giữ ảnh tiêu biểu có Bounding Box và Khung xương cho phân đoạn (downscaled preview)
-                    # Ưu tiên khung hình ở khoảng giữa phân đoạn (0.12 <= seg_ratio <= 0.88) có nhiều đối tượng rõ nét nhất
+                    # Ưu tiên khung hình ở cùng bậc nguy cơ có đủ cặp đối tượng giao tranh rõ nét nhất
                     has_people_flag = 1 if detected_persons_count > 0 else 0
                     is_mid_seg = 1 if (0.12 <= seg_ratio <= 0.88) else 0
+                    threat_tier = 2 if frame_threat_score >= 7.5 else (1 if frame_threat_score >= 4.0 else 0)
+                    has_pair_flag = 1 if len(frame_entities) >= 2 else 0
                     threat_bucket = round(frame_threat_score * 2.0) / 2.0
                     frame_rep_key = (
                         has_people_flag,
+                        threat_tier,
+                        has_pair_flag,
                         threat_bucket,
                         is_mid_seg,
                         min(len(frame_entities), 4),
-                        min(detected_persons_count, 6),
                         round(frame_threat_score, 2)
                     )
-                    prev_rep_key = current_seg.get("peak_rep_key", (-1, -1.0, -1, -1, -1, -1.0))
+                    prev_rep_key = current_seg.get("peak_rep_key", (-1, -1, -1, -1.0, -1, -1, -1.0))
                     if current_seg["peak_frame"] is None or frame_rep_key > prev_rep_key:
                         current_seg["peak_rep_key"] = frame_rep_key
                         current_seg["peak_threat"] = max(current_seg.get("peak_threat", 0.0), frame_threat_score)
@@ -3123,42 +3492,61 @@ class VideoAnnotatorEngine:
         # Xác định vai trò cho các đối tượng bền vững
         stabilizer.finalize_roles(orig_h)
 
-        # Đánh giá cảnh đông người (Crowd Scene Assessment)
-        # Chỉ dựa trên số người xuất hiện đồng thời trong 1 khung hình (peak_concurrent_persons),
-        # tuyệt đối không cộng dồn các ID tracker rời rạc qua thời gian vì tracker ID có thể thay đổi/nhảy số.
-        is_crowd_scene = bool(peak_concurrent_persons > 4)
+        # Đánh giá số lượng người thực tế đồng thời (Concurrent Person Count Assessment)
+        # Dựa trên phân vị P95 của số người xuất hiện đồng thời trên cùng 1 khung hình sau khi đã triệt tiêu box lồng nhau,
+        # tuyệt đối không cộng dồn các track rời rạc qua các lần cắt cảnh để không bịa thêm người thứ 3, thứ 4.
+        if concurrent_person_samples:
+            s_samples = sorted(concurrent_person_samples)
+            p95_concurrent = s_samples[min(len(s_samples) - 1, int(0.95 * len(s_samples)))]
+        else:
+            p95_concurrent = peak_concurrent_persons
+
+        has_any_optical_scuffle = any(s.get("optical_scuffle_detected") for s in segments_data)
+        if p95_concurrent < 2 and has_any_optical_scuffle:
+            p95_concurrent = 2
+
+        is_crowd_scene = bool(p95_concurrent > 4 or peak_concurrent_persons > 5)
         if is_crowd_scene:
             actual_person_count = peak_concurrent_persons
         else:
-            actual_person_count = max(peak_concurrent_persons, len(stabilizer.get_dominant_canonical_ids(max_limit=4)))
+            actual_person_count = p95_concurrent
 
-        # Lấy danh sách các đối tượng thực sự có mặt trong video (chốt tối đa K <= 4 người tiêu điểm)
-        dominant_c_ids = stabilizer.get_dominant_canonical_ids(max_limit=4)
-        has_any_optical_scuffle = any(s.get("optical_scuffle_detected") for s in segments_data)
+        # Khống chế trần đối tượng tiêu điểm bằng đúng số người thực tế có mặt (tối đa 4)
+        dom_cap = 4 if is_crowd_scene else (min(4, actual_person_count) if actual_person_count > 0 else 4)
+        dominant_c_ids = stabilizer.get_dominant_canonical_ids(max_limit=dom_cap)
         if not dominant_c_ids:
-            # Thu thập các ID từ segments_data nếu YOLO không bắt được track (như Dark-Scene Fail-Safe)
             seg_cids = sorted(set(cid for s in segments_data for cid in s.get("persons_history", {}).keys() if cid > 0))
-            dominant_c_ids = seg_cids[:4] if seg_cids else []
-        elif len(dominant_c_ids) < 2 and has_any_optical_scuffle:
-            # Bổ sung các ID có mặt trong các phân đoạn xô xát nếu chưa có đủ
+            dominant_c_ids = seg_cids[:dom_cap] if seg_cids else []
+        elif len(dominant_c_ids) < 2 and has_any_optical_scuffle and dom_cap >= 2:
             extra_cids = [cid for s in segments_data if s.get("optical_scuffle_detected") for cid in s.get("persons_history", {}).keys() if cid > 0 and cid not in dominant_c_ids]
-            dominant_c_ids = sorted(dominant_c_ids + extra_cids)[:4]
+            dominant_c_ids = sorted(dominant_c_ids + extra_cids)[:dom_cap]
 
         if has_any_optical_scuffle:
-            # Chỉ gán vai trò sơ bộ nếu phân đoạn có ít nhất 2 đối tượng thực sự tham gia xô xát
             scuffle_cids = sorted(set(cid for s in segments_data if s.get("optical_scuffle_detected") for cid in s.get("persons_history", {}).keys() if cid > 0))
             if len(scuffle_cids) >= 2:
-                # Tìm ID có mức độ gây hấn/động năng cao nhất làm kẻ tấn công
                 aggressor_id = max(scuffle_cids, key=lambda cid: sum(s.get("persons_history", {}).get(cid, {}).get("danger_count", 0) for s in segments_data))
                 defender_ids = [cid for cid in scuffle_cids if cid != aggressor_id]
-                stabilizer.canonical_roles[aggressor_id] = "Kẻ tấn công / Gây hấn"
+                stabilizer.canonical_roles[aggressor_id] = "Chủ động tấn công"
                 if defender_ids:
-                    stabilizer.canonical_roles[defender_ids[0]] = "Nạn nhân / Phòng thủ"
+                    stabilizer.canonical_roles[defender_ids[0]] = "Phòng vệ / Né đòn"
 
-        # Bảo toàn mã ID toàn cục thực tế của từng đối tượng (ID #01, #02, #05...), không ép đè 1..4
         clean_id_map = {cid: cid for cid in dominant_c_ids}
 
-        all_detected_entities = [f"ID #{cid:02d} ({stabilizer.get_role(cid)})" for cid in dominant_c_ids]
+        all_detected_entities = []
+        for cid in dominant_c_ids:
+            r_lbl = stabilizer.get_role(cid)
+            trk = stabilizer.active_tracks.get(cid, {})
+            pos_lbl = stabilizer.compute_spatial_anchor(
+                (
+                    int(trk.get("cx", orig_w / 2.0) - 30),
+                    int(trk.get("cy", orig_h / 2.0) - 60),
+                    int(trk.get("cx", orig_w / 2.0) + 30),
+                    int(trk.get("cy", orig_h / 2.0) + 60),
+                ),
+                orig_w,
+                orig_h,
+            ) if trk else ""
+            all_detected_entities.append(f"{r_lbl} · {pos_lbl}" if pos_lbl else r_lbl)
         if not all_detected_entities:
             all_detected_entities = ["Khu vực an ninh"]
 
@@ -3227,7 +3615,9 @@ class VideoAnnotatorEngine:
             "fps": input_fps,
             "width": orig_w,
             "height": orig_h,
-            "audio_status": "Có âm thanh gốc" if has_orig_audio else "Không có âm thanh (Video CCTV câm - Hãy tập trung 100% vào ngôn ngữ cơ thể, cử chỉ bàn tay, hướng mắt)",
+            "actual_person_count": actual_person_count,
+            "is_crowd_scene": is_crowd_scene,
+            "audio_status": "Có âm thanh gốc" if has_orig_audio else "Không có âm thanh — Video giám sát không tiếng, tập trung phân tích ngôn ngữ cơ thể, quỹ đạo tay chân và cự ly tiếp xúc",
             "video_source": input_path,
             "motion_telemetry": {
                 "mhi_persistence": round(peak_mhi_persistence, 2),
@@ -3322,40 +3712,92 @@ class VideoAnnotatorEngine:
                 if e.get("canonical_id") is not None
             }
 
-            # Phân tích sơ bộ đối tượng có hành vi/động năng xung đột mạnh nhất trong phân đoạn
+            # Phân tích sơ bộ các chủ thể thực sự có mặt trong phân đoạn (ưu tiên chủ thể vận động/tương tác thật, loại trừ nhiễu tĩnh nền xa)
             is_seg_scuffle = bool(s_data.get("optical_scuffle_detected"))
             has_seg_impacts = bool(s_data.get("impact_keyframes"))
-            eligible_pids = [
-                pid for pid in dominant_c_ids
-                if pid in s_data["persons_history"] and (len(s_data["persons_history"][pid]["actions"]) >= min_presence_frames or pid in snap_ent_map)
-            ]
-            # Bổ sung các ID thực sự được vẽ trên ảnh chụp snapshot của phân đoạn (nếu có) để khớp 1-1 với ảnh
-            for snap_cid in sorted(snap_ent_map.keys()):
-                if snap_cid not in eligible_pids and snap_cid in s_data["persons_history"]:
-                    eligible_pids.append(snap_cid)
-            eligible_pids = sorted(eligible_pids)[:4]
+            seg_max_actors = 4 if is_crowd_scene else (min(4, max(1, actual_person_count)) if actual_person_count > 0 else 4)
+            has_persistent_human = any(
+                pid > 0 and len(p_info.get("actions", [])) >= min_presence_frames
+                for pid, p_info in s_data["persons_history"].items()
+            )
+            raw_seg_pids = []
+            for pid, p_info in s_data["persons_history"].items():
+                if pid <= 0:
+                    continue
+                n_act = len(p_info.get("actions", []))
+                p_dang = p_info.get("danger_count", 0)
+                p_def = p_info.get("defender_count", 0)
+                p_max_k = max(p_info.get("kinetic_spikes", [0.0]))
+                p_max_c = max(p_info.get("interaction_scores", [0.0]))
+                # Loại bỏ nhiễu nền tĩnh thoáng qua (vd: cabin xe tải nền xa bất động xuất hiện < min_presence_frames)
+                if has_persistent_human and n_act < min_presence_frames and p_dang == 0 and p_def == 0 and p_max_k < 0.18 and p_max_c < 0.5:
+                    continue
+                if (
+                    n_act >= min_presence_frames or
+                    pid in snap_ent_map or
+                    (p_dang + p_def >= 2) or
+                    (n_act >= 4 and (p_max_k >= 1.35 or p_max_c >= 1.8))
+                ):
+                    raw_seg_pids.append(pid)
+
+            def _pid_rank_key(pid: int):
+                p_inf = s_data["persons_history"][pid]
+                p_dang = p_inf.get("danger_count", 0)
+                p_def = p_inf.get("defender_count", 0)
+                p_max_k = max(p_inf.get("kinetic_spikes", [0.0]))
+                p_max_c = max(p_inf.get("interaction_scores", [0.0]))
+                is_active_human = 1 if (p_dang > 0 or p_def >= 2 or p_max_k >= 0.85 or p_max_c >= 1.2 or len(p_inf.get("actions", [])) >= max(8, seg_frame_count // 5)) else 0
+                return (
+                    is_active_human,
+                    p_dang * 2 + p_def,
+                    round(p_max_k, 1),
+                    1 if pid in snap_ent_map else 0,
+                    len(p_inf.get("actions", []))
+                )
+
+            raw_seg_pids.sort(key=_pid_rank_key, reverse=True)
+            eligible_pids = raw_seg_pids[:seg_max_actors]
+
+            clash_frame_req = max(4, danger_frame_th // 3)
+            all_seg_dang_frames = sum(p_inf.get("danger_count", 0) for p_inf in s_data["persons_history"].values())
+            peak_seg_k_all = max((max(p_inf.get("kinetic_spikes", [0.0])) for p_inf in s_data["persons_history"].values()), default=0.0)
+            peak_seg_c_all = max((max(p_inf.get("interaction_scores", [0.0])) for p_inf in s_data["persons_history"].values()), default=0.0)
+            has_kinematic_clash_pair = (
+                (len(eligible_pids) >= 2 or actual_person_count >= 2) and
+                peak_seg_k_all >= 1.75 and
+                peak_seg_c_all >= 2.0 and
+                (
+                    any(
+                        s_data["persons_history"][pid].get("danger_count", 0) >= clash_frame_req and
+                        max(s_data["persons_history"][pid].get("kinetic_spikes", [0.0])) >= 1.75 and
+                        max(s_data["persons_history"][pid].get("interaction_scores", [0.0])) >= 2.0
+                        for pid in eligible_pids
+                    ) or
+                    all_seg_dang_frames >= (clash_frame_req + 2)
+                )
+            )
 
             top_aggressor_id = None
             top_partner_id = None
-            if is_seg_scuffle and len(eligible_pids) >= 2:
+            if (is_seg_scuffle or has_kinematic_clash_pair) and len(eligible_pids) >= 1:
                 top_aggressor_id = max(eligible_pids, key=lambda pid: (
                     s_data["persons_history"][pid].get("danger_count", 0),
                     max(s_data["persons_history"][pid].get("kinetic_spikes", [0.0])),
                     s_data["persons_history"][pid].get("max_threat", 0.0)
                 ))
-                # Tìm đối phương giao tranh trực tiếp với top_aggressor_id (nếu có va chạm cặp đôi)
                 agg_cp = s_data["persons_history"][top_aggressor_id].get("clash_partners", {})
-                valid_cp = {k: v for k, v in agg_cp.items() if k in s_data["persons_history"] and k != top_aggressor_id}
+                valid_cp = {k: v for k, v in agg_cp.items() if k in eligible_pids and k != top_aggressor_id}
                 if valid_cp:
                     top_partner_id = max(valid_cp.items(), key=lambda kv: kv[1])[0]
-                else:
+                elif len(eligible_pids) >= 2:
                     other_combatants = [
                         pid for pid in eligible_pids
                         if pid != top_aggressor_id and (
                             s_data["persons_history"][pid].get("danger_count", 0) >= warn_frame_th or
-                            s_data["persons_history"][pid].get("defender_count", 0) >= warn_frame_th or
-                            (max(s_data["persons_history"][pid].get("kinetic_spikes", [0.0])) >= 1.15 and
-                             max(s_data["persons_history"][pid].get("interaction_scores", [0.0])) >= 1.45)
+                            s_data["persons_history"][pid].get("defender_count", 0) >= max(3, warn_frame_th // 2) or
+                            (max(s_data["persons_history"][pid].get("kinetic_spikes", [0.0])) >= 0.85 and
+                             max(s_data["persons_history"][pid].get("interaction_scores", [0.0])) >= 1.25) or
+                            len(eligible_pids) == 2
                         )
                     ]
                     if other_combatants:
@@ -3373,14 +3815,27 @@ class VideoAnnotatorEngine:
                 if c_id not in s_data["persons_history"]:
                     continue
                 t_info = s_data["persons_history"][c_id]
-                if len(t_info["actions"]) < min_presence_frames and c_id not in snap_ent_map:
-                    continue
 
                 actions = t_info["actions"]
                 dom_action = max(set(actions), key=actions.count) if actions else "Vận động tự nhiên"
-                disp_id = clean_id_map.get(c_id, c_id)
                 snap_e = snap_ent_map.get(c_id)
                 snap_spatial = (snap_e.get("spatial_anchor") or snap_e.get("anchor") or "") if snap_e else ""
+                ent_cx = None
+                if snap_e and snap_e.get("bbox"):
+                    bx = snap_e["bbox"]
+                    ent_cx = (bx[0] + bx[2]) / 2.0
+                elif c_id in stabilizer.active_tracks:
+                    trk_c = stabilizer.active_tracks[c_id]
+                    ent_cx = float(trk_c.get("cx", orig_w / 2.0))
+                    ent_cy = float(trk_c.get("cy", orig_h / 2.0))
+                    if not snap_spatial:
+                        snap_spatial = stabilizer.compute_spatial_anchor(
+                            (int(ent_cx - 30), int(ent_cy - 60), int(ent_cx + 30), int(ent_cy + 60)),
+                            orig_w,
+                            orig_h,
+                        )
+                if not snap_spatial:
+                    snap_spatial = "Trung tâm"
 
                 k_spikes = t_info.get("kinetic_spikes", [0.0])
                 inter_scs = t_info.get("interaction_scores", [0.0])
@@ -3389,7 +3844,7 @@ class VideoAnnotatorEngine:
                 seg_kinetics.extend(k_spikes)
                 seg_interactions.extend(inter_scs)
 
-                # Xác định đối phương tương tác trực tiếp (nếu có)
+                # Xác định đối phương tương tác trực tiếp theo vị trí không gian (không dùng ID số)
                 cp_map = t_info.get("clash_partners", {})
                 best_partner_cid = None
                 if cp_map:
@@ -3401,69 +3856,82 @@ class VideoAnnotatorEngine:
                         best_partner_cid = top_partner_id
                     elif c_id == top_partner_id and top_aggressor_id is not None:
                         best_partner_cid = top_aggressor_id
-                partner_tag = f"ID #{clean_id_map.get(best_partner_cid, best_partner_cid):02d}" if best_partner_cid is not None else None
 
-                # Phân định vai trò chuẩn xác dựa trên số liệu 5 trụ cột bền vững & ma trận tương tác cặp đôi
-                strict_multi_seg = (len(segments_data) > 1 and not is_seg_scuffle and not has_seg_impacts)
-                req_danger_f = max(danger_frame_th, 14) if strict_multi_seg else danger_frame_th
+                partner_spatial = ""
+                if best_partner_cid is not None:
+                    p_snap = snap_ent_map.get(best_partner_cid)
+                    if p_snap:
+                        partner_spatial = p_snap.get("spatial_anchor") or p_snap.get("anchor") or ""
+
+                # Phân định vai trò chuẩn xác dựa trên 5 trụ cột động học & cặp tương tác cự ly gần
+                strict_multi_seg = (
+                    len(segments_data) > 1 and
+                    not is_seg_scuffle and
+                    not has_seg_impacts and
+                    not has_kinematic_clash_pair
+                )
+                req_danger_f = max(danger_frame_th, 14) if strict_multi_seg else clash_frame_req
                 req_k_spike = 2.15 if strict_multi_seg else 1.55
                 req_inter_sc = 2.60 if strict_multi_seg else 1.50
 
                 is_primary_combatant = (
                     (t_info["danger_count"] >= req_danger_f and max_ent_k >= req_k_spike and max_ent_c >= req_inter_sc) or
                     (top_aggressor_id is not None and c_id == top_aggressor_id) or
-                    (is_seg_scuffle and top_partner_id is not None and c_id == top_partner_id and t_info["danger_count"] >= warn_frame_th and max_ent_k >= 1.35)
+                    ((is_seg_scuffle or has_kinematic_clash_pair) and top_partner_id is not None and c_id == top_partner_id and t_info["danger_count"] >= warn_frame_th and max_ent_k >= 1.45)
                 )
 
                 if is_primary_combatant:
-                    if partner_tag:
-                        role = f"Gây hấn / Trực tiếp xung đột (với {partner_tag})"
+                    if "Té ngã" in dom_action:
+                        role = "Nạn nhân té ngã"
+                    elif top_partner_id is not None and c_id == top_partner_id and c_id != top_aggressor_id:
+                        role = "Đối kháng / Giằng co"
                     else:
-                        role = "Kẻ tấn công / Gây hấn"
+                        role = "Chủ động tấn công"
                     ent_severity = "danger"
                     seg_severity = "danger"
                 elif t_info["danger_count"] >= warn_frame_th and max_ent_k >= 0.90 and max_ent_c >= 1.20:
-                    role = f"Đối đầu căng thẳng (với {partner_tag})" if partner_tag else "Đối đầu / Căng thẳng"
+                    role = "Phòng vệ / Né đòn" if (top_aggressor_id is not None and c_id == top_partner_id) else "Đối đầu căng thẳng"
                     ent_severity = "warning"
                     if seg_severity == "safe":
                         seg_severity = "warning"
-                    if "Xung đột" in dom_action or "Vung tay" in dom_action or "Tấn công" in dom_action:
-                        dom_action = "Cử chỉ tay / Tiến lại gần đối diện"
-                elif (t_info.get("defender_count", 0) >= warn_frame_th and max_ent_k >= 0.85 and max_ent_c >= 1.25) or (top_partner_id is not None and c_id == top_partner_id):
-                    role = f"Phòng thủ / Bị áp sát (bởi {partner_tag})" if partner_tag else "Nạn nhân / Phòng thủ"
+                    if not (top_aggressor_id is not None and c_id == top_partner_id):
+                        if "Xung đột" in dom_action or "Vung tay" in dom_action or "Tấn công" in dom_action:
+                            dom_action = "Cử chỉ tay / Tiến lại gần đối diện"
+                elif (t_info.get("defender_count", 0) >= max(3, warn_frame_th // 2) and max_ent_k >= 0.85 and max_ent_c >= 1.25) or (top_partner_id is not None and c_id == top_partner_id):
+                    role = "Phòng vệ / Né đòn"
                     ent_severity = "warning"
                     if seg_severity == "safe":
                         seg_severity = "warning"
+                    if dom_action in ("Hoạt động tự nhiên", "Đang đứng tự nhiên", "Đang đứng / Hoạt động bình thường"):
+                        dom_action = "Phòng vệ / Chắn đỡ né đòn"
                 else:
-                    # Người ngoài cuộc / không tham gia gây xung đột
                     ent_severity = "safe"
-                    if is_seg_scuffle or seg_severity in ("danger", "warning") or top_aggressor_id is not None:
-                        role = "Người ngoài cuộc / Quan sát"
+                    if is_seg_scuffle or has_kinematic_clash_pair or seg_severity in ("danger", "warning") or top_aggressor_id is not None:
+                        role = "Người ngoài cuộc quan sát"
                     else:
-                        role = "An toàn"
-                    # Nếu ở trạng thái an toàn/ngoài cuộc, ưu tiên hành động quan sát thực tế, không gán nhãn xung đột
+                        role = "Hoạt động bình thường"
                     if snap_e and snap_e.get("action") and not any(w in snap_e["action"] for w in ["Xung đột", "Vung tay", "Tấn công", "Phòng vệ", "Chắn đỡ"]):
                         dom_action = snap_e["action"]
                     elif any(w in dom_action for w in ["Xung đột", "Vung tay", "Tấn công", "Phòng vệ", "Chắn đỡ"]):
                         dom_action = "Quan sát diễn biến tại chỗ"
 
-                ent_label = f"ID #{disp_id:02d}"
-
-                # Diễn đạt trạng thái tự nhiên
-                if ent_severity == "danger" and ("Vung tay" in dom_action or "Tấn công" in dom_action):
-                    posture_desc = f"Vung đòn tốc độ cao về phía {partner_tag}" if partner_tag else "Vung đòn tốc độ cao về phía đối phương"
-                elif "Cử chỉ tay" in dom_action or (ent_severity == "warning" and ("Vung tay" in dom_action or "Xung đột" in dom_action)):
-                    posture_desc = "Đứng đối diện / Cử chỉ tay căng thẳng"
-                elif ent_severity in ("warning", "danger") and ("Phòng vệ" in dom_action or "Chắn đỡ" in dom_action or c_id == top_partner_id):
-                    posture_desc = "Hai tay co thủ che chắn / Né đòn"
-                elif ent_severity == "danger" and "Xung đột" in dom_action:
-                    posture_desc = f"Áp sát giằng co trực tiếp với {partner_tag}" if partner_tag else "Áp sát giằng co cường độ cao"
+                # Diễn đạt tư thế & hành vi tự nhiên không chứa mã ID hay ngoặc đơn
+                if ent_severity == "danger" and ("Vung tay" in dom_action or "Tấn công" in dom_action or c_id == top_aggressor_id):
+                    posture_desc = "Vung đòn tốc độ cao ở cự ly gần về phía đối phương"
+                    if "Vung tay" not in dom_action and "Xung đột" not in dom_action and "Té ngã" not in dom_action:
+                        dom_action = "Vung tay ra đòn / Tấn công áp sát"
+                elif "Cử chỉ tay" in dom_action or (ent_severity == "warning" and role == "Đối đầu căng thẳng"):
+                    posture_desc = "Đứng đối diện với cử chỉ tay căng thẳng"
+                elif ent_severity in ("warning", "danger") and ("Phòng vệ" in dom_action or "Chắn đỡ" in dom_action or role == "Phòng vệ / Né đòn" or c_id == top_partner_id):
+                    posture_desc = "Co tay thủ thế che chắn và nghiêng người né đòn"
+                elif ent_severity == "danger" and ("Xung đột" in dom_action or role == "Đối kháng / Giằng co"):
+                    posture_desc = "Áp sát giằng co trực tiếp cường độ cao"
                 elif "Té ngã" in dom_action:
-                    posture_desc = "Sụp đổ trục thân / Nằm bất động"
-                elif ent_severity == "safe" and (is_seg_scuffle or seg_severity in ("danger", "warning") or top_aggressor_id is not None):
+                    posture_desc = "Sụp đổ trục thân nằm trên mặt đất"
+                elif ent_severity == "safe" and (is_seg_scuffle or has_kinematic_clash_pair or seg_severity in ("danger", "warning") or top_aggressor_id is not None):
                     if "Ngồi" in dom_action:
-                        dom_action = "Ngồi tại bàn ngoái nhìn quan sát"
-                        posture_desc = "Đang ngồi tại bàn, hướng mắt theo dõi"
+                        dom_action = "Ngồi yên quan sát diễn biến"
+                        posture_desc = "Đang ngồi ổn định, hướng mắt theo dõi"
                     elif "Đứng" in dom_action:
                         dom_action = "Đứng ngoài cuộc quan sát diễn biến"
                         posture_desc = "Đang đứng giữ khoảng cách quan sát"
@@ -3471,29 +3939,52 @@ class VideoAnnotatorEngine:
                         dom_action = "Quan sát diễn biến từ xa"
                         posture_desc = "Giữ khoảng cách, hướng mắt theo dõi sự việc"
                 elif dom_action == "Đứng thẳng / Đi lại di chuyển" or "Đang đứng" in dom_action:
-                    posture_desc = "Đang đứng / Di chuyển tự nhiên"
-                elif "Ngồi" in dom_action or dom_action == "Ngồi làm việc / Thao tác tay":
-                    posture_desc = "Đang ngồi tại bàn"
+                    posture_desc = "Đang đứng di chuyển tự nhiên"
+                elif "Ngồi" in dom_action:
+                    posture_desc = "Đang ngồi ổn định"
                 elif dom_action == "Khoanh tay trước ngực":
                     posture_desc = "Hai tay khoanh quan sát"
                 elif dom_action == "Chống cằm / Đỡ má suy nghĩ":
-                    posture_desc = "Đang ngồi bàn tay nâng đỡ cằm"
+                    posture_desc = "Tư thế ngồi tập trung"
                 else:
                     posture_desc = "Tư thế ổn định"
 
                 seg_entities.append({
-                    "id": ent_label,
-                    "raw_id": f"ID #{disp_id:02d}",
+                    "id": role,
+                    "raw_id": snap_spatial,
                     "canonical_id": c_id,
                     "role": role,
                     "action": dom_action,
                     "posture": posture_desc,
                     "severity": ent_severity,
-                    "clash_partner": partner_tag,
+                    "clash_partner": partner_spatial or None,
                     "max_k": round(max_ent_k, 2),
-                    "distinctive_anchor": f"Vị trí trên ảnh: {snap_spatial}" if snap_spatial else "",
-                    "snapshot_spatial": snap_spatial
+                    "distinctive_anchor": snap_spatial,
+                    "snapshot_spatial": snap_spatial,
+                    "_cx": ent_cx
                 })
+
+            # Phân giải mỏ neo vị trí tương đối Trái / Phải khi có đúng 2 chủ thể đứng sát nhau ở trung tâm
+            if len(seg_entities) == 2 and seg_entities[0].get("distinctive_anchor") == seg_entities[1].get("distinctive_anchor"):
+                cx0 = seg_entities[0].get("_cx")
+                cx1 = seg_entities[1].get("_cx")
+                if cx0 is not None and cx1 is not None and abs(cx0 - cx1) >= 6.0:
+                    if cx0 <= cx1:
+                        seg_entities[0]["distinctive_anchor"] = "Bên trái"
+                        seg_entities[0]["snapshot_spatial"] = "Bên trái"
+                        seg_entities[0]["raw_id"] = "Bên trái"
+                        seg_entities[1]["distinctive_anchor"] = "Bên phải"
+                        seg_entities[1]["snapshot_spatial"] = "Bên phải"
+                        seg_entities[1]["raw_id"] = "Bên phải"
+                    else:
+                        seg_entities[0]["distinctive_anchor"] = "Bên phải"
+                        seg_entities[0]["snapshot_spatial"] = "Bên phải"
+                        seg_entities[0]["raw_id"] = "Bên phải"
+                        seg_entities[1]["distinctive_anchor"] = "Bên trái"
+                        seg_entities[1]["snapshot_spatial"] = "Bên trái"
+                        seg_entities[1]["raw_id"] = "Bên trái"
+            for _se in seg_entities:
+                _se.pop("_cx", None)
 
             if not seg_entities:
                 seg_entities.append({
@@ -3503,7 +3994,8 @@ class VideoAnnotatorEngine:
                     "role": "Không gian",
                     "action": "Khu vực ổn định / Vận động bình thường",
                     "posture": "Tự nhiên",
-                    "severity": "safe"
+                    "severity": "safe",
+                    "distinctive_anchor": ""
                 })
 
             t_start_str = format_time(s_data["start_sec"] - start_time)
@@ -3530,30 +4022,41 @@ class VideoAnnotatorEngine:
             else:
                 max_c = sorted_c[0]
 
+            if has_kinematic_clash_pair:
+                max_k = max(max_k, min(4.2, peak_seg_k_all * 0.88))
+                max_c = max(max_c, min(5.0, peak_seg_c_all * 0.85))
+
             score_kinetic = min(10.0, max_k * 2.8)
             score_proximity = min(10.0, max_c * 2.2)
             score_posture = 8.5 if seg_severity == "danger" else (4.8 if seg_severity == "warning" else 0.5)
 
-            # Tính điểm nguy cơ đa biến biến thiên thực tế theo mức độ va chạm bền vững
+            # Tính điểm nguy cơ đa biến biến thiên thực tế theo mức độ va chạm & xung lực ra đòn cự ly gần
             calculated_score = min(10.0, 0.40 * score_kinetic + 0.35 * score_proximity + 0.25 * score_posture)
 
-            # Đồng bộ chuẩn hóa 3 mốc (An toàn: 0.4-3.5, Cảnh báo: 4.5-7.5, Nguy hiểm: 8.0-9.6)
+            # Đồng bộ chuẩn hóa 3 mốc: An toàn 0.4-3.5 | Cảnh báo 4.5-7.5 | Nguy hiểm 8.0-9.6 (kể cả cú đấm/đá áp sát bị né)
             if s_data.get("optical_scuffle_detected"):
                 seg_severity = "danger"
                 final_threat_score = round(min(9.6, max(calculated_score, 8.6)), 1)
             elif seg_severity == "danger":
-                if calculated_score >= 7.6 and (max_k >= 2.15 and max_c >= 2.6 or has_seg_impacts or len(segments_data) == 1):
-                    final_threat_score = round(min(9.6, max(8.0, calculated_score)), 1)
+                if (
+                    (calculated_score >= 7.2 and max_k >= 1.85 and max_c >= 2.1) or
+                    (has_kinematic_clash_pair and max_k >= 1.95 and max_c >= 2.0) or
+                    has_seg_impacts or
+                    len(segments_data) == 1
+                ):
+                    strike_bonus = min(1.0, max(0.0, (max_k - 2.0) * 0.25))
+                    final_threat_score = round(min(9.6, max(8.0, calculated_score + strike_bonus)), 1)
                 else:
                     seg_severity = "warning"
                     final_threat_score = round(min(6.4, max(4.8, calculated_score * 0.78)), 1)
                     for ent in seg_entities:
                         if ent.get("severity") == "danger":
                             ent["severity"] = "warning"
-                            ent["role"] = "Đối đầu / Căng thẳng"
+                            ent["role"] = "Đối đầu căng thẳng"
+                            ent["id"] = "Đối đầu căng thẳng"
                             if "Xung đột" in ent.get("action", "") or "Vung tay" in ent.get("action", ""):
                                 ent["action"] = "Cử chỉ tay / Tiến lại gần đối diện"
-                                ent["posture"] = "Đứng đối diện / Cử chỉ tay căng thẳng"
+                                ent["posture"] = "Đứng đối diện với cử chỉ tay căng thẳng"
             elif seg_severity == "warning" or (calculated_score >= 4.5 and (max_k >= 1.35 or max_c >= 1.8)):
                 seg_severity = "warning"
                 final_threat_score = round(min(6.8, max(4.5, calculated_score * 0.82)), 1)
@@ -3561,12 +4064,13 @@ class VideoAnnotatorEngine:
                 seg_severity = "safe"
                 final_threat_score = round(min(2.6, max(0.4, 0.25 * score_kinetic + 0.15 * score_proximity + 0.3)), 1)
 
-            # Đảm bảo trong phân đoạn có biến cố (danger/warning), các cá nhân an toàn được gắn nhãn rõ là "Người ngoài cuộc / Quan sát"
+            # Đảm bảo trong phân đoạn có biến cố, các cá nhân an toàn được gắn nhãn rõ là "Người ngoài cuộc quan sát"
             if seg_severity in ("danger", "warning"):
                 for ent in seg_entities:
-                    if ent.get("severity") == "safe" and ent.get("role") == "An toàn":
-                        ent["role"] = "Người ngoài cuộc / Quan sát"
-                        if ent.get("action") in ("Vận động tự nhiên", "Đứng thẳng / Đi lại di chuyển"):
+                    if ent.get("severity") == "safe" and ent.get("role") in ("An toàn", "Hoạt động bình thường"):
+                        ent["role"] = "Người ngoài cuộc quan sát"
+                        ent["id"] = "Người ngoài cuộc quan sát"
+                        if ent.get("action") in ("Vận động tự nhiên", "Hoạt động tự nhiên", "Đứng thẳng / Đi lại di chuyển"):
                             ent["action"] = "Quan sát diễn biến từ xa"
                         if ent.get("posture") in ("Vận động tự nhiên", "Tư thế ổn định"):
                             ent["posture"] = "Giữ khoảng cách, hướng mắt theo dõi sự việc"
@@ -3580,9 +4084,9 @@ class VideoAnnotatorEngine:
             elif seg_severity == "warning":
                 posture_display = "Áp sát thủ thế"
             elif init_seat_cnt > 0 and init_stand_cnt > 0:
-                posture_display = "Ngồi tại bàn & Đứng quan sát"
+                posture_display = "Ngồi ổn định & Đứng quan sát"
             elif init_seat_cnt > 0:
-                posture_display = "Ngồi tại bàn ổn định"
+                posture_display = "Ngồi ổn định"
             else:
                 posture_display = "Đứng thẳng / Ổn định"
 
@@ -3600,37 +4104,61 @@ class VideoAnnotatorEngine:
                 "calculated_score": final_threat_score
             }
 
-            # Tổng hợp câu văn mô tả tự nhiên như con người quan sát ngoài đời thực
+            # Tổng hợp câu văn mô tả tự nhiên dựa trên vị trí không gian & vai trò hành vi, không dùng ID số hay ngoặc đơn
+            def _ent_phrase(e_obj: Dict[str, Any], cap: bool = False) -> str:
+                anc_txt = str(e_obj.get("distinctive_anchor") or "").strip().lower()
+                if "trái" in anc_txt:
+                    base = "người ở phía bên trái"
+                elif "phải" in anc_txt:
+                    base = "người ở phía bên phải"
+                elif "trước" in anc_txt:
+                    base = "người ở phía trước"
+                elif "sau" in anc_txt:
+                    base = "người ở phía sau"
+                elif anc_txt:
+                    base = f"người ở khu vực {anc_txt}"
+                else:
+                    base = "chủ thể trong khung hình"
+                return base[:1].upper() + base[1:] if cap else base
+
             attackers = [e for e in seg_entities if e.get("severity") == "danger"]
             defenders = [e for e in seg_entities if e.get("severity") == "warning"]
             observers = [e for e in seg_entities if e.get("severity") == "safe" and e.get("id") != "KHÔNG GIAN"]
             actor_detail_clauses = [
-                f"{e['id']} ({e.get('role', 'An toàn')}): {e.get('action', 'Vận động tự nhiên').lower()} với tư thế {e.get('posture', 'ổn định').lower()}"
+                f"{_ent_phrase(e, cap=True)} — {e.get('role', 'Hoạt động bình thường')}: {e.get('action', 'Vận động tự nhiên').lower()}, {e.get('posture', 'tư thế ổn định').lower()}"
                 for e in seg_entities if e.get("id") != "KHÔNG GIAN"
             ]
             actor_detail_sentence = (
-                f"Trạng thái từng cá nhân trong khung hình ({time_range}): " + "; ".join(actor_detail_clauses) + "."
+                f"Chi tiết trạng thái trong khoảng {time_range}: " + "; ".join(actor_detail_clauses) + "."
                 if actor_detail_clauses else ""
             )
 
             if seg_severity == "danger":
                 if attackers and defenders:
-                    atk_id = attackers[0]["id"]
-                    def_id = defenders[0]["id"]
-                    scene_summary = f"Xảy ra xô xát: {atk_id} tiến sát và vung tay đánh mạnh về phía {def_id}, khiến {def_id} phải giơ hai tay lên che chắn và nghiêng người né tránh."
+                    atk_p = _ent_phrase(attackers[0], cap=False)
+                    def_p = _ent_phrase(defenders[0], cap=False)
+                    scene_summary = f"Ghi nhận hành vi tấn công cự ly gần: {atk_p} áp sát và vung đòn tốc độ cao về phía {def_p}, buộc đối phương phải co tay che chắn và nghiêng người né đòn."
                     if observers:
-                        obs_str = ", ".join([o["id"] for o in observers[:2]])
-                        scene_summary += f" Trong khi đó, {obs_str} đứng ở gần đó quan sát sự việc."
+                        obs_str = ", ".join([_ent_phrase(o) for o in observers[:2]])
+                        scene_summary += f" Trong khi đó, {obs_str} giữ khoảng cách quan sát sự việc."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, {atk_id} chủ động bước nhanh tới áp sát và vung tay tấn công trực diện vào {def_id}. "
-                        f"Trước động tác bất ngờ này, {def_id} phản ứng giơ hai tay lên che chắn vùng đầu ngực và nghiêng người lùi bước để tự vệ. "
+                        f"Trong khoảng thời gian {time_range}, {atk_p} chủ động tiến sát và tung đòn vung tay tốc độ cao hướng thẳng vào {def_p}. "
+                        f"Trước pha ra đòn cự ly gần này, {def_p} phản xạ nâng tay che chắn và lách người lùi bước để tránh đòn. "
+                        f"{actor_detail_sentence}"
+                    ).strip()
+                elif len(attackers) >= 2:
+                    atk_a = _ent_phrase(attackers[0], cap=False)
+                    atk_b = _ent_phrase(attackers[1], cap=False)
+                    scene_summary = f"Xảy ra xô xát trực diện: {atk_a} và {atk_b} áp sát ở cự ly gần, liên tục vung đòn và giằng co quyết liệt."
+                    context_description = (
+                        f"Trong khoảng thời gian {time_range}, {atk_a} và {atk_b} lao vào áp sát, thực hiện các pha ra đòn và vật lộn cường độ cao. "
                         f"{actor_detail_sentence}"
                     ).strip()
                 elif attackers:
-                    atk_id = attackers[0]["id"]
-                    scene_summary = f"Ghi nhận hành vi xô xát: {atk_id} lao nhanh về phía trước và vung tay mạnh tạo ra va chạm trực tiếp."
+                    atk_p = _ent_phrase(attackers[0], cap=False)
+                    scene_summary = f"Ghi nhận hành vi xô xát: {atk_p} lao nhanh về phía trước và vung tay ra đòn mạnh ở cự ly gần."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, {atk_id} bất ngờ lao nhanh tới phía trước với động tác vung tay mạnh ở khoảng cách rất gần. "
+                        f"Trong khoảng thời gian {time_range}, {atk_p} bất ngờ lao nhanh tới phía trước với động tác vung đòn tốc độ cao ở khoảng cách rất gần. "
                         f"{actor_detail_sentence}"
                     ).strip()
                 else:
@@ -3641,33 +4169,34 @@ class VideoAnnotatorEngine:
                     ).strip()
             elif seg_severity == "warning":
                 if defenders:
-                    def_id = defenders[0]["id"]
-                    scene_summary = f"Tình huống căng thẳng: {def_id} đưa hai tay lên trước ngực ở tư thế phòng thủ và nghiêng người giữ khoảng cách với người đối diện."
+                    def_p = _ent_phrase(defenders[0], cap=False)
+                    scene_summary = f"Tình huống đối đầu căng thẳng: {def_p} nâng hai tay thủ thế trước ngực và nghiêng người giữ khoảng cách với người đối diện."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, {def_id} nâng hai tay lên trước ngực ở tư thế cảnh giác và hơi nghiêng người lùi lại để giữ khoảng cách an toàn. "
+                        f"Trong khoảng thời gian {time_range}, {def_p} đưa tay lên ở tư thế cảnh giác và lùi bước để giữ khoảng cách phòng vệ. "
                         f"{actor_detail_sentence} "
-                        f"Hai bên có biểu hiện căng thẳng nhưng chưa xảy ra đòn đánh trực tiếp."
+                        f"Hai bên có biểu hiện đối đầu căng thẳng, cần giám sát chặt chẽ."
                     ).strip()
                 else:
-                    scene_summary = "Hai bên tiến lại gần đứng đối diện nhau với cử chỉ căng thẳng, có dấu hiệu tranh cãi nhưng chưa xảy ra va chạm tay chân."
+                    scene_summary = "Hai bên tiến lại gần đứng đối diện nhau với cử chỉ căng thẳng, có dấu hiệu tranh chấp nhưng chưa tung đòn đánh."
                     context_description = (
                         f"Trong khoảng thời gian {time_range}, các cá nhân bước lại gần và đứng đối diện nhau với cử chỉ trao đổi căng thẳng. "
                         f"{actor_detail_sentence} "
-                        f"Sự việc mới dừng ở mức lời qua tiếng lại và đối mặt gần, chưa xảy ra xô xát."
+                        f"Sự việc đang ở giai đoạn đối mặt cự ly gần, chưa ghi nhận pha vung đòn tấn công."
                     ).strip()
             else:
                 if len(observers) > 1:
-                    scene_summary = f"Mọi người trong khu vực ({len(observers)} người) đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái."
+                    scene_summary = f"Các cá nhân trong khu vực gồm {len(observers)} người đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách an toàn."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, cả {len(observers)} người trong khung hình đang ngồi làm việc hoặc đứng trò chuyện, đi lại tự nhiên và ôn hòa. "
+                        f"Trong khoảng thời gian {time_range}, cả {len(observers)} người trong khung hình duy trì hoạt động trao đổi và di chuyển tự nhiên, ôn hòa. "
                         f"{actor_detail_sentence} "
-                        f"Không có biểu hiện tranh cãi, tiến sát gây hấn hay va chạm."
+                        f"Không ghi nhận biểu hiện tranh chấp, áp sát gây hấn hay va chạm."
                     ).strip()
                 elif len(seg_entities) == 1 and seg_entities[0].get("id") != "KHÔNG GIAN":
-                    scene_summary = f"{seg_entities[0]['id']} đang {seg_entities[0]['action'].lower()} một cách tự nhiên và ổn định."
+                    subj_p = _ent_phrase(seg_entities[0], cap=True)
+                    scene_summary = f"{subj_p} đang {seg_entities[0]['action'].lower()} một cách tự nhiên và ổn định."
                     context_description = (
-                        f"Trong khoảng thời gian {time_range}, {seg_entities[0]['id']} đang {seg_entities[0]['action'].lower()} với tư thế {seg_entities[0].get('posture', 'ổn định').lower()}. "
-                        f"Không gian xung quanh hoàn toàn bình thường và yên tĩnh."
+                        f"Trong khoảng thời gian {time_range}, {subj_p.lower()} đang {seg_entities[0]['action'].lower()} với {seg_entities[0].get('posture', 'tư thế ổn định').lower()}. "
+                        f"Không gian xung quanh hoàn toàn bình thường và trật tự."
                     ).strip()
                 else:
                     scene_summary = "Không gian yên tĩnh, mọi người giữ vị trí ổn định và sinh hoạt bình thường."
@@ -3842,17 +4371,20 @@ class VideoAnnotatorEngine:
                 tb_s = s.get("telemetry_breakdown", {})
                 snap_actors = []
                 for ent_s in s.get("entities", []):
-                    cp_hint = f", Tương tác gần: {ent_s['clash_partner']}" if ent_s.get("clash_partner") else ""
+                    if ent_s.get("id") == "KHÔNG GIAN":
+                        continue
+                    cp_hint = f", Đối diện gần: {ent_s['clash_partner']}" if ent_s.get("clash_partner") else ""
                     k_hint = f", Động năng K={ent_s.get('max_k', 0.0)}" if ent_s.get("max_k") is not None else ""
+                    anc_s = ent_s.get("distinctive_anchor") or "Trung tâm"
                     snap_actors.append(
-                        f"{ent_s.get('id', 'ID')} [{ent_s.get('distinctive_anchor', 'Trung tâm')}{cp_hint}{k_hint}]"
+                        f"{ent_s.get('role', 'Chủ thể')} [Vị trí: {anc_s}{cp_hint}{k_hint}]"
                     )
                 segment_info_list.append({
                     "segment_id": s["segment_id"],
                     "time_range": s["time_range"],
                     "snapshot_ts": s.get("snapshot_ts", 0.0),
-                    "entity_count": len(s.get("entities", [])),
-                    "snapshot_actors": "; ".join(snap_actors),
+                    "entity_count": len([e for e in s.get("entities", []) if e.get("id") != "KHÔNG GIAN"]),
+                    "snapshot_actors": "; ".join(snap_actors) if snap_actors else "Không gian trống",
                     "local_score": s.get("danger_score", 0.0),
                     "local_severity": s.get("severity", "safe"),
                     "local_summary": s.get("scene_summary", ""),
@@ -3862,20 +4394,27 @@ class VideoAnnotatorEngine:
                 })
 
             actor_hints = []
-            for cid in dominant_c_ids:
+            for idx_h, cid in enumerate(dominant_c_ids):
                 trk = stabilizer.active_tracks.get(cid, {})
                 cx = trk.get("cx", orig_w / 2.0)
                 nx = cx / float(max(1, orig_w))
                 h_list = trk.get("heights", [100])
                 avg_h = sum(h_list) / max(1, len(h_list))
-                pos_desc = "bên trái khung hình" if nx < 0.38 else ("bên phải khung hình" if nx > 0.62 else "khu vực giữa/trung tâm")
+                pos_desc = "Bên trái" if nx < 0.38 else ("Bên phải" if nx > 0.62 else "Trung tâm")
                 actor_hints.append({
-                    "cid": cid,
-                    "id_str": f"ID #{cid:02d}",
+                    "slot_index": idx_h + 1,
                     "nx": nx,
                     "avg_h": avg_h,
-                    "position": pos_desc
+                    "position": pos_desc,
+                    "role_hint": stabilizer.get_role(cid)
                 })
+            if len(actor_hints) == 2 and actor_hints[0]["position"] == actor_hints[1]["position"]:
+                if actor_hints[0]["nx"] <= actor_hints[1]["nx"]:
+                    actor_hints[0]["position"] = "Bên trái"
+                    actor_hints[1]["position"] = "Bên phải"
+                else:
+                    actor_hints[0]["position"] = "Bên phải"
+                    actor_hints[1]["position"] = "Bên trái"
 
             max_h = max([a["avg_h"] for a in actor_hints]) if actor_hints else 100
             for a in actor_hints:
@@ -3887,7 +4426,7 @@ class VideoAnnotatorEngine:
 
             if progress_callback:
                 try:
-                    progress_callback(processed_count, target_total_frames, 30.0, "Đang hội chẩn báo cáo qua Gemini Multimodal AI...")
+                    progress_callback(processed_count, target_total_frames, 30.0, "Đang phân tích ngữ cảnh qua Gemini Multimodal AI...")
                 except TypeError:
                     progress_callback(processed_count, target_total_frames, 30.0)
 
@@ -3905,129 +4444,91 @@ class VideoAnnotatorEngine:
                 except TypeError:
                     progress_callback(processed_count, target_total_frames, 30.0)
 
-            # Áp dụng Gemini Visual Grounding (danh tính và vai trò thực tế của các đối tượng)
-            detected_actors = gemini_result.get("detected_actors", [])
+            def _strip_id_and_parens(txt: Any) -> str:
+                if not txt:
+                    return ""
+                s_val = str(txt)
+                s_val = re.sub(r'\[?\bID\s*#?\s*\d+\b\]?', '', s_val, flags=re.IGNORECASE)
+                s_val = re.sub(r'\b(?:Đối tượng|Chủ thể|Người tham gia)\s*#?\s*\d+\b', '', s_val, flags=re.IGNORECASE)
+                s_val = re.sub(r'Vị trí trên ảnh\s*:\s*', '', s_val, flags=re.IGNORECASE)
+                s_val = re.sub(r'\([^)]*\)', '', s_val)
+                s_val = re.sub(r'\s{2,}', ' ', s_val).strip(' ·-—:,;/[]')
+                return s_val
+
+            def _norm_spatial_key(txt: Any) -> str:
+                low = str(txt or "").lower()
+                if "trái" in low or "left" in low:
+                    return "left"
+                if "phải" in low or "right" in low:
+                    return "right"
+                if "trước" in low or "front" in low or "gần" in low:
+                    return "front"
+                if "sau" in low or "back" in low or "xa" in low:
+                    return "back"
+                if "giữa" in low or "trung tâm" in low or "center" in low:
+                    return "center"
+                return ""
+
+            # Áp dụng Gemini Visual Grounding (vai trò hành vi & vị trí không gian thực tế, tuyệt đối không bịa thêm chủ thể thứ 3, thứ 4)
+            detected_actors = [a for a in (gemini_result.get("detected_actors") or []) if isinstance(a, dict)]
+            max_actors_allowed = 4 if is_crowd_scene else (min(4, actual_person_count) if actual_person_count > 0 else 4)
             if detected_actors:
-                stabilizer.apply_gemini_actors(detected_actors)
+                capped_actors = detected_actors[:max_actors_allowed]
+                stabilizer.apply_gemini_actors(capped_actors)
                 all_detected_entities = []
                 synced_gemini_actors = []
-                for cid in dominant_c_ids:
-                    lbl = stabilizer.get_actor_label(cid)
-                    anc = stabilizer.sanitize_anchor(stabilizer.get_distinctive_anchor(cid))
-                    disp_id = clean_id_map[cid]
-                    clean_lbl = re.sub(r'\(.*?\)', '', lbl).strip() if lbl else ""
-                    is_generic_label = not clean_lbl or clean_lbl.startswith("Đối tượng #") or clean_lbl.startswith("Chủ thể #")
-                    if is_generic_label:
-                        clean_name = f"ID #{disp_id:02d}"
-                    else:
-                        clean_name = f"{clean_lbl} (ID #{disp_id:02d})"
-                    if anc:
-                        all_detected_entities.append(f"{clean_name} [{anc}]")
-                    else:
-                        all_detected_entities.append(clean_name)
+                for idx_a, ga_act in enumerate(capped_actors):
+                    hint_pos = actor_hints[idx_a]["position"] if idx_a < len(actor_hints) else ""
+                    raw_lbl = _strip_id_and_parens(ga_act.get("actor_label", ""))
+                    raw_role = _strip_id_and_parens(ga_act.get("role", ""))
+                    raw_anc = _strip_id_and_parens(
+                        stabilizer.sanitize_anchor(
+                            ga_act.get("distinctive_anchor") or ga_act.get("spatial_anchor") or ""
+                        )
+                    ) or hint_pos
+                    raw_act = _strip_id_and_parens(ga_act.get("true_action", "")) or "Hoạt động bình thường"
+                    raw_post = _strip_id_and_parens(ga_act.get("posture_desc", "")) or "Tư thế tự nhiên"
 
-                    role = stabilizer.get_role(cid)
-                    act = stabilizer.get_custom_action(cid) or "Hoạt động bình thường"
-                    posture = stabilizer.get_custom_posture(cid) or "Tư thế tự nhiên"
+                    role_display = raw_role or raw_lbl or (actor_hints[idx_a]["role_hint"] if idx_a < len(actor_hints) else "Hoạt động bình thường")
+                    label_display = raw_lbl if (raw_lbl and raw_lbl.lower() != role_display.lower()) else role_display
+                    all_detected_entities.append(f"{label_display} · {raw_anc}" if raw_anc else label_display)
                     synced_gemini_actors.append({
-                        "actor_index": disp_id,
-                        "canonical_id": cid,
-                        "actor_label": clean_lbl or f"Đối tượng #{disp_id:02d}",
-                        "distinctive_anchor": anc,
-                        "role": role,
-                        "true_action": act,
-                        "posture_desc": posture
+                        "actor_index": idx_a + 1,
+                        "actor_label": label_display,
+                        "distinctive_anchor": raw_anc,
+                        "role": role_display,
+                        "true_action": raw_act,
+                        "posture_desc": raw_post
                     })
+
+                if len(synced_gemini_actors) == 2 and synced_gemini_actors[0]["distinctive_anchor"] == synced_gemini_actors[1]["distinctive_anchor"]:
+                    synced_gemini_actors[0]["distinctive_anchor"] = "Bên trái"
+                    synced_gemini_actors[1]["distinctive_anchor"] = "Bên phải"
+                    all_detected_entities = [
+                        f"{a['actor_label']} · {a['distinctive_anchor']}" for a in synced_gemini_actors
+                    ]
                 gemini_result["detected_actors"] = synced_gemini_actors
 
-                # Cập nhật danh tính và hành động tự nhiên trong từng phân đoạn
-                for seg in timeline_segments:
-                    for ent in seg.get("entities", []):
-                        c_id = ent.get("canonical_id")
-                        if c_id and c_id in clean_id_map:
-                            disp_id = clean_id_map[c_id]
-                            lbl = stabilizer.get_actor_label(c_id)
-                            anc = stabilizer.get_distinctive_anchor(c_id)
-                            sanitized_anc = stabilizer.sanitize_anchor(anc)
-                            rle = stabilizer.get_role(c_id)
-
-                            # Giữ nguyên vị trí không gian thực tế trên ảnh chụp của phân đoạn (snapshot_spatial)
-                            local_snap_anc = ent.get("distinctive_anchor")
-                            if len(timeline_segments) > 1 or is_crowd_scene:
-                                if local_snap_anc:
-                                    ent["distinctive_anchor"] = local_snap_anc
-                                elif sanitized_anc:
-                                    ent["distinctive_anchor"] = sanitized_anc
-                            else:
-                                ent["distinctive_anchor"] = sanitized_anc or local_snap_anc
-
-                            # 1. Clean ent["id"]: trên video nhiều phân đoạn hoặc đông người, luôn dùng ID #0X rõ ràng để khớp 1-1 với nhãn trên ảnh chụp
-                            clean_lbl = re.sub(r'\(.*?\)', '', lbl).strip() if lbl else ""
-                            is_generic_label = not clean_lbl or clean_lbl.startswith("Đối tượng #") or clean_lbl.startswith("Chủ thể #")
-                            if is_generic_label or len(timeline_segments) > 1 or is_crowd_scene:
-                                ent["id"] = f"ID #{disp_id:02d}"
-                            else:
-                                ent["id"] = f"{clean_lbl} (ID #{disp_id:02d})"
-                            ent["actor_label"] = clean_lbl or lbl
-
-                            # 2. Clean ent["role"]: Trên video nhiều phân đoạn, bảo toàn vai trò động học cặp đôi cục bộ (ví dụ "Trực tiếp xung đột (với ID #02)" hoặc "Người ngoài cuộc / Quan sát")
-                            existing_local_role = ent.get("role", "")
-                            has_specific_local_role = (
-                                len(timeline_segments) > 1 and
-                                existing_local_role and
-                                ("với ID #" in existing_local_role or "bởi ID #" in existing_local_role or "Người ngoài cuộc" in existing_local_role)
-                            )
-                            if not has_specific_local_role:
-                                valid_role = None
-                                if rle and not rle.startswith("Đối tượng #") and not rle.startswith("Chủ thể #") and rle != lbl:
-                                    r_low = rle.lower()
-                                    if any(kw in r_low for kw in stabilizer.FORBIDDEN_UNIFORM_KEYWORDS):
-                                        valid_role = None
-                                    elif "tấn công" in r_low or "gây hấn" in r_low:
-                                        if seg.get("severity") == "danger" and ent.get("severity") == "danger":
-                                            valid_role = "Kẻ tấn công / Gây hấn"
-                                    elif "nạn nhân" in r_low or "phòng thủ" in r_low or "bị xô" in r_low:
-                                        if seg.get("severity") in ("danger", "warning") and ent.get("severity") in ("warning", "danger"):
-                                            valid_role = "Nạn nhân / Phòng thủ"
-                                    elif "can ngăn" in r_low or "hòa giải" in r_low:
-                                        valid_role = "Người can ngăn"
-                                    elif "quan sát" in r_low:
-                                        valid_role = "Người ngoài cuộc / Quan sát" if seg.get("severity") in ("danger", "warning") else "Người quan sát"
-                                    else:
-                                        cleaned_r = re.sub(r'/(?:người\s*)?ngoài\s*cuộc', '', rle, flags=re.IGNORECASE).strip()
-                                        valid_role = cleaned_r or "An toàn"
-
-                                if valid_role:
-                                    ent["role"] = valid_role
-                                else:
-                                    if "role" not in ent or not ent["role"] or ent["role"].startswith("Đối tượng #") or ent["role"].startswith("Chủ thể #"):
-                                        ent["role"] = "An toàn" if seg.get("severity") == "safe" else ("Người ngoài cuộc / Quan sát" if ent.get("severity") == "safe" else "Người quan sát")
-
-                            # 3. Preserve segment-local kinematic action and posture when multi-segment, avoiding global static overwrites
-                            if len(timeline_segments) == 1:
-                                custom_action = stabilizer.get_custom_action(c_id)
+                # Chỉ đồng bộ hành động tĩnh trên video ngắn 1 phân đoạn duy nhất
+                if len(timeline_segments) == 1:
+                    for seg in timeline_segments:
+                        for ent in seg.get("entities", []):
+                            c_id = ent.get("canonical_id")
+                            if c_id and c_id in clean_id_map:
+                                custom_action = _strip_id_and_parens(stabilizer.get_custom_action(c_id))
                                 if custom_action:
                                     act_low = custom_action.lower()
-                                    is_aggressive_action = any(w in act_low for w in ["tấn công", "xô", "đánh", "giằng co", "va chạm", "vung tay", "clash", "fight", "strike"])
-                                    if is_aggressive_action:
-                                        if seg.get("severity") == "danger" or ent.get("severity") == "danger":
-                                            ent["action"] = custom_action
-                                    else:
-                                        if seg.get("severity") == "safe" or ent.get("severity") == "safe":
-                                            ent["action"] = custom_action
-
-                                custom_posture = stabilizer.get_custom_posture(c_id)
+                                    is_agg = any(w in act_low for w in ["tấn công", "xô", "đánh", "giằng co", "va chạm", "vung", "đấm", "đá"])
+                                    if (is_agg and (seg.get("severity") == "danger" or ent.get("severity") == "danger")) or (not is_agg and seg.get("severity") == "safe"):
+                                        ent["action"] = custom_action
+                                custom_posture = _strip_id_and_parens(stabilizer.get_custom_posture(c_id))
                                 if custom_posture:
                                     post_low = custom_posture.lower()
-                                    is_aggressive_posture = any(w in post_low for w in ["tấn công", "áp sát", "giằng co", "né đòn", "chắn đỡ", "sụp đổ"])
-                                    if is_aggressive_posture:
-                                        if seg.get("severity") in ("danger", "warning") or ent.get("severity") in ("danger", "warning"):
-                                            ent["posture"] = custom_posture
-                                    else:
-                                        if seg.get("severity") == "safe" or ent.get("severity") == "safe":
-                                            ent["posture"] = custom_posture
+                                    is_agg_p = any(w in post_low for w in ["tấn công", "áp sát", "giằng co", "né đòn", "chắn đỡ", "sụp đổ"])
+                                    if (is_agg_p and seg.get("severity") in ("danger", "warning")) or (not is_agg_p and seg.get("severity") == "safe"):
+                                        ent["posture"] = custom_posture
 
-            # Ghép phân tích chi tiết cấp Vĩ Mô (Macro Narrative), Nhận diện Vũ khí & Hiệu chỉnh Từng Cá Nhân (segment_actors) của Gemini vào từng phân đoạn timeline
+            # Ghép phân tích chi tiết cấp Vĩ Mô (Macro Narrative), Nhận diện Vũ khí & Hiệu chỉnh Từng Chủ Thể (segment_actors) theo vị trí không gian
             gemini_analyses_raw = [a for a in gemini_result.get("segment_analyses", []) if isinstance(a, dict)]
             gemini_analyses = {}
             for a in gemini_analyses_raw:
@@ -4045,9 +4546,6 @@ class VideoAnnotatorEngine:
                 orig_s_data = segments_data[seg_idx_t] if seg_idx_t < len(segments_data) else {}
                 local_orig_sev = seg.get("severity", "safe")
                 local_orig_score = float(seg.get("danger_score", 0.0))
-                local_orig_summary = seg.get("scene_summary", "")
-                local_orig_context = seg.get("context_description", "")
-                local_orig_pred = seg.get("prediction_next_4s", "")
 
                 ga = None
                 if s_id in gemini_analyses:
@@ -4055,7 +4553,7 @@ class VideoAnnotatorEngine:
                 elif len(gemini_analyses_raw) == len(timeline_segments) and seg_idx_t < len(gemini_analyses_raw):
                     ga = gemini_analyses_raw[seg_idx_t]
 
-                # Kiểm tra xem phân đoạn này có bằng chứng động học đối kháng đa đối tượng bền vững không
+                # Kiểm tra bằng chứng động học 30fps trên toàn phân đoạn (phát hiện cú vung đòn tốc độ cao giữa các nhịp snapshot tĩnh)
                 p_hist = orig_s_data.get("persons_history", {})
                 max_p_danger_cnt = max((p.get("danger_count", 0) for p in p_hist.values()), default=0)
                 tb_seg = seg.get("telemetry_breakdown", {})
@@ -4063,9 +4561,10 @@ class VideoAnnotatorEngine:
                 seg_c_val = float(tb_seg.get("interaction_score", 0.0))
                 has_verified_multi_combat = (
                     len(p_hist) >= 2 and
-                    max_p_danger_cnt >= 9 and
-                    seg_k_val >= 1.85 and
-                    seg_c_val >= 2.8
+                    max_p_danger_cnt >= 7 and
+                    seg_k_val >= 2.15 and
+                    seg_c_val >= 2.0 and
+                    local_orig_sev == "danger"
                 )
 
                 if ga:
@@ -4074,39 +4573,33 @@ class VideoAnnotatorEngine:
                     w_det = ga.get("weapon_detected")
                     has_w_det = bool(w_det and str(w_det).lower() not in ["null", "none", "không có", "không", "false"])
 
-                    # Phân tích trước danh sách segment_actors do Gemini hiệu chỉnh cho phân đoạn này
-                    ga_seg_actors = ga.get("segment_actors")
-                    ga_actor_map = {}
+                    ga_seg_actors_raw = [
+                        sa for sa in (ga.get("segment_actors") or [])
+                        if isinstance(sa, dict)
+                    ][:max_actors_allowed]
                     ga_danger_actors = 0
                     ga_warn_actors = 0
                     ga_safe_actors = 0
                     ga_actor_combat_text = False
-                    if isinstance(ga_seg_actors, list):
-                        for sa_item in ga_seg_actors:
-                            if not isinstance(sa_item, dict):
-                                continue
-                            raw_tid = str(sa_item.get("tag_id") or sa_item.get("id") or sa_item.get("actor_id") or "").strip()
-                            m_tid = re.search(r'\d+', raw_tid)
-                            if m_tid:
-                                tid_num = int(m_tid.group(0))
-                                ga_actor_map[tid_num] = sa_item
-                                ga_actor_map[f"ID #{tid_num:02d}"] = sa_item
-                            sa_s = str(sa_item.get("severity") or "").strip().lower()
-                            sa_r_a = f"{sa_item.get('role', '')} {sa_item.get('action', '')}".lower()
-                            if sa_s in ("danger", "nguy hiểm", "nguy hiem"):
-                                ga_danger_actors += 1
-                            elif sa_s in ("warning", "cảnh báo", "canh bao"):
-                                ga_warn_actors += 1
-                            else:
-                                ga_safe_actors += 1
-                            if any(w in sa_r_a for w in ["chủ động tấn công", "vung đòn", "đấm", "đá", "xô xát trực tiếp", "vật lộn", "ẩu đả"]):
-                                ga_actor_combat_text = True
+                    for sa_item in ga_seg_actors_raw:
+                        sa_s = str(sa_item.get("severity") or "").strip().lower()
+                        sa_r_a = f"{sa_item.get('role', '')} {sa_item.get('action', '')} {sa_item.get('posture', '')}".lower()
+                        if sa_s in ("danger", "nguy hiểm", "nguy hiem"):
+                            ga_danger_actors += 1
+                        elif sa_s in ("warning", "cảnh báo", "canh bao"):
+                            ga_warn_actors += 1
+                        else:
+                            ga_safe_actors += 1
+                        if any(w in sa_r_a for w in [
+                            "chủ động tấn công", "vung đòn", "vung tay đấm", "vung đấm", "ra đòn",
+                            "tung đòn", "đấm", "đá", "xô xát trực tiếp", "vật lộn", "ẩu đả"
+                        ]):
+                            ga_actor_combat_text = True
                     ga_total_actors = ga_danger_actors + ga_warn_actors + ga_safe_actors
 
                     raw_det_nar = str(ga.get("detailed_narrative") or "").strip()
                     raw_ctx_desc = str(ga.get("context_description") or "").strip()
                     raw_focal = str(ga.get("focal_actors_desc") or "").strip()
-                    # Chỉ chọn 1 bản mô tả súc tích nhất để tránh lặp ý giữa detailed_narrative và context_description
                     detailed_nar = raw_det_nar or raw_ctx_desc or str(ga.get("macro_narrative") or ga.get("detailed_action") or "").strip()
                     if raw_focal and raw_focal.lower() not in detailed_nar.lower() and len(detailed_nar) < 160:
                         detailed_nar = f"{detailed_nar} Trọng tâm: {raw_focal}."
@@ -4114,7 +4607,19 @@ class VideoAnnotatorEngine:
                     macro_sum = ga.get("macro_narrative") or ga.get("detailed_action") or detailed_nar
                     nar_low = f"{detailed_nar or ''} {macro_sum or ''} {ga.get('detailed_action', '')}".lower()
 
-                    # Loại bỏ triệt để mọi mệnh đề phủ định tiếng Việt ("chưa ghi nhận xung đột...", "không có xô xát...") trước khi xét từ khóa bạo lực
+                    # Nhận diện hành vi vung đòn tấn công cự ly gần kể cả khi đối phương lách né được ("đánh chưa trúng người")
+                    strike_attempt_phrases = [
+                        "vung tay đấm", "vung đấm", "tung cú đấm", "tung đòn", "ra đòn",
+                        "vung đòn", "vung chân đá", "tung cú đá", "lao vào đánh", "lao tới đánh",
+                        "vung tay đánh", "vung tay tấn công", "né đòn", "lách né", "tránh đòn",
+                        "né cú đấm", "đấm trượt", "đánh hụt", "hụt đòn"
+                    ]
+                    has_active_strike_attempt = (
+                        any(p in nar_low for p in strike_attempt_phrases) or
+                        (ga_actor_combat_text and seg_k_val >= 1.75)
+                    )
+
+                    # Loại bỏ mệnh đề phủ định tiếng Việt trước khi xét từ khóa bạo lực
                     nar_clean_for_combat = re.sub(
                         r'(?:chưa|không)\s+(?:có|ghi nhận|xảy ra|phát hiện|thấy|xuất hiện|hề|tồn tại)[^.,;!\n]*',
                         ' ',
@@ -4131,33 +4636,57 @@ class VideoAnnotatorEngine:
                     ]:
                         nar_clean_for_combat = nar_clean_for_combat.replace(neg_p, " ")
 
-                    has_explicit_no_contact = any(p in nar_low for p in [
+                    has_explicit_no_contact = (not has_active_strike_attempt) and any(p in nar_low for p in [
                         "chưa có va chạm", "chưa xảy ra va chạm", "chưa có xô xát", "chưa xảy ra xô xát",
                         "chưa ghi nhận xung đột", "không ghi nhận xung đột", "chưa có xung đột", "không có xung đột",
                         "chưa có hành vi", "không có dấu hiệu xung đột", "tương tác bình thường", "sinh hoạt bình thường",
                         "chưa đánh", "chưa ra đòn", "mới dừng ở mức", "căng thẳng lời nói"
                     ])
                     has_pre_conflict_tension = any(p in nar_clean_for_combat for p in [
-                        "căng thẳng lời nói", "chỉ tay", "tiến lại gần", "đối mặt", "tranh cãi", "áp sát", "thủ thế", "đối đầu"
+                        "căng thẳng lời nói", "chỉ tay", "tiến lại gần", "tiếp cận", "đối mặt", "tranh cãi",
+                        "tranh chấp", "áp sát", "thủ thế", "đối đầu", "căng thẳng"
                     ])
 
                     has_visual_weapon = has_w_det or any(w in nar_clean_for_combat for w in ["gậy", "dao", "hung khí", "vũ khí", "thanh sắt", "ống tuýp", "ném ghế", "đập ghế"])
-                    has_visual_combat = (not has_explicit_no_contact) and (
-                        ga_actor_combat_text or any(
-                            w in nar_clean_for_combat for w in ["tấn công", "xô đẩy", "xô xát", "giằng co", "đánh nhau", "đấm", "đá", "tát", "bùng nổ", "vung tay đánh", "vật lộn", "va chạm mạnh", "ẩu đả"]
+                    has_visual_combat = has_active_strike_attempt or (
+                        (not has_explicit_no_contact) and (
+                            ga_actor_combat_text or any(
+                                w in nar_clean_for_combat for w in [
+                                    "tấn công", "xô đẩy", "xô xát", "giằng co", "đánh nhau", "đấm", "đá",
+                                    "tát", "bùng nổ", "vung tay đánh", "vật lộn", "va chạm mạnh", "ẩu đả"
+                                ]
+                            )
                         )
                     )
-                    has_visual_deescalation = any(w in nar_low for w in ["tách nhau", "tách ra", "giãn cách", "tản ra", "hạ nhiệt", "can ngăn", "lùi lại", "đối đầu"]) and not has_visual_combat
+                    has_visual_deescalation = any(w in nar_low for w in ["tách nhau", "tách ra", "giãn cách", "tản ra", "hạ nhiệt", "can ngăn", "lùi lại"]) and not has_visual_combat
                     has_visual_calm = (
-                        any(w in nar_low for w in ["ổn định", "ngồi tại bàn", "ghế ngồi", "ngồi học", "trò chuyện", "quan sát", "tập trung", "khôi phục", "bình thường", "tương tác ban đầu", "cúi đầu", "trở về", "chỉnh trang", "nhẹ nhàng", "di chuyển nhẹ", "di chuyển qua lại", "đứng và ngồi", "đứng gần nhau"])
+                        any(w in nar_low for w in ["ổn định", "ngồi tại bàn", "ghế ngồi", "ngồi học", "trò chuyện", "quan sát", "tập trung", "khôi phục", "bình thường", "cúi đầu", "trở về", "chỉnh trang", "nhẹ nhàng", "di chuyển nhẹ", "di chuyển qua lại", "đứng và ngồi"])
                         and not has_visual_weapon
                         and not has_visual_combat
                         and not has_pre_conflict_tension
                     )
 
-                    # Hiệu chỉnh Đa phương thức (Gemini Vision + segment_actors cứu hộ toàn diện bảng bên ngoài):
-                    # 0A. Nếu Gemini đã kiểm tra từng ID trong segment_actors và xác nhận TẤT CẢ đều AN TOÀN (0 danger, 0 warning)
-                    #     và không có vũ khí/giao tranh thực tế -> BẮT BUỘC VỚT PHÂN ĐOẠN VỀ AN TOÀN (bất chấp điểm nhiễu của YOLO)!
+                    # Nếu 1 ảnh tĩnh snapshot chụp đúng khoảnh khắc lách né giữa các cú đấm, nhưng Gemini xác nhận hai bên đang giao tranh/tấn công
+                    # VÀ chuỗi động học 30fps xác thực có nhiều frame vung đòn tốc độ cao áp sát (seg_k_val >= 2.35, seg_c_val >= 2.1):
+                    # BẢO TOÀN PHÁN QUYẾT NGUY HIỂM (>= 8.0) thay vì hạ nhầm xuống CẢNH BÁO!
+                    kinematic_strike_verified_over_static_snap = (
+                        has_verified_multi_combat and
+                        seg_k_val >= 2.35 and
+                        seg_c_val >= 2.1 and
+                        not has_visual_calm and
+                        not has_visual_deescalation and
+                        (
+                            ga_danger_actors > 0 or
+                            ga_actor_combat_text or
+                            (g_lvl in ("NGUY HIỂM", "DANGER") and not has_pre_conflict_tension)
+                        )
+                    )
+                    if kinematic_strike_verified_over_static_snap:
+                        has_explicit_no_contact = False
+                        has_visual_combat = True
+
+                    # Hiệu chỉnh Đa phương thức:
+                    # 0A. Gemini xác nhận TẤT CẢ đều AN TOÀN (0 danger, 0 warning) và không có giao tranh -> Vớt về AN TOÀN
                     if ga_total_actors > 0 and ga_danger_actors == 0 and ga_warn_actors == 0 and not has_visual_weapon and not has_visual_combat:
                         has_w_det = False
                         if has_pre_conflict_tension:
@@ -4166,9 +4695,8 @@ class VideoAnnotatorEngine:
                         else:
                             g_lvl = "AN TOÀN"
                             ga_threat_score = round(min(2.0, max(0.8, ga_threat_score if 0.4 <= ga_threat_score <= 2.4 else 1.2)), 1)
-                    # 0B. Nếu văn bản Gemini khẳng định rõ "chưa ghi nhận xung đột" / "chưa có va chạm thể xác" (Pha 0s-8s):
-                    #     TUYỆT ĐỐI KHÔNG bao giờ gán NGUY HIỂM! Chỉ gán CẢNH BÁO (nếu đang đối mặt/chỉ tay) hoặc AN TOÀN.
-                    elif has_explicit_no_contact and not has_visual_weapon:
+                    # 0B. Văn bản khẳng định rõ chưa có hành vi ra đòn và không có pha vung đòn động học cự ly gần:
+                    elif has_explicit_no_contact and not has_visual_weapon and not kinematic_strike_verified_over_static_snap:
                         has_w_det = False
                         if has_pre_conflict_tension or ga_warn_actors > 0:
                             g_lvl = "CẢNH BÁO"
@@ -4176,17 +4704,17 @@ class VideoAnnotatorEngine:
                         else:
                             g_lvl = "AN TOÀN"
                             ga_threat_score = round(min(2.0, max(0.8, local_orig_score if local_orig_score < 2.5 else 1.2)), 1)
-                    # 1. Nếu mắt thị giác Gemini xác nhận phân đoạn đang bình thường / ổn định (has_visual_calm) và không có xô xát:
+                    # 1. Mắt thị giác Gemini xác nhận bối cảnh yên bình / ổn định (has_visual_calm):
                     elif has_visual_calm and not has_visual_weapon and ga_danger_actors == 0:
                         has_w_det = False
                         g_lvl = "AN TOÀN"
                         ga_threat_score = round(min(2.2, max(0.6, local_orig_score if local_orig_score < 2.8 else 1.4)), 1)
-                    # 1B. Nếu segment_actors chỉ có warning (đối đầu căng thẳng) và 0 danger -> Khống chế trần ở CẢNH BÁO:
+                    # 1B. Chỉ có đối đầu lời nói (0 danger, >0 warning, không có vung đòn động học):
                     elif ga_total_actors > 0 and ga_danger_actors == 0 and ga_warn_actors > 0 and not has_visual_weapon and not has_visual_combat:
                         has_w_det = False
                         g_lvl = "CẢNH BÁO"
                         ga_threat_score = round(min(5.8, max(4.5, ga_threat_score if 4.2 <= ga_threat_score <= 6.2 else 5.2)), 1)
-                    # 2. Nếu mắt thị giác Gemini xác nhận các đối tượng đang giãn cách / tách nhau ra (has_visual_deescalation):
+                    # 2. Đang giãn cách / tách nhau ra (has_visual_deescalation):
                     elif len(timeline_segments) >= 2 and has_visual_deescalation and not has_visual_weapon:
                         has_w_det = False
                         if seg_k_val >= 1.25 or seg_c_val >= 1.50 or local_orig_sev in ("warning", "danger") or "đối đầu" in nar_low:
@@ -4195,23 +4723,24 @@ class VideoAnnotatorEngine:
                         else:
                             g_lvl = "AN TOÀN"
                             ga_threat_score = round(min(2.8, max(0.8, local_orig_score)), 1)
-                    # 3. Nếu Gemini phát hiện vũ khí/hung khí (ví dụ cầm gậy dài chuẩn bị tấn công):
+                    # 3. Phát hiện vũ khí / hung khí:
                     elif has_visual_weapon:
                         if not w_det or str(w_det).lower() in ["null", "none", "không có", "không", "false"]:
                             w_det = "Vật cứng / Gậy dài"
                         has_w_det = True
                         g_lvl = "NGUY HIỂM"
                         ga_threat_score = round(max(8.5, ga_threat_score), 1)
-                    # 4. Nếu cả Gemini (has_visual_combat) VÀ động học cùng xác nhận bùng nổ xô xát dữ dội:
+                    # 4. Có hành vi tấn công / vung đòn cự ly gần (kể cả khi đối phương lách né được) hoặc giao tranh trực diện:
                     elif has_visual_combat and (
                         ga_danger_actors > 0 or
-                        (seg_k_val >= 2.1 and seg_c_val >= 2.5) or
+                        has_active_strike_attempt or
+                        kinematic_strike_verified_over_static_snap or
+                        (seg_k_val >= 1.85 and seg_c_val >= 2.0) or
                         any(w in nar_clean_for_combat for w in ["bùng nổ", "dữ dội", "đỉnh điểm", "mạnh mẽ", "cao trào", "đấm", "đá", "vật lộn"])
                     ):
                         g_lvl = "NGUY HIỂM"
                         ga_threat_score = round(max(8.2, ga_threat_score, local_orig_score), 1)
                     elif not has_visual_combat and not has_visual_weapon:
-                        # Không có giao tranh thể xác trực tiếp -> Không được vượt quá mức CẢNH BÁO
                         if g_lvl in ("NGUY HIỂM", "DANGER") or ga_threat_score >= 7.5:
                             if has_pre_conflict_tension or ga_warn_actors > 0:
                                 g_lvl = "CẢNH BÁO"
@@ -4230,7 +4759,7 @@ class VideoAnnotatorEngine:
                         seg["macro_narrative"] = ga["macro_narrative"]
                     seg["event_milestone"] = ga.get("detailed_action") or ga.get("macro_narrative") or detailed_nar
                     if ga.get("focal_actors_desc"):
-                        seg["focal_actors_desc"] = ga.get("focal_actors_desc")
+                        seg["focal_actors_desc"] = _strip_id_and_parens(ga.get("focal_actors_desc"))
                     if ga.get("prediction_next_4s"):
                         seg["prediction_next_4s"] = ga["prediction_next_4s"]
                     if ga.get("degraded_action"):
@@ -4238,7 +4767,6 @@ class VideoAnnotatorEngine:
                     if ga.get("degraded_narrative"):
                         seg["degraded_narrative"] = ga["degraded_narrative"]
 
-                    # Nhận diện Vũ khí / Hung khí từ Gemini Vision
                     if has_w_det:
                         seg["weapon_detected"] = str(w_det)
                         seg["severity"] = "danger"
@@ -4274,20 +4802,14 @@ class VideoAnnotatorEngine:
                         if not ga.get("prediction_next_4s") or any(w in pred_cur for w in ["xô xát trực tiếp nếu không can thiệp", "kích hoạt cảnh báo an ninh"]):
                             seg["prediction_next_4s"] = "Theo dõi sát khoảng cách tiếp xúc và cử chỉ đối thoại giữa các đối tượng."
                     elif g_lvl in ("AN TOÀN", "SAFE") or ga_threat_score < 4.0:
-                        # Phán quyết AN TOÀN từ Gemini Vision (Tier-1/Tier-2 Hội Chẩn Đa Phương Thức)
                         seg["severity"] = "safe"
                         g_sc = ga_threat_score if ga_threat_score > 0 else 1.2
                         seg["danger_score"] = round(max(0.6, min(2.4, g_sc)), 1)
-
-                        # Triệt tiêu cờ scuffle giả ở phân đoạn này
                         orig_s_data["optical_scuffle_detected"] = False
                         orig_s_data["peak_optical_threat"] = seg["danger_score"]
-
-                        # Hiệu chỉnh dự báo và phân rã động học về trạng thái bình thường/an toàn
                         pred_cur = str(seg.get("prediction_next_4s") or "").lower()
                         if any(w in pred_cur for w in ["xô xát", "bùng phát", "tấn công", "nguy cơ xung đột", "can thiệp", "cảnh báo an ninh"]):
-                            seg["prediction_next_4s"] = "Duy trì trạng thái lớp học / không gian ổn định, tiếp tục quan sát tự nhiên."
-
+                            seg["prediction_next_4s"] = "Duy trì trạng thái không gian ổn định, tiếp tục quan sát tự nhiên."
                         tb = seg.get("telemetry_breakdown")
                         if tb:
                             tb["dominant_posture"] = "Sinh hoạt bình thường"
@@ -4299,23 +4821,66 @@ class VideoAnnotatorEngine:
                             tb["proximity_dist"] = "> 1.5 m"
                             tb["calculated_score"] = seg["danger_score"]
 
-                    # Hiệu chỉnh cá nhân hóa từng đối tượng trong phân đoạn từ ga["segment_actors"] (mỗi người mỗi vẻ)
-                    for ent in seg.get("entities", []):
+                    # Ghép 1-1 danh sách ga["segment_actors"] vào seg["entities"] theo Mỏ neo Vị trí Không gian -> Mức độ -> Thứ tự
+                    used_sa_indices = set()
+                    real_seg_ents = [e for e in seg.get("entities", []) if e.get("id") != "KHÔNG GIAN"]
+                    for ent_idx_e, ent in enumerate(real_seg_ents):
                         c_id = ent.get("canonical_id")
-                        disp_num = clean_id_map.get(c_id, c_id) if c_id is not None else None
+                        ent_sp_key = _norm_spatial_key(ent.get("distinctive_anchor"))
                         sa_match = None
-                        if disp_num is not None and disp_num in ga_actor_map:
-                            sa_match = ga_actor_map[disp_num]
-                        elif ent.get("raw_id") in ga_actor_map:
-                            sa_match = ga_actor_map[ent.get("raw_id")]
-                        elif c_id is not None and c_id in ga_actor_map:
-                            sa_match = ga_actor_map[c_id]
+                        matched_sa_idx = None
+
+                        # Ưu tiên 1: Khớp vị trí không gian (Bên trái / Bên phải / Trung tâm / Phía trước / Phía sau)
+                        if ent_sp_key:
+                            for idx_sa, sa_cand in enumerate(ga_seg_actors_raw):
+                                if idx_sa in used_sa_indices:
+                                    continue
+                                cand_sp_txt = (
+                                    sa_cand.get("spatial_anchor") or
+                                    sa_cand.get("distinctive_anchor") or
+                                    sa_cand.get("position") or
+                                    sa_cand.get("tag_id") or
+                                    ""
+                                )
+                                if _norm_spatial_key(cand_sp_txt) == ent_sp_key:
+                                    sa_match = sa_cand
+                                    matched_sa_idx = idx_sa
+                                    break
+
+                        # Ưu tiên 2: Khớp mức độ hành vi (danger <-> danger, warning <-> warning)
+                        if sa_match is None:
+                            ent_sev_cur = ent.get("severity", "safe")
+                            for idx_sa, sa_cand in enumerate(ga_seg_actors_raw):
+                                if idx_sa in used_sa_indices:
+                                    continue
+                                cand_sev = str(sa_cand.get("severity") or "").strip().lower()
+                                if (ent_sev_cur == "danger" and cand_sev in ("danger", "nguy hiểm")) or (
+                                    ent_sev_cur == "warning" and cand_sev in ("warning", "cảnh báo")
+                                ):
+                                    sa_match = sa_cand
+                                    matched_sa_idx = idx_sa
+                                    break
+
+                        # Ưu tiên 3: Khớp theo chỉ số tuần tự còn trống
+                        if sa_match is None and ent_idx_e < len(ga_seg_actors_raw) and ent_idx_e not in used_sa_indices:
+                            sa_match = ga_seg_actors_raw[ent_idx_e]
+                            matched_sa_idx = ent_idx_e
+
+                        if matched_sa_idx is not None:
+                            used_sa_indices.add(matched_sa_idx)
 
                         if sa_match:
-                            sa_role = str(sa_match.get("role") or "").strip()
-                            sa_action = str(sa_match.get("action") or "").strip()
-                            sa_posture = str(sa_match.get("posture") or "").strip()
+                            sa_role = _strip_id_and_parens(sa_match.get("role") or "")
+                            sa_action = _strip_id_and_parens(sa_match.get("action") or "")
+                            sa_posture = _strip_id_and_parens(sa_match.get("posture") or "")
                             sa_sev = str(sa_match.get("severity") or "").strip().lower()
+                            sa_sp_clean = _strip_id_and_parens(
+                                stabilizer.sanitize_anchor(
+                                    sa_match.get("spatial_anchor") or sa_match.get("distinctive_anchor") or ""
+                                )
+                            )
+                            if sa_sp_clean and not ent.get("distinctive_anchor"):
+                                ent["distinctive_anchor"] = sa_sp_clean
                             if len(timeline_segments) > 1 or is_crowd_scene:
                                 for f_kw in stabilizer.FORBIDDEN_UNIFORM_KEYWORDS:
                                     sa_role = re.sub(re.escape(f_kw), "", sa_role, flags=re.IGNORECASE).strip()
@@ -4329,18 +4894,17 @@ class VideoAnnotatorEngine:
                             )
                             if seg["severity"] == "safe":
                                 ent["severity"] = "safe"
-                                # Trong phân đoạn an toàn, loại bỏ tiền tố "Người ngoài cuộc" để giữ đúng vai trò tự nhiên (Học sinh / An toàn)
                                 clean_safe_role = re.sub(r'^(?:người\s+ngoài\s+cuộc|ngoài\s+cuộc)\s*[·/\-:]?\s*', '', sa_role, flags=re.IGNORECASE).strip()
                                 if clean_safe_role and not any(w in clean_safe_role.lower() for w in ["tấn công", "gây hấn", "nạn nhân", "xung đột", "ngoài cuộc"]):
                                     ent["role"] = clean_safe_role
                                 else:
-                                    ent["role"] = "Học sinh / An toàn" if "học sinh" in sa_role.lower() else "An toàn"
+                                    ent["role"] = "Học sinh / An toàn" if "học sinh" in sa_role.lower() else "Hoạt động bình thường"
                                 if sa_action and not any(w in sa_action.lower() for w in ["tấn công", "xung đột", "vung đòn", "giằng co"]):
                                     ent["action"] = sa_action
                                 if sa_posture and not any(w in sa_posture.lower() for w in ["tấn công", "xô xát", "vung đòn", "giằng co"]):
                                     ent["posture"] = sa_posture
                                 ent["_gemini_calibrated"] = True
-                            elif is_bystander_sa:
+                            elif is_bystander_sa and not (kinematic_strike_verified_over_static_snap and ent.get("severity") in ("danger", "warning")):
                                 ent["severity"] = "safe"
                                 if sa_role:
                                     if any(w in sa_role.lower() for w in ["ngoài cuộc", "quan sát", "can ngăn"]):
@@ -4348,7 +4912,7 @@ class VideoAnnotatorEngine:
                                     else:
                                         ent["role"] = f"Người ngoài cuộc · {sa_role}"
                                 else:
-                                    ent["role"] = "Người ngoài cuộc / Quan sát"
+                                    ent["role"] = "Người ngoài cuộc quan sát"
                                 if sa_action:
                                     ent["action"] = sa_action
                                 if sa_posture:
@@ -4359,62 +4923,75 @@ class VideoAnnotatorEngine:
                                     ent["severity"] = "warning"
                                     if sa_role and not any(w in sa_role.lower() for w in ["tấn công", "nạn nhân"]):
                                         ent["role"] = sa_role
-                                    elif ent.get("clash_partner"):
-                                        ent["role"] = f"Đối đầu căng thẳng (với {ent['clash_partner']})"
                                     else:
-                                        ent["role"] = "Đối mặt / Căng thẳng"
+                                        ent["role"] = "Đối đầu căng thẳng"
                                 else:
                                     if sa_sev in ("danger", "nguy hiểm", "nguy hiem") or ent.get("severity") == "danger" or any(w in sa_role.lower() for w in ["tấn công", "xung đột", "gây hấn", "chủ động"]):
                                         ent["severity"] = "danger"
+                                        ent["role"] = sa_role if (sa_role and any(w in sa_role.lower() for w in ["tấn công", "xô xát", "giằng co", "gây hấn"])) else "Chủ động tấn công"
                                     else:
                                         ent["severity"] = "warning"
-                                    if sa_role:
-                                        ent["role"] = sa_role
+                                        ent["role"] = sa_role if (sa_role and any(w in sa_role.lower() for w in ["phòng", "né", "chống trả", "đối kháng"])) else "Phòng vệ / Né đòn"
                                 if sa_action:
-                                    ent["action"] = sa_action if seg["severity"] == "danger" or not any(w in sa_action.lower() for w in ["đấm", "đá", "ẩu đả", "xô xát"]) else "Tiến lại gần / Cử chỉ căng thẳng"
+                                    if seg["severity"] == "danger" and ent["severity"] == "danger" and any(w in sa_action.lower() for w in ["tiếp cận", "căng thẳng ban đầu"]):
+                                        ent["action"] = "Vung tay ra đòn / Tấn công áp sát"
+                                    else:
+                                        ent["action"] = sa_action if seg["severity"] == "danger" or not any(w in sa_action.lower() for w in ["đấm", "đá", "ẩu đả", "xô xát"]) else "Tiến lại gần / Cử chỉ căng thẳng"
                                 if sa_posture:
-                                    ent["posture"] = sa_posture if seg["severity"] == "danger" or not any(w in sa_posture.lower() for w in ["xô xát", "ra đòn", "vung đòn"]) else "Đứng đối diện / Căng thẳng"
+                                    ent["posture"] = sa_posture if seg["severity"] == "danger" or not any(w in sa_posture.lower() for w in ["xô xát", "ra đòn", "vung đòn"]) else "Đứng đối diện căng thẳng"
                                 ent["_gemini_calibrated"] = True
 
-                        # Nếu không có sa_match hoặc cần đồng bộ trần mức độ phân đoạn (safe / warning)
                         if not ent.get("_gemini_calibrated"):
                             if seg["severity"] == "warning":
                                 if ent.get("severity") == "danger":
                                     ent["severity"] = "warning"
                                 r_cur = ent.get("role", "")
-                                if any(w in r_cur.lower() for w in ["tấn công", "gây hấn", "nạn nhân", "trực tiếp xung đột"]):
-                                    ent["role"] = f"Đối đầu căng thẳng (với {ent['clash_partner']})" if ent.get("clash_partner") else "Đối mặt / Căng thẳng"
+                                if any(w in r_cur.lower() for w in ["tấn công", "gây hấn", "nạn nhân", "trực tiếp xung đột", "đối kháng"]):
+                                    ent["role"] = "Đối đầu căng thẳng"
                                 if any(w in ent.get("action", "") for w in ["Xung đột", "Tấn công", "giằng co", "Phòng vệ"]):
                                     ent["action"] = "Tiến lại gần / Cử chỉ căng thẳng"
                                 if any(w in ent.get("posture", "") for w in ["Xô xát", "Ra đòn", "Vung đòn", "giằng co"]):
-                                    ent["posture"] = "Đứng đối diện / Căng thẳng"
+                                    ent["posture"] = "Đứng đối diện căng thẳng"
                             elif seg["severity"] == "safe":
                                 ent["severity"] = "safe"
                                 r_cur = ent.get("role", "")
-                                if any(w in r_cur.lower() for w in ["tấn công", "gây hấn", "nạn nhân", "phòng thủ", "attacker", "defender", "tham gia", "ngoài cuộc", "đối mặt", "căng thẳng", "xung đột", "áp sát"]):
-                                    ent["role"] = "An toàn"
+                                if any(w in r_cur.lower() for w in ["tấn công", "gây hấn", "nạn nhân", "phòng", "né", "attacker", "defender", "tham gia", "ngoài cuộc", "đối mặt", "đối đầu", "căng thẳng", "xung đột", "áp sát", "đối kháng"]):
+                                    ent["role"] = "Hoạt động bình thường"
                                 if len(timeline_segments) == 1 and c_id and stabilizer.get_custom_action(c_id):
-                                    ent["action"] = stabilizer.get_custom_action(c_id)
+                                    ent["action"] = _strip_id_and_parens(stabilizer.get_custom_action(c_id))
                                 elif any(w in ent.get("action", "") for w in ["Xung đột", "Vung tay", "Tấn công", "Phòng vệ", "Chắn đỡ", "giằng co", "căng thẳng", "ngoài cuộc"]):
                                     ent["action"] = "Hoạt động bình thường"
                                 if len(timeline_segments) == 1 and c_id and stabilizer.get_custom_posture(c_id):
-                                    ent["posture"] = stabilizer.get_custom_posture(c_id)
+                                    ent["posture"] = _strip_id_and_parens(stabilizer.get_custom_posture(c_id))
                                 elif any(w in ent.get("posture", "") for w in ["Áp sát", "Vung đòn", "thủ thế", "Né đòn", "giằng co", "Căng thẳng", "xung đột"]):
                                     ent["posture"] = "Tư thế tự nhiên"
 
-                    # Đồng bộ hóa trường "Tư thế:" (dominant_posture) hiển thị ở bảng bên ngoài từ kết quả hiệu chỉnh Ngồi/Đứng của Gemini
+                        ent["role"] = _strip_id_and_parens(ent.get("role")) or "Hoạt động bình thường"
+                        ent["id"] = ent["role"]
+                        ent["distinctive_anchor"] = _strip_id_and_parens(ent.get("distinctive_anchor"))
+
+                    # Bảo đảm phân đoạn NGUY HIỂM luôn có ít nhất 1 chủ thể mang mức danger
+                    if seg["severity"] == "danger" and real_seg_ents and not any(e.get("severity") == "danger" for e in real_seg_ents):
+                        top_e = max(real_seg_ents, key=lambda x: float(x.get("max_k", 0.0)))
+                        top_e["severity"] = "danger"
+                        top_e["role"] = "Chủ động tấn công"
+                        top_e["id"] = "Chủ động tấn công"
+                        top_e["action"] = "Vung tay ra đòn / Tấn công áp sát"
+                        top_e["posture"] = "Vung đòn tốc độ cao ở cự ly gần về phía đối phương"
+
+                    # Đồng bộ hóa trường "Tư thế:" (dominant_posture) hiển thị ở bảng bên ngoài
                     tb = seg.get("telemetry_breakdown")
                     if tb:
-                        ga_dom_posture = str(ga.get("dominant_posture") or "").strip()
+                        ga_dom_posture = _strip_id_and_parens(ga.get("dominant_posture") or "")
                         cal_seat_cnt = sum(1 for e in seg.get("entities", []) if "ngồi" in f"{e.get('action', '')} {e.get('posture', '')}".lower())
                         cal_stand_cnt = sum(1 for e in seg.get("entities", []) if "đứng" in f"{e.get('action', '')} {e.get('posture', '')}".lower())
                         if seg["severity"] == "safe":
                             if ga_dom_posture and not any(w in ga_dom_posture.lower() for w in ["xô xát", "ra đòn", "tấn công", "giằng co", "căng thẳng", "ẩu đả"]):
                                 cal_post_lbl = ga_dom_posture
                             elif cal_seat_cnt > 0 and cal_stand_cnt > 0:
-                                cal_post_lbl = "Ngồi tại bàn & Đứng trao đổi"
+                                cal_post_lbl = "Ngồi ổn định & Đứng trao đổi"
                             elif cal_seat_cnt > 0:
-                                cal_post_lbl = "Ngồi tại bàn ổn định"
+                                cal_post_lbl = "Ngồi ổn định"
                             elif cal_stand_cnt > 0:
                                 cal_post_lbl = "Đứng trao đổi / Quan sát"
                             else:
@@ -4425,7 +5002,7 @@ class VideoAnnotatorEngine:
                             elif cal_seat_cnt > 0 and cal_stand_cnt > 0:
                                 cal_post_lbl = "Đứng đối diện & Ngồi quan sát"
                             else:
-                                cal_post_lbl = "Đứng đối diện / Căng thẳng"
+                                cal_post_lbl = "Đứng đối diện căng thẳng"
                         else:
                             if ga_dom_posture and any(w in ga_dom_posture.lower() for w in ["xô xát", "ra đòn", "tấn công", "giằng co", "vung", "đánh", "vật lộn"]):
                                 cal_post_lbl = ga_dom_posture
@@ -4446,15 +5023,15 @@ class VideoAnnotatorEngine:
             verified_combat_seg_count = sum(
                 1 for idx_s, s_d in enumerate(segments_data)
                 if len(s_d.get("persons_history", {})) >= 2
-                and max((p.get("danger_count", 0) for p in s_d.get("persons_history", {}).values()), default=0) >= 9
+                and max((p.get("danger_count", 0) for p in s_d.get("persons_history", {}).values()), default=0) >= 7
                 and idx_s < len(timeline_segments)
                 and float(timeline_segments[idx_s].get("telemetry_breakdown", {}).get("kinetic_spike", 0.0)) >= 1.85
-                and float(timeline_segments[idx_s].get("telemetry_breakdown", {}).get("interaction_score", 0.0)) >= 2.8
+                and float(timeline_segments[idx_s].get("telemetry_breakdown", {}).get("interaction_score", 0.0)) >= 2.1
             )
             is_global_safe = (
                 (str(gemini_result.get("threat_level", "")).upper() in ("AN TOÀN", "SAFE") or gemini_result.get("is_safe_environment") is True)
                 and not has_any_gemini_alert_seg
-                and not (len(timeline_segments) >= 8 and verified_combat_seg_count >= 2)
+                and not (len(timeline_segments) >= 6 and verified_combat_seg_count >= 2)
             )
             if is_global_safe:
                 for seg in timeline_segments:
@@ -4468,8 +5045,9 @@ class VideoAnnotatorEngine:
                                 tb["posture_state"] = "Vận động tự nhiên"
                         for ent in seg.get("entities", []):
                             ent["severity"] = "safe"
-                            if any(w in ent.get("role", "").lower() for w in ["tấn công", "gây hấn", "nạn nhân", "phòng thủ", "attacker", "defender", "tham gia", "ngoài cuộc"]):
-                                ent["role"] = "An toàn"
+                            if any(w in ent.get("role", "").lower() for w in ["tấn công", "gây hấn", "nạn nhân", "phòng", "né", "attacker", "defender", "tham gia", "ngoài cuộc", "đối kháng"]):
+                                ent["role"] = "Hoạt động bình thường"
+                                ent["id"] = "Hoạt động bình thường"
                             c_id = ent.get("canonical_id")
                             if c_id and stabilizer.get_custom_action(c_id):
                                 ent["action"] = stabilizer.get_custom_action(c_id)
@@ -4493,7 +5071,7 @@ class VideoAnnotatorEngine:
             else:
                 seg["severity"] = "safe"
 
-            # Đảm bảo toàn bộ trường văn bản của phân đoạn (Luồng Chuẩn & Luồng Tùy Chỉnh) luôn đồng bộ 100% với mức độ nguy hiểm đã hiệu chỉnh
+            # Đảm bảo toàn bộ trường văn bản của phân đoạn luôn đồng bộ 100% với mức độ nguy hiểm đã hiệu chỉnh
             cur_sum = TokenGuard._clean_human_video_text(seg.get("scene_summary", ""))
             cur_det = TokenGuard._clean_human_video_text(seg.get("detailed_narrative") or seg.get("context_description", ""))
             cur_pred = TokenGuard._clean_human_video_text(seg.get("prediction_next_4s", ""))
@@ -4504,19 +5082,26 @@ class VideoAnnotatorEngine:
             deg_low = cur_deg_nar.lower()
 
             if seg["severity"] == "danger":
-                if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không ghi nhận chuyển động bất thường", "không gian yên tĩnh", "chưa xảy ra đánh nhau", "chưa xảy ra va chạm"]):
-                    cur_sum = "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và giằng co trực tiếp."
-                if not cur_det or any(w in det_low for w in ["không có biểu hiện tranh cãi", "hoàn toàn bình thường và yên tĩnh", "hoàn toàn không có dấu hiệu tranh cãi", "chưa xảy ra xô xát"]):
-                    cur_det = f"{cur_sum} Các cá nhân áp sát ở khoảng cách gần, tạo ra va chạm tay chân trực diện khiến người đối diện phải giơ tay che chắn."
-                if not cur_pred or any(w in cur_pred.lower() for w in ["hoạt động bình thường", "tương tác an toàn", "không gian ổn định"]):
-                    cur_pred = "Tình trạng xô xát có thể tiếp diễn, cần sớm có người đến can ngăn và tách các bên ra."
-                if not cur_deg_act or any(w in cur_deg_act.lower() for w in ["bình thường", "ổn định", "ngồi yên", "thư giãn"]):
-                    cur_deg_act = "Áp sát xô đẩy và va chạm"
-                if not cur_deg_nar or any(w in deg_low for w in ["bình thường", "ổn định", "ngồi yên", "nhấc nhẹ tay", "bỏ xuống liền", "thư giãn", "không có va chạm", "không thấy va chạm"]):
-                    cur_deg_nar = "Các cá nhân tiến sát vào nhau, xuất hiện hành động xô đẩy và va chạm tay chân trực tiếp dù một số nhịp vung tay nhanh bị ngắt quãng."
+                if not cur_sum or any(w in sum_low for w in [
+                    "ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không ghi nhận chuyển động bất thường",
+                    "không gian yên tĩnh", "chưa xảy ra đánh nhau", "chưa xảy ra va chạm",
+                    "bắt đầu tiếp cận", "dấu hiệu căng thẳng ban đầu"
+                ]):
+                    cur_sum = "Các cá nhân áp sát cự ly gần, xuất hiện hành động vung tay ra đòn tốc độ cao và đối kháng trực diện."
+                if not cur_det or any(w in det_low for w in [
+                    "không có biểu hiện tranh cãi", "hoàn toàn bình thường và yên tĩnh", "hoàn toàn không có dấu hiệu tranh cãi",
+                    "chưa xảy ra xô xát", "chưa có va chạm", "bắt đầu tiếp cận và có dấu hiệu căng thẳng"
+                ]):
+                    cur_det = f"{cur_sum} Ngay khi tiếp cận ở cự ly gần, một bên đã chủ động tung đòn vung tay tốc độ cao hướng về đối phương khiến bên còn lại phải co tay che chắn và lách người né đòn."
+                if not cur_pred or any(w in cur_pred.lower() for w in ["hoạt động bình thường", "tương tác an toàn", "không gian ổn định", "theo dõi sát khoảng cách tiếp xúc"]):
+                    cur_pred = "Tình trạng xô xát và ra đòn cự ly gần có nguy cơ leo thang, cần can thiệp kịp thời để tách các bên."
+                if not cur_deg_act or any(w in cur_deg_act.lower() for w in ["bình thường", "ổn định", "ngồi yên", "thư giãn", "đứng đối mặt"]):
+                    cur_deg_act = "Áp sát vung đòn và giằng co"
+                if not cur_deg_nar or any(w in deg_low for w in ["bình thường", "ổn định", "ngồi yên", "nhấc nhẹ tay", "bỏ xuống liền", "thư giãn", "không có va chạm", "không thấy va chạm", "cử chỉ trao đổi căng thẳng"]):
+                    cur_deg_nar = "Các cá nhân tiến sát vào nhau, xuất hiện hành động vung đòn tốc độ cao và đối kháng trực tiếp ở cự ly gần."
             elif seg["severity"] == "warning":
                 if not cur_sum or any(w in sum_low for w in ["ổn định", "hoạt động bình thường", "sinh hoạt bình thường", "không gian yên tĩnh", "xảy ra xô xát", "ghi nhận hành vi xô xát"]):
-                    cur_sum = "Hai bên tiến lại gần đứng đối mặt nhau với cử chỉ căng thẳng nhưng chưa xảy ra đánh nhau."
+                    cur_sum = "Hai bên tiến lại gần đứng đối mặt nhau với cử chỉ căng thẳng nhưng chưa tung đòn tấn công."
                 if not cur_det or any(w in det_low for w in ["không có biểu hiện tranh cãi", "hoàn toàn bình thường và yên tĩnh", "vung tay tấn công trực diện"]):
                     cur_det = f"{cur_sum} Các cá nhân giữ khoảng cách gần và có cử chỉ trao đổi gay gắt cần chú ý theo dõi."
                 if not cur_pred or any(w in cur_pred.lower() for w in ["hoạt động bình thường", "tình trạng xô xát có thể tiếp diễn"]):
@@ -4529,13 +5114,13 @@ class VideoAnnotatorEngine:
                 if not cur_sum or any(w in sum_low for w in ["cảnh báo", "xô xát", "xung đột", "tấn công", "vung tay đánh", "giằng co", "tình huống căng thẳng", "đứng đối mặt", "tranh cãi"]):
                     cur_sum = "Mọi người trong khu vực đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái."
                 if not cur_det or any(w in det_low for w in ["tấn công trực diện", "vung tay đánh", "giằng co", "tư thế cảnh giác", "lời qua tiếng lại"]):
-                    cur_det = "Các cá nhân trong khung hình đang ngồi làm việc hoặc đứng trò chuyện, đi lại tự nhiên và giữ khoảng cách thoải mái."
+                    cur_det = "Các cá nhân trong khung hình đang sinh hoạt, trao đổi và đi lại tự nhiên, giữ khoảng cách an toàn."
                 if not cur_pred or any(w in cur_pred.lower() for w in ["xô xát", "can ngăn", "căng thẳng", "cảnh báo"]):
                     cur_pred = "Mọi người tiếp tục duy trì hoạt động bình thường trong vài giây tiếp theo."
                 if not cur_deg_act or any(w in cur_deg_act.lower() for w in ["xô xát", "xô đẩy", "tấn công", "đánh nhau", "giằng co", "căng thẳng", "đối đầu", "va chạm"]):
                     cur_deg_act = "Sinh hoạt và trao đổi tự nhiên"
                 if not cur_deg_nar or any(w in deg_low for w in ["xô xát", "xô đẩy", "tấn công", "đánh nhau", "giằng co", "căng thẳng", "đối đầu", "va chạm"]):
-                    cur_deg_nar = "Mọi người trong khu vực giữ vị trí ổn định, ngồi làm việc hoặc đứng trao đổi tự nhiên."
+                    cur_deg_nar = "Mọi người trong khu vực giữ vị trí ổn định, sinh hoạt và trao đổi tự nhiên."
 
             seg["scene_summary"] = cur_sum
             seg["detailed_narrative"] = cur_det
@@ -4704,11 +5289,11 @@ class VideoAnnotatorEngine:
             continuous_sitting_sec = yolo_sitting_sec
 
         if ergo_score >= 82.0:
-            ergo_advice = "Tư thế sinh hoạt và lao động trong phân đoạn đạt chuẩn Tốt. Cột sống và các khớp duy trì góc độ giải phẫu học tự nhiên."
+            ergo_advice = "Tư thế vận động bình thường, cơ thể giữ thăng bằng ổn định trong suốt phân đoạn."
         elif ergo_score >= 65.0:
-            ergo_advice = "Ghi nhận góc nghiêng cột sống lệch chuẩn trong một số thời điểm. Nên điều chỉnh độ cao mặt bàn hoặc thay đổi tư thế định kỳ."
+            ergo_advice = "Ghi nhận tư thế nghiêng người hoặc chuyển động nhanh trong một số thời điểm, cần tiếp tục theo dõi."
         else:
-            ergo_advice = "Cảnh báo công thái học: Xuất hiện tư thế gập sâu bất đối xứng hoặc dấu hiệu té ngã. Cần kiểm tra an toàn lập tức."
+            ergo_advice = "Cảnh báo an toàn tư thế: Xuất hiện tư thế gập người đột ngột hoặc dấu hiệu mất thăng bằng / té ngã. Cần kiểm tra ngay."
 
         # Quyết định dominant_risk đồng bộ 100% với các phân đoạn đã được Gemini hiệu chỉnh
         if is_global_safe:
@@ -4780,16 +5365,29 @@ class VideoAnnotatorEngine:
 
             total_dang = sum(s["persons_history"].get(c_id, {}).get("danger_count", 0) for s in segments_data)
             total_def = sum(s["persons_history"].get(c_id, {}).get("defender_count", 0) for s in segments_data)
-            if total_dang >= 15:
-                role_title = "Kẻ tấn công / Gây hấn"
-            elif total_def >= 15:
-                role_title = "Nạn nhân / Phòng thủ"
+            if total_dang >= 12:
+                role_title = "Chủ động tấn công"
+            elif total_def >= 10:
+                role_title = "Phòng vệ / Né đòn"
             else:
-                role_title = "Người quan sát"
+                role_title = "Hoạt động bình thường"
+
+            trk_meta = stabilizer.active_tracks.get(c_id, {})
+            pos_meta = stabilizer.compute_spatial_anchor(
+                (
+                    int(trk_meta.get("cx", orig_w / 2.0) - 30),
+                    int(trk_meta.get("cy", orig_h / 2.0) - 60),
+                    int(trk_meta.get("cx", orig_w / 2.0) + 30),
+                    int(trk_meta.get("cy", orig_h / 2.0) + 60),
+                ),
+                orig_w,
+                orig_h,
+            ) if trk_meta else ""
+            track_label = f"{role_title} · {pos_meta}" if pos_meta else role_title
 
             actor_timeline_tracks.append({
                 "canonical_id": c_id,
-                "label": f"ID #{c_id:02d}",
+                "label": track_label,
                 "role": role_title,
                 "intervals": tracks_for_id
             })
@@ -4798,6 +5396,41 @@ class VideoAnnotatorEngine:
             gemini_result["is_crowd_scene"] = is_crowd_scene
             gemini_result["actual_person_count"] = actual_person_count
             gemini_result["peak_concurrent_persons"] = peak_concurrent_persons
+
+        # Đồng bộ danh sách chủ thể tổng quan (all_detected_entities) theo đúng vai trò thực tế & giới hạn actual_person_count
+        max_ent_summary = 4 if is_crowd_scene else (min(4, max(1, actual_person_count)) if actual_person_count > 0 else 4)
+        synced_entities = []
+        gem_actors_final = (gemini_result.get("detected_actors") or []) if isinstance(gemini_result, dict) else []
+        if gem_actors_final:
+            for act_f in gem_actors_final[:max_ent_summary]:
+                r_f = str(act_f.get("role") or act_f.get("actor_label") or "Hoạt động bình thường").strip()
+                a_f = str(act_f.get("distinctive_anchor") or "").strip(" []()")
+                lbl_f = f"{r_f} · {a_f}" if (a_f and a_f.lower() not in r_f.lower()) else r_f
+                if lbl_f and lbl_f not in synced_entities:
+                    synced_entities.append(lbl_f)
+        if not synced_entities:
+            ranked_seg_ents = []
+            for seg_f in timeline_segments:
+                for ent_f in (seg_f.get("entities") or []):
+                    if ent_f.get("id") == "KHÔNG GIAN":
+                        continue
+                    sev_w = 2 if ent_f.get("severity") == "danger" else (1 if ent_f.get("severity") == "warning" else 0)
+                    ranked_seg_ents.append((sev_w, float(ent_f.get("max_k", 0.0)), ent_f))
+            ranked_seg_ents.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            used_ancs = set()
+            for _, _, ent_f in ranked_seg_ents:
+                r_f = str(ent_f.get("role") or "Hoạt động bình thường").strip()
+                a_f = str(ent_f.get("distinctive_anchor") or "").strip(" []()")
+                key_f = a_f or r_f
+                if key_f in used_ancs and len(ranked_seg_ents) > 1:
+                    continue
+                used_ancs.add(key_f)
+                lbl_f = f"{r_f} · {a_f}" if (a_f and a_f.lower() not in r_f.lower()) else r_f
+                synced_entities.append(lbl_f)
+                if len(synced_entities) >= max_ent_summary:
+                    break
+        if synced_entities:
+            all_detected_entities = synced_entities[:max_ent_summary]
 
         raw_buf_stats = raw_buffer.get_stats(orig_w, orig_h)
         writer_buf_stats = writer_buffer.get_stats(orig_w, orig_h)

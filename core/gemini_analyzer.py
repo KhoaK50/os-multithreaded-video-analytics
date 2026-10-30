@@ -119,8 +119,8 @@ class GeminiVideoAnalyzer:
             logger.error(f"Lỗi khi gọi Gemini phân tích video clip: {e}")
             if is_rate_limit_error(e):
                 return (
-                    f"[Hội chẩn Tự hành Cục bộ - Tier 3] Giới hạn API Cloud tạm thời chạm mức (HTTP 429). "
-                    f"Hệ thống thẩm định an toàn tại chỗ: Hành vi '{detected_action}' được bảo lưu theo dõi, không ghi nhận đứt quãng giám sát."
+                    f"[Tier-3 Local Fallback] Giới hạn API Cloud tạm thời chạm mức HTTP 429. "
+                    f"Hệ thống chuyển sang xử lý dự phòng cục bộ: Hành vi '{detected_action}' tiếp tục được theo dõi không gián đoạn."
                 )
             return f"Lỗi phân tích clip qua Gemini: {e}"
 
@@ -226,10 +226,10 @@ Hãy trả về phản hồi dưới định dạng JSON với cấu trúc chu�
             logger.error(f"Lỗi khi Gemini phân tích video: {e}")
             if is_rate_limit_error(e):
                 return {
-                    "summary": "Không gian sinh hoạt và làm việc an toàn (Báo cáo Hội chẩn Tự hành Tier-3).",
+                    "summary": "Không gian sinh hoạt và làm việc an toàn · Tier-3 Local Fallback.",
                     "overall_danger_level": "AN TOAN",
                     "danger_score": 1,
-                    "danger_reasons": "Kích hoạt Bộ Hội chẩn Tự hành Cục bộ bảo toàn tính liên tục khi Cloud Quota 15 RPM chạm hạn mức.",
+                    "danger_reasons": "Kích hoạt xử lý dự phòng cục bộ Tier-3 để duy trì giám sát liên tục khi Cloud Quota 15 RPM chạm hạn mức.",
                     "statistics_percentages": {
                         "Hành vi làm việc": 50.0,
                         "Hành vi sinh hoạt": 50.0,
@@ -237,8 +237,8 @@ Hãy trả về phản hồi dưới định dạng JSON với cấu trúc chu�
                         "Hành vi nguy hiểm": 0.0
                     },
                     "timeline": [],
-                    "user_answer": "Hệ thống đang hoạt động ở chế độ Hội Chẩn Cục Bộ Tự Hành (Tier-3) để bảo toàn 100% tính liên tục của phiên làm việc.",
-                    "model_tier": "Tier-3 Local Arbiter"
+                    "user_answer": "Hệ thống đang chạy chế độ dự phòng cục bộ Tier-3 Local Fallback để duy trì liên tục phiên giám sát.",
+                    "model_tier": "Tier-3 Local Fallback"
                 }
             return {"error": f"Lỗi phân tích video: {e}"}
 
@@ -306,13 +306,13 @@ Yêu cầu trả lời:
         """Tổng hợp câu trả lời tự hành từ dữ liệu sự kiện khi toàn bộ Cloud API chạm hạn mức."""
         total = len(event_history)
         if total == 0:
-            return "[Tier-3 Hội Chẩn Tự Hành] Hiện tại chưa ghi nhận sự kiện nào trong không gian giám sát."
+            return "[Tier-3 Local Fallback] Hiện tại chưa ghi nhận sự kiện nào trong không gian giám sát."
         dangers = [e for e in event_history if e.get("is_danger")]
         q_lower = question.lower()
         if "nguy hiểm" in q_lower or "té ngã" in q_lower or "đánh nhau" in q_lower:
             if dangers:
                 first_d = dangers[0]
-                return f"[Tier-3 Hội Chẩn Tự Hành] Ghi nhận {len(dangers)} sự kiện nguy cơ cao. Tiêu biểu là hành vi '{first_d.get('action')}' lúc {first_d.get('formatted_time')}."
-            return f"[Tier-3 Hội Chẩn Tự Hành] Trong tổng số {total} sự kiện đã phân tích, toàn bộ môi trường đều duy trì mức AN TOÀN, không có dấu hiệu nguy hiểm."
+                return f"[Tier-3 Local Fallback] Ghi nhận {len(dangers)} sự kiện nguy cơ cao. Tiêu biểu là hành vi '{first_d.get('action')}' lúc {first_d.get('formatted_time')}."
+            return f"[Tier-3 Local Fallback] Trong tổng số {total} sự kiện đã phân tích, toàn bộ môi trường đều duy trì mức AN TOÀN, không có dấu hiệu nguy hiểm."
         latest = event_history[-1]
-        return f"[Tier-3 Hội Chẩn Tự Hành] Hệ thống đã ghi nhận {total} sự kiện. Sự kiện gần nhất diễn ra lúc {latest.get('formatted_time')}: '{latest.get('action')}'."
+        return f"[Tier-3 Local Fallback] Hệ thống đã ghi nhận {total} sự kiện. Sự kiện gần nhất diễn ra lúc {latest.get('formatted_time')}: '{latest.get('action')}'."

@@ -218,7 +218,7 @@ async function fetchTelemetry() {
         safeSetText("live-consumer-fps", `${data.consumer_fps || data.fps || 30.0} FPS`);
         safeSetText("live-cpu", `${data.cpu_percent || 0}%`);
         if (data.gpu_vram_total_mb && data.gpu_vram_total_mb > 0) {
-            safeSetText("live-vram", `${((data.gpu_vram_mb || 0) / 1024).toFixed(1)} / ${(data.gpu_vram_total_mb / 1024).toFixed(1)} GB`);
+            safeSetText("live-vram", `${((data.gpu_vram_mb || 0) / 1024).toFixed(1)}/${(data.gpu_vram_total_mb / 1024).toFixed(1)} GB`);
         } else {
             safeSetText("live-vram", `RAM chia sẻ`);
         }
@@ -319,8 +319,13 @@ async function fetchTelemetry() {
             safeSetText("session-warn-count", data.session_risk_counts.warning || 0);
             safeSetText("session-danger-count", data.session_risk_counts.danger || 0);
         }
-        if (data.current_ergonomic_score !== undefined) {
+        if (data.current_ergonomic_score !== undefined && data.current_ergonomic_score !== null) {
             safeSetText("session-ergo-score", `${Math.round(data.current_ergonomic_score)} / 100`);
+        } else {
+            safeSetText("session-ergo-score", "—");
+        }
+        if (typeof isLiveParallelActive !== "undefined" && isLiveParallelActive && typeof updateLiveParallelReportsAndLogs === "function") {
+            updateLiveParallelReportsAndLogs();
         }
 
         // Update camera offline overlay & status pills
@@ -366,6 +371,9 @@ async function fetchTelemetry() {
             }
             safeSetText("live-stream-status-text", "ĐÃ TẮT CAMERA");
             safeSetText("split-live-stream-status-text", "ĐÃ TẮT CAMERA");
+            safeSetText("session-ergo-score", "—");
+            safeSetText("live-y-rep-ergo", "—");
+            safeSetText("live-z-rep-ergo", "—");
         }
     } catch (e) {
         if (isServerOnline) {
@@ -412,6 +420,9 @@ async function toggleCamera(forceAction = null) {
             statusDot.style.background = "var(--accent-crimson)";
         }
         safeSetText("live-stream-status-text", "ĐÃ TẮT CAMERA");
+        safeSetText("session-ergo-score", "—");
+        safeSetText("live-y-rep-ergo", "—");
+        safeSetText("live-z-rep-ergo", "—");
 
         // 4. Reset khung stream sang ảnh chờ
         const img = document.getElementById("live-stream-img");
@@ -761,6 +772,27 @@ async function fetchCameraLogs() {
     }
 }
 
+function formatEventCodeBadge(item, idx = 0) {
+    if (!item) return `<span class="log-code-badge mono">#${String(idx + 1).padStart(3, '0')}</span>`;
+    const raw = String(item.id || item.code || "");
+    const m = raw.match(/(\d+)/);
+    const numStr = m ? m[1].padStart(3, '0') : String(idx + 1).padStart(3, '0');
+    const displayId = `#${numStr}`;
+    const sev = item.severity || "safe";
+    const modClass = sev === "danger" ? "badge-code-danger" : (sev === "warning" ? "badge-code-warn" : "");
+    return `<span class="log-code-badge mono ${modClass}">${escapeHtml(displayId)}</span>`;
+}
+
+function formatSegmentLabel(rawId, idx = 0) {
+    if (!rawId) return `Phân đoạn ${String(idx + 1).padStart(2, '0')}`;
+    const s = String(rawId).trim();
+    const m = s.match(/(\d+)/);
+    if (m) {
+        return `Phân đoạn ${m[1].padStart(2, '0')}`;
+    }
+    return s.replace(/^#?SEG-?/i, "Phân đoạn ");
+}
+
 function getModelTierBadge(tierKey) {
     const key = (tierKey || "").toLowerCase();
     if (key.includes("tier_1") || key.includes("3.8") || key.includes("2.5") || key.includes("2.0")) {
@@ -786,7 +818,7 @@ function renderBehaviorTable(logs) {
                 <td colspan="7" class="empty-cell">
                     <div class="empty-state-box">
                         <span class="empty-icon"><svg class="ui-icon empty-svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
-                        <p class="empty-title">Chưa có bản ghi nhận diện tư thế công thái học</p>
+                        <p class="empty-title">Chưa có bản ghi nhận diện tư thế &amp; hành vi</p>
                         <span class="empty-sub">Khởi động camera hoặc nạp luồng video để hệ thống bắt đầu thu nhận khung hình và phân tích hành vi theo chu kỳ 4 giây.</span>
                     </div>
                 </td>
@@ -814,7 +846,7 @@ function renderBehaviorTable(logs) {
         html += `
             <tr class="${rowClass}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
                 <td>
-                    <span class="log-code-badge">${escapeHtml(item.code || item.id)}</span>
+                    ${formatEventCodeBadge(item, idx)}
                 </td>
                 <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                 <td>
@@ -850,15 +882,21 @@ function renderBehaviorTable(logs) {
 
 async function captureManualSnapshot() {
     const snapBtn = document.getElementById("btn-manual-snap");
+    const splitSnapBtn = document.getElementById("btn-split-manual-snap");
     if (snapBtn) {
         snapBtn.disabled = true;
-        snapBtn.innerHTML = `${ICONS.camera}<span>Đang chụp...</span>`;
+        snapBtn.innerHTML = `${ICONS.camera}<span>Đang chụp &amp; phân tích...</span>`;
+    }
+    if (splitSnapBtn) {
+        splitSnapBtn.disabled = true;
+        splitSnapBtn.textContent = "Đang chụp & phân tích...";
     }
     try {
         const res = await fetch("/api/camera/snapshot", { method: "POST" });
         const data = await res.json();
         if (data.status === "success") {
             await fetchCameraLogs();
+            showToast("Đã chụp Snapshot và hoàn tất phân tích hành vi.", "info");
         } else {
             showToast("Không thể chụp ảnh: " + (data.message || "Vui lòng bật camera"), "warning");
         }
@@ -868,6 +906,10 @@ async function captureManualSnapshot() {
         if (snapBtn) {
             snapBtn.disabled = false;
             snapBtn.innerHTML = `${ICONS.camera}<span>Chụp Snapshot</span>`;
+        }
+        if (splitSnapBtn) {
+            splitSnapBtn.disabled = false;
+            splitSnapBtn.textContent = "Chụp Snapshot";
         }
     }
 }
@@ -978,7 +1020,7 @@ function openSegmentDetailModal(segId) {
     const modal = document.getElementById("segment-detail-modal");
     if (!modal) return;
 
-    safeSetText("seg-modal-id", seg.segment_id || "#SEG--");
+    safeSetText("seg-modal-id", formatSegmentLabel(seg.segment_id));
     safeSetText("seg-modal-timerange", seg.time_range || "--:-- - --:--");
     
     const badgeEl = document.getElementById("seg-modal-severity-badge");
@@ -1025,22 +1067,34 @@ function openSegmentDetailModal(segId) {
     const cardsContainer = document.getElementById("seg-modal-entity-matrix");
     if (cardsContainer) {
         cardsContainer.innerHTML = "";
-        const entities = (seg.entities || []).filter(e => e && String(e.id || "") !== "KHÔNG GIAN" && e.raw_id !== "ALL");
+        const resMeta = currentAnalysisResult || {};
+        const geminiMeta = resMeta.gemini_report || {};
+        const isCrowdModal = Boolean(
+            resMeta.is_crowd_scene ||
+            geminiMeta.is_crowd_scene ||
+            (resMeta.actual_person_count > 4) ||
+            (resMeta.peak_concurrent_persons > 4)
+        );
+        const maxModalActors = (!isCrowdModal && resMeta.actual_person_count > 0)
+            ? parseInt(resMeta.actual_person_count, 10)
+            : 4;
+        const entities = (seg.entities || [])
+            .filter(e => e && String(e.id || "") !== "KHÔNG GIAN" && e.raw_id !== "ALL")
+            .slice(0, maxModalActors);
         if (entities.length === 0) {
-            cardsContainer.innerHTML = `<div class="empty-entity-sub">Không có thông tin đối tượng trong phân đoạn.</div>`;
+            cardsContainer.innerHTML = `<div class="empty-entity-sub">Không có thông tin chủ thể trong phân đoạn.</div>`;
         } else {
-            entities.forEach(ent => {
-                const rawId = String(ent.id || "");
-                const idMatch = rawId.match(/ID\s*#?(\d+)/i);
-                const idTag = idMatch ? `ID #${idMatch[1].padStart(2, '0')}` : (ent.raw_id || "ID #--");
-                let actorName = ent.actor_label || rawId.replace(/\(?ID\s*#?\d+\)?/i, '').replace(/[\(\)—-]/g, '').trim();
-                if (/^(đối tượng|chủ thể)\s*#?\d+/i.test(actorName)) actorName = "";
+            entities.forEach((ent, entIdx) => {
+                const effEntSev = seg.severity === "safe"
+                    ? "safe"
+                    : (seg.severity === "warning" && ent.severity === "danger" ? "warning" : (ent.severity || "safe"));
 
-                const rawAnchor = (ent.distinctive_anchor || "").replace(/[\(\)\[\]]/g, '').trim();
-                const anchorText = (/^(khu vực|đối tượng|chủ thể)\s*#?\d+/i.test(rawAnchor) || rawAnchor === actorName) ? "" : rawAnchor;
+                const resolved = resolveActorRoleAndAnchor(ent, effEntSev, seg.severity, entIdx, entities.length);
+                const roleTitle = resolved.roleText;
+                const anchorText = resolved.anchorText;
 
-                const actionText = (ent.action || "Sinh hoạt tự nhiên").replace(/[\(\)]/g, '').trim();
-                const postureText = (ent.posture || "").replace(/[\(\)]/g, '').trim();
+                const actionText = stripMachineTokens(ent.action || "Hoạt động bình thường").replace(/[\(\)]/g, '').trim();
+                const postureText = stripMachineTokens(ent.posture || "").replace(/[\(\)]/g, '').trim();
                 const postureCore = postureText.replace(/^(đang|tư\s*thế)\s+/i, '').trim();
                 const isPostureRedundant = !postureCore ||
                     actionText.toLowerCase().includes(postureText.toLowerCase()) ||
@@ -1049,69 +1103,30 @@ function openSegmentDetailModal(segId) {
                     ? `${actionText} · ${postureText}`
                     : actionText;
 
-                const effEntSev = seg.severity === "safe"
-                    ? "safe"
-                    : (seg.severity === "warning" && ent.severity === "danger" ? "warning" : (ent.severity || "safe"));
-
-                const cleanRoleStr = (ent.role || "").replace(/[\(\)]/g, '·').replace(/\s*·\s*$/, '').trim();
-                let roleBadgeText = "";
+                let statusBadgeText = "An toàn";
                 let roleClass = "role-safe";
                 if (effEntSev === "danger") {
-                    if (cleanRoleStr && cleanRoleStr !== "An toàn" && cleanRoleStr !== "Bình thường") {
-                        roleBadgeText = cleanRoleStr;
-                    } else {
-                        roleBadgeText = "Trực tiếp xung đột";
-                    }
+                    statusBadgeText = "Nguy hiểm";
                     roleClass = "role-danger";
                 } else if (effEntSev === "warning") {
-                    if (cleanRoleStr && cleanRoleStr !== "An toàn" && cleanRoleStr !== "Bình thường") {
-                        roleBadgeText = cleanRoleStr;
-                    } else {
-                        roleBadgeText = "Đối đầu / Phòng thủ";
-                    }
+                    statusBadgeText = "Cảnh báo";
                     roleClass = "role-warn";
-                } else {
-                    if (seg.severity === "danger" || seg.severity === "warning") {
-                        if (cleanRoleStr && (cleanRoleStr.toLowerCase().includes("ngoài cuộc") || cleanRoleStr.toLowerCase().includes("quan sát") || cleanRoleStr.toLowerCase().includes("can ngăn"))) {
-                            roleBadgeText = cleanRoleStr.toLowerCase().startsWith("an toàn") ? cleanRoleStr : `An toàn · ${cleanRoleStr}`;
-                        } else {
-                            roleBadgeText = "An toàn · Người ngoài cuộc / Quan sát";
-                        }
-                    } else {
-                        const safeRoleClean = cleanRoleStr
-                            .replace(/^(người\s+ngoài\s+cuộc|ngoài\s+cuộc)\s*[·/\-:]?\s*/i, '')
-                            .replace(/\b(người\s+ngoài\s+cuộc|ngoài\s+cuộc)\b/gi, '')
-                            .replace(/^[·/\-:\s]+|[·/\-:\s]+$/g, '')
-                            .trim();
-                        if (safeRoleClean && !["An toàn", "Bình thường", "Người quan sát", "Không gian"].includes(safeRoleClean)) {
-                            roleBadgeText = safeRoleClean;
-                        } else {
-                            roleBadgeText = "An toàn";
-                        }
-                    }
-                    roleClass = "role-safe";
                 }
 
                 const entBadgeClass = effEntSev === "danger" ? "tag-danger" : (effEntSev === "warning" ? "tag-warning" : "tag-safe");
                 const cardBorderClass = effEntSev === "danger" ? "edc-card-danger" : (effEntSev === "warning" ? "edc-card-warn" : "edc-card-safe");
-                const headerTitle = actorName || anchorText || idTag;
 
                 const card = document.createElement("div");
                 card.className = `entity-detail-card ${cardBorderClass}`;
                 card.innerHTML = `
                     <div class="edc-header">
                         <div class="edc-identity">
-                            <span class="entity-tag ${entBadgeClass} mono">${idTag}</span>
-                            <strong class="edc-actor-title">${escapeHtml(headerTitle)}</strong>
+                            <span class="entity-tag ${entBadgeClass}">${escapeHtml(roleTitle)}</span>
+                            ${anchorText ? `<strong class="edc-actor-title">${escapeHtml(anchorText)}</strong>` : ''}
                         </div>
-                        <span class="entity-role-badge ${roleClass}">${escapeHtml(roleBadgeText)}</span>
+                        <span class="entity-role-badge ${roleClass}">${escapeHtml(statusBadgeText)}</span>
                     </div>
                     <div class="edc-body">
-                        ${anchorText && anchorText !== headerTitle ? `
-                        <div class="edc-field-row">
-                            <span class="edc-label">Vị trí trên ảnh chụp:</span>
-                            <span class="edc-val">${escapeHtml(anchorText)}</span>
-                        </div>` : ''}
                         <div class="edc-field-row">
                             <span class="edc-label">Hành vi &amp; tư thế:</span>
                             <span class="edc-val edc-action-text">${escapeHtml(combinedBehavior)}</span>
@@ -1294,6 +1309,95 @@ function escapeJsArg(text) {
         .replace(/>/g, "&gt;");
 }
 
+function cleanIdentityTokens(raw) {
+    if (!raw) return "";
+    return String(raw)
+        .replace(/\[?\bID\s*#?\s*\d+\b\]?/gi, "")
+        .replace(/\b(?:Đối tượng|Chủ thể|Người tham gia|Khu vực)\s*#?\s*\d+\b/gi, "")
+        .replace(/\bVị trí trên ảnh(?:\s*chụp)?\s*:\s*/gi, "")
+        .replace(/[\(\)\[\]]/g, " ")
+        .replace(/\s*[—\-·:]+\s*(?=[—\-·:]|$)/g, "")
+        .replace(/^[—\-·:,\s]+|[—\-·:,\s]+$/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+function resolveActorRoleAndAnchor(ent, effSev = "safe", segSev = "safe", idx = 0, totalInGroup = 1) {
+    const rawAnchorCandidates = [
+        ent && ent.spatial_anchor,
+        ent && ent.distinctive_anchor,
+        ent && ent.id
+    ];
+    let anchorText = "";
+    const spatialRegex = /(bên\s+trái|bên\s+phải|trung\s+tâm|chính\s+giữa|phía\s+trước|phía\s+sau|góc\s+trái|góc\s+phải)/i;
+    for (const cand of rawAnchorCandidates) {
+        const cleaned = cleanIdentityTokens(cand);
+        if (!cleaned || /^(null|undefined|chủ thể|an toàn|bình thường)$/i.test(cleaned)) continue;
+        const m = cleaned.match(spatialRegex);
+        if (m) {
+            const tok = m[1].toLowerCase();
+            if (tok.includes("trái")) anchorText = "Bên trái";
+            else if (tok.includes("phải")) anchorText = "Bên phải";
+            else if (tok.includes("trước")) anchorText = "Phía trước";
+            else if (tok.includes("sau")) anchorText = "Phía sau";
+            else anchorText = "Trung tâm";
+            break;
+        }
+        if (!anchorText && cleaned.length <= 28 && !/(tấn công|phòng vệ|xung đột|xô xát|hoạt động|quan sát)/i.test(cleaned)) {
+            anchorText = cleaned;
+        }
+    }
+
+    if (!anchorText && totalInGroup === 2) {
+        anchorText = idx === 0 ? "Bên trái" : "Bên phải";
+    } else if (!anchorText && totalInGroup === 1) {
+        anchorText = "Trung tâm";
+    }
+
+    const rawRole = cleanIdentityTokens((ent && (ent.role || ent.actor_label)) || "");
+    const actLow = String((ent && (ent.action || ent.true_action || ent.posture)) || "").toLowerCase();
+    let roleText = "";
+
+    const isGenericRole = !rawRole || /^(null|undefined|an toàn|bình thường|chủ thể|chủ thể ghi nhận|bên trái|bên phải|trung tâm|phía trước|phía sau)$/i.test(rawRole);
+    if (!isGenericRole && rawRole !== anchorText) {
+        roleText = rawRole;
+    }
+
+    if (!roleText) {
+        if (effSev === "danger") {
+            if (/(né|đỡ|che chắn|chống trả|phòng vệ|phòng thủ|lùi|ngã)/.test(actLow) && !/(tấn công|lao vào|xông vào)/.test(actLow)) {
+                roleText = "Phòng vệ / Né đòn";
+            } else if (/(vung|đấm|đá|tấn công|đánh|lao vào|vật lộn|xô xát)/.test(actLow)) {
+                roleText = idx === 1 && totalInGroup === 2 && !/(chủ động)/.test(actLow)
+                    ? "Giằng co / Đáp trả"
+                    : "Chủ động tấn công";
+            } else {
+                roleText = "Trực tiếp xung đột";
+            }
+        } else if (effSev === "warning") {
+            if (/(né|đỡ|che chắn|phòng vệ|phòng thủ)/.test(actLow)) {
+                roleText = "Phòng vệ / Né đòn";
+            } else {
+                roleText = "Đối đầu căng thẳng";
+            }
+        } else {
+            if (segSev === "danger" || segSev === "warning") {
+                roleText = "Người ngoài cuộc quan sát";
+            } else {
+                roleText = "Hoạt động bình thường";
+            }
+        }
+    }
+
+    if (anchorText && roleText.toLowerCase() === anchorText.toLowerCase()) {
+        roleText = effSev === "danger"
+            ? "Trực tiếp xung đột"
+            : (effSev === "warning" ? "Đối đầu căng thẳng" : "Hoạt động bình thường");
+    }
+
+    return { roleText, anchorText };
+}
+
 function stripMachineTokens(str) {
     if (!str) return "";
     let s = String(str)
@@ -1304,11 +1408,16 @@ function stripMachineTokens(str) {
         .replace(/(?:Hệ thống\s+)?(?:Kích hoạt\s+)?(?:Bộ hội chẩn\s+Cục bộ\s+Tự hành\s*)?\(?Tier-[123]\s*Autonomous\s*Heuristic[^.]*\.?/gi, "")
         .replace(/Hệ thống Edge AI phát hiện gia tốc động học đột biến và tương tác va chạm vật lý mức độ cao giữa các đối tượng/gi, "Ghi nhận các cá nhân tiến sát vào nhau, xuất hiện hành động vung tay đánh và xô đẩy trực tiếp")
         .replace(/Phát hiện Xung đột thể xác\s*\/\s*Biến động động năng bạo lực/gi, "Phát hiện xô xát và va chạm tay chân trực tiếp giữa các cá nhân")
-        .replace(/Cảnh báo phòng vệ:\s*Ghi nhận đối tượng\s+(ID\s*#\d+)\s+thủ thế co hai tay chắn đỡ,\s*nghiêng thân né tránh(?:\s+ở cự ly\s*\d+\s*px)?/gi, "Tình huống căng thẳng: $1 đưa hai tay lên trước ngực che chắn và nghiêng người né tránh")
-        .replace(/Khu vực an ninh ổn định:\s*Ghi nhận\s+(\d+)\s+đối tượng hoạt động bình thường,?\s*cự ly an toàn\s*>\s*1\.5\s*m,?\s*không có xung lực đột biến/gi, "Mọi người trong khu vực ($1 người) đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái")
+        .replace(/Cảnh báo phòng vệ:\s*Ghi nhận đối tượng\s+(?:ID\s*#?\d+\s+)?thủ thế co hai tay chắn đỡ,\s*nghiêng thân né tránh(?:\s+ở cự ly\s*\d+\s*px)?/gi, "Tình huống căng thẳng: cá nhân đưa hai tay lên trước ngực che chắn và nghiêng người né tránh")
+        .replace(/Khu vực an ninh ổn định:\s*Ghi nhận\s+(\d+)\s+đối tượng hoạt động bình thường,?\s*cự ly an toàn\s*>\s*1\.5\s*m,?\s*không có xung lực đột biến/gi, "Mọi người trong khu vực gồm $1 người đang sinh hoạt, trao đổi và di chuyển tự nhiên, giữ khoảng cách thoải mái")
         .replace(/\b(?:ở\s+)?cự ly\s*(?:an toàn\s*)?(?:dưới\s*|xuống còn\s*|tiếp xúc\s*|tiếp cận\s*)?(?:>\s*)?\d+(?:\.\d+)?\s*(?:px|m)\b/gi, "ở khoảng cách gần")
         .replace(/\b(?:với\s+)?(?:vận tốc|tốc độ)(?:\s+vung\s+đòn|\s+vung\s+chi|\s+dịch\s+chuyển|\s+chuyển\s+động|\s+đỉnh|\s+chi)?(?:\s+đạt|\s+lên\s+mức)?\s*\d+(?:\.\d+)?\s*(?:px\/s|m\/s)\b/gi, "")
         .replace(/\(\s*\d+(?:\.\d+)?\s*(?:px\/s|px|m\/s)[^)]*\)/gi, "")
+        .replace(/\[?\bID\s*#?\s*\d+\b\]?/gi, "")
+        .replace(/\b(?:Đối tượng|Chủ thể|Người tham gia)\s*#?\s*\d+\b/gi, "cá nhân")
+        .replace(/\bVị trí trên ảnh(?:\s*chụp)?\s*:\s*/gi, "")
+        .replace(/\(\s*[^)]{0,80}\s*\)/g, "")
+        .replace(/\[\s*\]/g, "")
         .replace(/,?\s*không có xung lực đột biến/gi, "")
         .replace(/\bxung lực(?:\s+động học|\s+cơ thể|\s+va chạm)?\b/gi, "tác động")
         .replace(/\bđộng năng(?:\s+bạo lực)?\b/gi, "chuyển động")
@@ -1370,12 +1479,31 @@ function humanizeBehaviorRecord(item, idx = 0) {
     if (!item) return item;
     const rawDesc = stripMachineTokens(item.description || "");
     const rawPred = stripMachineTokens(item.prediction_next_4s || "");
-    const rawAct = stripMachineTokens(item.action || "Ngồi thẳng bình thường");
+    let rawAct = stripMachineTokens(item.action || "Ngồi thẳng bình thường");
+    let cleanSev = item.severity || "safe";
+    let cleanCode = item.code || item.id || "";
+
+    if (cleanSev === "danger") {
+        const combinedLow = `${rawAct} ${rawDesc}`.toLowerCase();
+        const hasRealDanger = /té ngã|ngã quỵ|ngã gục|gục ngã|ngã xuống|bất tỉnh|đột quỵ|ngất|bạo lực|đánh nhau|ẩu đả|vung đấm|đấm đá|tấn công|hành hung|xô xát|tai nạn|khẩn cấp|cấp cứu|chấn thương|co giật/.test(combinedLow);
+        if (!hasRealDanger) {
+            cleanSev = /vắng mặt|rời khỏi|khung hình trống|căng thẳng|mệt mỏi|ôm đầu|lệch trục/.test(combinedLow) ? "warning" : "safe";
+            if (/cử chỉ bất thường|vung tay mạnh/i.test(rawAct)) {
+                rawAct = /cúi/i.test(rawDesc) ? "Cúi người xem nội dung" : "Đưa tay tương tác trước ống kính";
+            }
+            if (typeof cleanCode === "string" && cleanCode.startsWith("DANGER-")) {
+                cleanCode = cleanCode.replace(/^DANGER-/, cleanSev === "warning" ? "WARN-" : "NORM-");
+            }
+        }
+    }
+
     const isLegacyTemplate = /\(trục lưng\s*\d+°\)|\(góc nghiêng thân.*°\)|Chuyển tư thế từ\s*'.*'\s*sang|Duy trì tư thế\s*'.*'\s*ổn định|Người dùng nhiều khả năng tiếp tục giữ trạng thái/i.test(rawDesc + " " + rawPred);
 
     if (!isLegacyTemplate) {
         return {
             ...item,
+            code: cleanCode || item.code,
+            severity: cleanSev,
             action: rawAct,
             description: rawDesc,
             prediction_next_4s: rawPred
@@ -1454,6 +1582,9 @@ function humanizeBehaviorRecord(item, idx = 0) {
 
     return {
         ...item,
+        code: cleanCode || item.code,
+        severity: cleanSev,
+        action: rawAct,
         description: cleanDesc,
         prediction_next_4s: cleanPred
     };
@@ -2033,7 +2164,7 @@ async function pollJobProgress() {
             const framesText = document.getElementById("proc-frames-text");
             if (framesText) {
                 const stageStr = job.stage ? ` • ${job.stage}` : '';
-                framesText.textContent = `Khung hình: ${job.current_frame} / ${job.total_frames}${stageStr}`;
+                framesText.textContent = `Frame: ${job.current_frame} / ${job.total_frames}${stageStr}`;
             }
             const fpsBadge = document.getElementById("proc-fps-badge");
             if (fpsBadge && job.current_fps != null) {
@@ -2054,7 +2185,7 @@ async function pollJobProgress() {
             let etaSec = 4;
             if (stgLower.includes("mã hóa") || stgLower.includes("đối sánh")) {
                 etaSec = 2;
-            } else if (stgLower.includes("hội chẩn")) {
+            } else if (stgLower.includes("gemini") || stgLower.includes("phân tích ngữ cảnh") || stgLower.includes("hội chẩn")) {
                 etaSec = 3;
             } else if (totalFrames > 0 && curFrame < totalFrames) {
                 const remFrames = Math.max(0, totalFrames - curFrame);
@@ -2080,8 +2211,8 @@ async function pollJobProgress() {
             const stride = pl.infer_stride || 1;
 
             safeSetText("pipe-live-reader", totalF > 0 ? `Đọc: ${readerF} / ${totalF}` : "Đang khởi tạo...");
-            safeSetText("pipe-live-rawbuf", `Hàng đợi: ${rawQ} / ${qMax}`);
-            if (stgLower.includes("hội chẩn")) {
+            safeSetText("pipe-live-rawbuf", `Buffer: ${rawQ} / ${qMax}`);
+            if (stgLower.includes("gemini") || stgLower.includes("phân tích ngữ cảnh") || stgLower.includes("hội chẩn")) {
                 safeSetText("pipe-live-infer", "Gemini Multimodal AI");
             } else if (stgLower.includes("mã hóa") || stgLower.includes("đối sánh")) {
                 safeSetText("pipe-live-infer", `Hoàn tất ${inferF} frames`);
@@ -2089,7 +2220,7 @@ async function pollJobProgress() {
                 const strideTag = stride > 1 ? ` · Stride ${stride}x` : "";
                 safeSetText("pipe-live-infer", `GPU: ${job.current_fps || 0} FPS${strideTag}`);
             }
-            safeSetText("pipe-live-writerbuf", `Hàng đợi: ${writerQ} / ${qMax}`);
+            safeSetText("pipe-live-writerbuf", `Buffer: ${writerQ} / ${qMax}`);
             if (stgLower.includes("mã hóa")) {
                 safeSetText("pipe-live-writer", "FFmpeg H.264 Encoding...");
             } else {
@@ -2525,54 +2656,64 @@ function updateHeatmapPlayhead(currentTime) {
 }
 
 // ==============================================================================
-// ENTITY FILTERING & TIMELINE CHAPTERS TABLE
+// BEHAVIORAL SEVERITY FILTERING & TIMELINE CHAPTERS TABLE
 // ==============================================================================
+function getEffectiveSegmentSeverity(seg) {
+    const numScore = parseFloat((seg && seg.danger_score) || 0);
+    if (numScore >= 8.0 || (seg && seg.severity === "danger")) return "danger";
+    if (numScore >= 4.0 || (seg && seg.severity === "warning")) return "warning";
+    return "safe";
+}
+
 function renderEntityFilters(entities, result) {
     const container = document.getElementById("entity-filter-container");
     if (!container) return;
 
     const res = result || currentAnalysisResult || {};
-    const gemini = res.gemini_report || {};
-    const isCrowd = Boolean(
-        res.is_crowd_scene ||
-        gemini.is_crowd_scene ||
-        (res.actual_person_count > 4) ||
-        (res.peak_concurrent_persons > 4)
-    );
+    const segs = Array.isArray(res.timeline_segments)
+        ? res.timeline_segments
+        : (Array.isArray(currentSegments) ? currentSegments : []);
 
-    if (isCrowd) {
-        container.innerHTML = "";
-        container.style.display = "none";
-        activeEntityFilter = 'all';
-        return;
+    let dangerCount = 0;
+    let warnCount = 0;
+    let safeCount = 0;
+    segs.forEach(s => {
+        const sev = getEffectiveSegmentSeverity(s);
+        if (sev === "danger") dangerCount += 1;
+        else if (sev === "warning") warnCount += 1;
+        else safeCount += 1;
+    });
+
+    if (!["all", "danger", "warning", "safe"].includes(activeEntityFilter)) {
+        activeEntityFilter = "all";
     }
 
     container.style.display = "flex";
-    container.innerHTML = `<span class="filter-label">Lọc đối tượng:</span>`;
+    container.innerHTML = `<span class="filter-label">Lọc mức độ:</span>`;
 
-    const allBtn = document.createElement("button");
-    allBtn.className = `filter-chip ${activeEntityFilter === 'all' ? 'active' : ''}`;
-    allBtn.id = "filter-chip-all";
-    allBtn.textContent = `Tất cả — ${entities.length || 0}`;
-    allBtn.onclick = () => filterByEntity('all');
-    container.appendChild(allBtn);
+    const filterOptions = [
+        { key: "all", label: `Tất cả — ${segs.length}` },
+        { key: "danger", label: `Nguy hiểm / Xô xát — ${dangerCount}` },
+        { key: "warning", label: `Cảnh báo / Đối đầu — ${warnCount}` },
+        { key: "safe", label: `An toàn — ${safeCount}` }
+    ];
 
-    entities.forEach(entId => {
+    filterOptions.forEach(opt => {
         const chip = document.createElement("button");
-        chip.className = `filter-chip ${activeEntityFilter === entId ? 'active' : ''}`;
-        chip.innerHTML = `${ICONS.user} <span>${escapeHtml(entId)}</span>`;
-        chip.onclick = () => filterByEntity(entId);
+        chip.className = `filter-chip filter-tier-${opt.key} ${activeEntityFilter === opt.key ? 'active' : ''}`;
+        if (opt.key === "all") chip.id = "filter-chip-all";
+        chip.dataset.filterKey = opt.key;
+        chip.textContent = opt.label;
+        chip.onclick = () => filterByEntity(opt.key);
         container.appendChild(chip);
     });
 }
 
-function filterByEntity(entId) {
-    activeEntityFilter = entId;
+function filterByEntity(filterKey) {
+    activeEntityFilter = ["all", "danger", "warning", "safe"].includes(filterKey) ? filterKey : "all";
     const chips = document.querySelectorAll("#entity-filter-container .filter-chip");
     chips.forEach(chip => {
-        if (entId === 'all' && chip.textContent.includes('Tất cả')) {
-            chip.classList.add("active");
-        } else if (chip.textContent.includes(entId)) {
+        if (chip.dataset.filterKey === activeEntityFilter) {
             chip.classList.add("active");
         } else {
             chip.classList.remove("active");
@@ -2593,7 +2734,7 @@ function renderTimelineSegments() {
                     <div class="empty-state-box">
                         <span class="empty-icon">${ICONS.film}</span>
                         <p class="empty-title">Chưa có phân đoạn hành vi dòng thời gian</p>
-                        <span class="empty-sub">Hãy tải video lên hoặc dán liên kết URL và nhấn "Xác nhận đoạn đã chọn & khởi động AI phân tích" để bắt đầu xử lý.</span>
+                        <span class="empty-sub">Tải video lên hoặc dán liên kết URL và nhấn Khởi động phân tích để bắt đầu xử lý.</span>
                     </div>
                 </td>
             </tr>
@@ -2601,26 +2742,43 @@ function renderTimelineSegments() {
         return;
     }
 
-    // Filter segments if activeEntityFilter !== 'all'
     const filtered = currentSegments.filter(seg => {
-        if (activeEntityFilter === 'all') return true;
-        return seg.entities && seg.entities.some(e => e.id === activeEntityFilter || (e.raw_id && activeEntityFilter.includes(e.raw_id)));
+        if (!activeEntityFilter || activeEntityFilter === "all") return true;
+        return getEffectiveSegmentSeverity(seg) === activeEntityFilter;
     });
 
     if (filtered.length === 0) {
+        const tierLabelMap = {
+            danger: "Nguy hiểm / Xô xát",
+            warning: "Cảnh báo / Đối đầu",
+            safe: "An toàn"
+        };
+        const activeTierName = tierLabelMap[activeEntityFilter] || activeEntityFilter;
         tbody.innerHTML = `
             <tr class="empty-row">
                 <td colspan="5" class="empty-cell">
                     <div class="empty-state-box">
                         <span class="empty-icon">${ICONS.filter}</span>
-                        <p class="empty-title">Không tìm thấy phân đoạn phù hợp</p>
-                        <span class="empty-sub">Không có phân đoạn xuất hiện đối tượng <strong>${escapeHtml(activeEntityFilter)}</strong>. Nhấn "Tất cả" để xem toàn bộ danh sách.</span>
+                        <p class="empty-title">Không có phân đoạn ở mức độ đã chọn</p>
+                        <span class="empty-sub">Video hiện tại không ghi nhận phân đoạn nào thuộc nhóm <strong>${escapeHtml(activeTierName)}</strong>. Nhấn <strong>Tất cả</strong> để xem toàn bộ dòng thời gian.</span>
                     </div>
                 </td>
             </tr>
         `;
         return;
     }
+
+    const resMeta = currentAnalysisResult || {};
+    const geminiMeta = resMeta.gemini_report || {};
+    const isCrowdScene = Boolean(
+        resMeta.is_crowd_scene ||
+        geminiMeta.is_crowd_scene ||
+        (resMeta.actual_person_count > 4) ||
+        (resMeta.peak_concurrent_persons > 4)
+    );
+    const maxSegActors = (!isCrowdScene && resMeta.actual_person_count > 0)
+        ? parseInt(resMeta.actual_person_count, 10)
+        : 4;
 
     let html = "";
     filtered.forEach((seg) => {
@@ -2629,6 +2787,7 @@ function renderTimelineSegments() {
         const numScore = parseFloat(seg.danger_score || 0);
         const isDanger = numScore >= 8.0 || seg.severity === "danger";
         const isWarn = (!isDanger && (numScore >= 4.0 || seg.severity === "warning"));
+        const segSevKey = isDanger ? "danger" : (isWarn ? "warning" : "safe");
         const badgeClass = isDanger ? "badge badge-danger" : (isWarn ? "badge badge-warning" : "badge badge-safe");
         const badgeText = isDanger ? "NGUY HIỂM" : (isWarn ? "CẢNH BÁO" : "AN TOÀN");
 
@@ -2646,7 +2805,7 @@ function renderTimelineSegments() {
             `;
         }
 
-        // Cột 2: Bên ngoài bảng chỉ hiển thị tóm tắt ngắn gọn + chip ID; chi tiết đầy đủ xem trong Modal Chi Tiết
+        // Cột 2: Tóm tắt ngắn gọn + chip Vai trò · Vị trí không gian (không sử dụng mã ID số cố định)
         const summaryText = ensureConsistentSegmentSummary(
             stripMachineTokens(seg.scene_summary || seg.context_description || "Khu vực sinh hoạt ổn định, không có xung đột."),
             isDanger,
@@ -2656,42 +2815,37 @@ function renderTimelineSegments() {
 
         let actorChipsHtml = "";
         const entitySentenceParts = [];
-        (seg.entities || []).forEach((ent, eIdx) => {
-            if (!ent) return;
-            const rawId = (ent.id !== null && ent.id !== undefined) ? String(ent.id) : "";
-            if (rawId === "KHÔNG GIAN" || ent.raw_id === "ALL") return;
-            const idMatch = rawId.match(/ID\s*#?(\d+)/i);
-            const idTag = idMatch 
-                ? `ID #${idMatch[1].padStart(2, '0')}` 
-                : (ent.raw_id && String(ent.raw_id) !== "null" 
-                    ? `ID #${String(ent.raw_id).padStart(2, '0')}` 
-                    : (ent.canonical_id ? `ID #${String(ent.canonical_id).padStart(2, '0')}` : `ID #${String(eIdx + 1).padStart(2, '0')}`));
-            
-            const rawAnchor = (ent.distinctive_anchor || "").replace(/[\(\)\[\]]/g, '').trim();
-            const rawLabel = ent.actor_label || ent.role || "";
-            let actorName = rawAnchor || rawLabel || rawId.replace(/\(?ID\s*#?\d+\)?/i, '').replace(/[\(\)—-]/g, '').trim();
-            if (actorName === "null" || actorName === "undefined" || /^(đối tượng|chủ thể|khu vực)\s*#?\d+/i.test(actorName)) {
-                actorName = "";
-            }
+        const visibleEntities = (seg.entities || [])
+            .filter(ent => ent && String(ent.id || "") !== "KHÔNG GIAN" && ent.raw_id !== "ALL")
+            .slice(0, maxSegActors);
 
-            const entAction = (ent.action || "").trim();
-            const entPosture = (ent.posture || "").trim();
+        visibleEntities.forEach((ent, eIdx) => {
+            const effEntSev = segSevKey === "safe"
+                ? "safe"
+                : (segSevKey === "warning" && ent.severity === "danger" ? "warning" : (ent.severity || "safe"));
+            const resolved = resolveActorRoleAndAnchor(ent, effEntSev, segSevKey, eIdx, visibleEntities.length);
+            const roleText = resolved.roleText;
+            const anchorText = resolved.anchorText;
+
+            const entAction = stripMachineTokens(ent.action || "").trim();
+            const entPosture = stripMachineTokens(ent.posture || "").trim();
             const actionDisplay = entAction && entPosture && !entAction.toLowerCase().includes(entPosture.toLowerCase())
-                ? `${entAction} (${entPosture.toLowerCase()})`
+                ? `${entAction} · ${entPosture.toLowerCase()}`
                 : (entAction || entPosture);
 
             if (actionDisplay) {
-                entitySentenceParts.push(`${idTag}${actorName ? ` (${actorName})` : ''}: ${actionDisplay.toLowerCase()}`);
+                const subjectDesc = anchorText ? `${roleText} · ${anchorText}` : roleText;
+                entitySentenceParts.push(`${subjectDesc}: ${actionDisplay.toLowerCase()}`);
             }
 
-            const entBadgeClass = (isDanger && ent.severity === "danger")
+            const entBadgeClass = effEntSev === "danger"
                 ? "tag-danger"
-                : (((isDanger || isWarn) && (ent.severity === "warning" || ent.severity === "danger")) ? "tag-warning" : "tag-safe");
+                : (effEntSev === "warning" ? "tag-warning" : "tag-safe");
 
             actorChipsHtml += `
-                <span class="seg-actor-chip ${entBadgeClass}" title="${escapeHtml(actionDisplay || actorName || idTag)}">
-                    <span class="mono seg-chip-id">${idTag}</span>
-                    ${actorName ? `<span class="seg-chip-name">${escapeHtml(actorName)}</span>` : ''}
+                <span class="seg-actor-chip ${entBadgeClass}" title="${escapeHtml(actionDisplay || roleText)}">
+                    <span class="seg-chip-id">${escapeHtml(roleText)}</span>
+                    ${anchorText ? `<span class="seg-chip-name">${escapeHtml(anchorText)}</span>` : ''}
                 </span>
             `;
         });
@@ -2702,7 +2856,7 @@ function renderTimelineSegments() {
         }
         if (!rawDetailText || rawDetailText === summaryText) {
             if (entitySentenceParts.length > 0) {
-                rawDetailText = `Trạng thái các đối tượng trên khung hình: ${entitySentenceParts.join("; ")}.`;
+                rawDetailText = `Trạng thái các chủ thể trên khung hình: ${entitySentenceParts.join("; ")}.`;
             } else {
                 rawDetailText = summaryText;
             }
@@ -2735,7 +2889,7 @@ function renderTimelineSegments() {
             <tr class="${rowClass}" id="seg-row-${escapeHtml(seg.segment_id)}">
                 <td>
                     <div class="seg-range-badge mono">${escapeHtml(seg.time_range)}</div>
-                    <div class="seg-id-sub mono">${escapeHtml(seg.segment_id)}</div>
+                    <div class="seg-id-sub mono">${escapeHtml(formatSegmentLabel(seg.segment_id))}</div>
                 </td>
                 <td>
                     <div class="seg-summary-line">${escapeHtml(summaryText)}</div>
@@ -2876,56 +3030,89 @@ function renderExecutiveSceneNarrative(result) {
     }
 
     // 1. Scene Context
-    const sceneContext = gemini.scene_context || 
-        `Khu vực sinh hoạt và vận động ổn định với ${result && result.entities_detected ? result.entities_detected.length : 1} đối tượng có mặt trong không gian.`;
+    const actualCountRaw = parseInt((result && result.actual_person_count) || gemini.actual_person_count || 0, 10);
+    const fallbackPersonCount = actualCountRaw > 0
+        ? actualCountRaw
+        : ((result && Array.isArray(result.entities_detected) && result.entities_detected.length > 0) ? result.entities_detected.length : 1);
+    const sceneContext = stripMachineTokens(
+        gemini.scene_context ||
+        `Khu vực ghi nhận ${fallbackPersonCount} chủ thể hiện diện với trạng thái vận động ổn định trong không gian.`
+    );
     safeSetText("narrative-scene-context", sceneContext);
 
-    // Actors Pills - 2-tier Card (Anti-slop, no bracket breaking)
+    // Actors Pills - 2-tier Card (ID-Free Behavioral Role + Spatial Anchor)
     const actorsContainer = document.getElementById("narrative-actors-pills");
     if (actorsContainer) {
         actorsContainer.innerHTML = "";
         const isCrowd = Boolean(
             (result && result.is_crowd_scene) ||
             gemini.is_crowd_scene ||
-            ((result && result.actual_person_count) > 4) ||
+            (actualCountRaw > 4) ||
             ((result && result.peak_concurrent_persons) > 4)
         );
+        const overallSevKey = maxScore >= 8.0 || threatLevel.includes("NGUY") || threatLevel.includes("DANGER")
+            ? "danger"
+            : ((maxScore >= 4.0 || threatLevel.includes("CẢNH") || threatLevel.includes("CANH") || threatLevel.includes("WARN")) ? "warning" : "safe");
 
         if (isCrowd) {
-            // Khi video có trên 4 người (cảnh đông người, lớp học):
-            // Không hiển thị 4 thẻ ID cố định vì ID không cố định 1 người suốt video.
-            // Thay vào đó hiển thị thẻ bối cảnh toàn cảnh đông người.
             const cardEl = document.createElement("div");
             cardEl.className = "actor-chip-card";
             cardEl.style.width = "100%";
             cardEl.innerHTML = `
                 <div class="actor-chip-header">
                     <div class="actor-chip-identity">
-                        <span class="actor-chip-id mono">BỐI CẢNH TOÀN CẢNH</span>
-                        <span class="actor-chip-role">Không gian đông người (Nhiều cá nhân có mặt)</span>
+                        <span class="actor-chip-id">BỐI CẢNH TOÀN CẢNH</span>
+                        <span class="actor-chip-role">Không gian tập trung nhiều cá nhân</span>
                     </div>
                     <span class="actor-chip-anchor-badge">Cảnh đông người</span>
                 </div>
                 <div class="actor-chip-body">
-                    Khu vực tập trung đông người với sự tham gia và luân chuyển của nhiều đối tượng. Các cá nhân và tương tác tiêu điểm được phân tích chi tiết theo từng phân đoạn độc lập trong bảng phân tích bên dưới.
+                    Khu vực tập trung đông người với sự tham gia và luân chuyển của nhiều cá nhân. Các nhóm chủ thể và tương tác tiêu điểm được phân tích chi tiết theo từng phân đoạn độc lập trong bảng dòng thời gian bên dưới.
                 </div>
             `;
             actorsContainer.appendChild(cardEl);
         } else {
-            const actors = gemini.detected_actors || [];
-            if (actors.length > 0) {
-                actors.forEach(act => {
+            const maxAllowedCards = actualCountRaw > 0 ? Math.min(4, actualCountRaw) : 4;
+            const rawActors = Array.isArray(gemini.detected_actors) ? gemini.detected_actors.slice(0, maxAllowedCards) : [];
+
+            if (rawActors.length > 0) {
+                const usedAnchors = new Set();
+                rawActors.forEach((act, aIdx) => {
                     const cardEl = document.createElement("div");
-                    cardEl.className = "actor-chip-card";
-                    const actorDisplay = act.actor_label || act.role || `Đối tượng #${act.actor_index}`;
-                    const cleanAnchor = act.distinctive_anchor ? act.distinctive_anchor.replace(/^\[+|\]+$/g, '').trim() : '';
+                    const actTextRaw = String(act.true_action || act.posture_desc || "").toLowerCase();
+                    let actSev = overallSevKey;
+                    if (/(hoạt động bình thường|sinh hoạt tự nhiên|đứng quan sát|người ngoài cuộc)/.test(actTextRaw)) {
+                        actSev = "safe";
+                    } else if (overallSevKey === "danger" && /(tấn công|vung|đấm|đá|vật lộn|chống trả|xô xát|né đòn|giằng co|ngã)/.test(actTextRaw)) {
+                        actSev = "danger";
+                    }
+                    const resolved = resolveActorRoleAndAnchor(
+                        {
+                            role: act.role || act.actor_label,
+                            distinctive_anchor: act.distinctive_anchor || act.spatial_anchor,
+                            action: act.true_action || act.posture_desc
+                        },
+                        actSev,
+                        overallSevKey,
+                        aIdx,
+                        rawActors.length
+                    );
+                    let cleanAnchor = resolved.anchorText;
+                    if (rawActors.length === 2 && cleanAnchor && usedAnchors.has(cleanAnchor)) {
+                        cleanAnchor = cleanAnchor === "Bên trái" ? "Bên phải" : (cleanAnchor === "Bên phải" ? "Bên trái" : (aIdx === 0 ? "Bên trái" : "Bên phải"));
+                    }
+                    if (cleanAnchor) usedAnchors.add(cleanAnchor);
+
+                    const toneClass = actSev === "danger"
+                        ? "actor-tone-danger"
+                        : (actSev === "warning" ? "actor-tone-warning" : "actor-tone-safe");
+                    cardEl.className = `actor-chip-card ${toneClass}`;
                     const anchorBadge = cleanAnchor ? `<span class="actor-chip-anchor-badge">${escapeHtml(cleanAnchor)}</span>` : '';
-                    const actionText = act.true_action || act.posture_desc || 'Duy trì hoạt động ổn định trong phân cảnh.';
+                    const actionText = stripMachineTokens(act.true_action || act.posture_desc || 'Duy trì hoạt động ổn định trong phân cảnh.');
                     cardEl.innerHTML = `
                         <div class="actor-chip-header">
                             <div class="actor-chip-identity">
-                                <span class="actor-chip-id mono">ID #${String(act.actor_index).padStart(2, '0')}</span>
-                                <span class="actor-chip-role">${escapeHtml(actorDisplay)}</span>
+                                <span class="actor-chip-id ${toneClass}">${escapeHtml(resolved.roleText)}</span>
                             </div>
                             ${anchorBadge}
                         </div>
@@ -2936,19 +3123,22 @@ function renderExecutiveSceneNarrative(result) {
                     actorsContainer.appendChild(cardEl);
                 });
             } else {
-                const entities = (result && result.entities_detected) ? result.entities_detected : ["ID #01 — Chủ thể"];
-                entities.forEach(ent => {
+                const rawEntities = (result && Array.isArray(result.entities_detected) && result.entities_detected.length > 0)
+                    ? result.entities_detected.slice(0, maxAllowedCards)
+                    : ["Hoạt động bình thường · Trung tâm"];
+                rawEntities.forEach((entStr, eIdx) => {
+                    const resolved = resolveActorRoleAndAnchor({ id: entStr, role: entStr }, overallSevKey, overallSevKey, eIdx, rawEntities.length);
                     const cardEl = document.createElement("div");
                     cardEl.className = "actor-chip-card";
                     cardEl.innerHTML = `
                         <div class="actor-chip-header">
                             <div class="actor-chip-identity">
-                                <span class="actor-chip-id mono">${escapeHtml(ent)}</span>
+                                <span class="actor-chip-id">${escapeHtml(resolved.roleText)}</span>
                             </div>
-                            <span class="actor-chip-anchor-badge">Chủ thể</span>
+                            ${resolved.anchorText ? `<span class="actor-chip-anchor-badge">${escapeHtml(resolved.anchorText)}</span>` : ''}
                         </div>
                         <div class="actor-chip-body">
-                            Duy trì tương tác an toàn, không có xung đột.
+                            ${overallSevKey === "danger" ? "Tham gia trực tiếp vào diễn biến xung đột trong khung hình." : "Duy trì tương tác ổn định trong không gian quan sát."}
                         </div>
                     `;
                     actorsContainer.appendChild(cardEl);
@@ -2961,7 +3151,7 @@ function renderExecutiveSceneNarrative(result) {
     const chronoContainer = document.getElementById("narrative-chronology-flow");
     if (chronoContainer) {
         chronoContainer.innerHTML = "";
-        let chronoText = gemini.chronological_evolution || "";
+        let chronoText = stripMachineTokens(gemini.chronological_evolution || "");
         
         let steps = [];
         if (chronoText.includes("Giai đoạn")) {
@@ -3008,11 +3198,13 @@ function renderExecutiveSceneNarrative(result) {
     }
 
     // 3. Conclusion & Recommendation
-    const conclusionText = gemini.overall_conclusion || gemini.detailed_diagnosis || 
-        "Toàn bộ chuỗi vận động và hoạt động của các đối tượng diễn ra an toàn, không phát hiện nguy cơ bất thường.";
+    const conclusionText = stripMachineTokens(
+        gemini.overall_conclusion || gemini.detailed_diagnosis ||
+        "Toàn bộ chuỗi vận động và hoạt động của các chủ thể diễn ra an toàn, không phát hiện nguy cơ bất thường."
+    );
     safeSetText("narrative-overall-conclusion", conclusionText);
 
-    const recText = gemini.recommended_action || "Duy trì giám sát tự động theo chu kỳ.";
+    const recText = stripMachineTokens(gemini.recommended_action || "Duy trì giám sát tự động theo chu kỳ.");
     safeSetText("narrative-recommendation-text", recText);
 }
 
@@ -3027,7 +3219,7 @@ function renderBehaviorAnalytics(analytics, duration) {
             risk_curve: currentHeatmapData || [],
             ergonomic_score: 92,
             continuous_sitting_sec: 0,
-            ergonomic_advice: "Tư thế sinh hoạt đạt mức Tốt. Trục cột sống duy trì góc độ giải phẫu học tự nhiên."
+            ergonomic_advice: "Tư thế vận động bình thường, cơ thể giữ thăng bằng ổn định."
         };
     }
 
@@ -3115,7 +3307,7 @@ function renderBehaviorAnalytics(analytics, duration) {
                 healthBadge.textContent = "Cảnh báo";
             }
         }
-        safeSetText("ergo-advice-text", analytics.ergonomic_advice || "Cột sống duy trì góc độ giải phẫu học an toàn.");
+        safeSetText("ergo-advice-text", analytics.ergonomic_advice || "Tư thế vận động bình thường, cơ thể giữ thăng bằng ổn định.");
     }
 }
 
@@ -3214,7 +3406,7 @@ function drawSvgRiskCurve(svgId, curveData, duration) {
         const tStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
         timeMarks += `
             <line x1="${x}" y1="${padTop + plotH}" x2="${x}" y2="${padTop + plotH + 5}" stroke="var(--border-subtle)" stroke-width="1"/>
-            <text x="${x}" y="${padTop + plotH + 18}" text-anchor="middle" font-size="10" font-family="'IBM Plex Mono', monospace" fill="var(--text-tertiary)">${tStr}</text>
+            <text x="${x}" y="${padTop + plotH + 18}" text-anchor="middle" font-size="10" font-family="'Be Vietnam Pro', sans-serif" fill="var(--text-tertiary)">${tStr}</text>
         `;
     }
 
@@ -3337,8 +3529,8 @@ function getSegmentMilestoneTitle(seg) {
         entList.map(e => `${(e && e.action) || ''} ${(e && e.role) || ''}`).join(" ")
     ].join(" ").toLowerCase();
 
-    if (combinedText.includes("can ngăn") || combinedText.includes("hạ nhiệt") || combinedText.includes("vãn hồi") || combinedText.includes("can thiệp")) {
-        return "Can ngăn / Vãn hồi";
+    if (combinedText.includes("can ngăn") || combinedText.includes("hạ nhiệt") || combinedText.includes("vãn hồi") || combinedText.includes("giải hòa") || combinedText.includes("can thiệp")) {
+        return "Can ngăn / Giải hòa";
     }
     if (seg.severity === "danger" || combinedText.includes("xô xát") || combinedText.includes("tấn công") || combinedText.includes("đấm") || combinedText.includes("đá") || combinedText.includes("xung đột thể xác") || combinedText.includes("xung đột")) {
         return "Xô xát thể xác";
@@ -3389,26 +3581,28 @@ function showEventFlowTooltip(e, segIndex) {
     const isWarn = (!isDanger && (numScore >= 4.0 || seg.severity === 'warning'));
     const sevLabel = isDanger ? 'Nguy hiểm' : (isWarn ? 'Cần chú ý' : 'An toàn');
     
-    let actorsList = (seg.entities || []).map(ent => {
-        let rawId = String(ent.id || "");
-        let cleanId = rawId.replace(/\(Chủ thể chính\)/g, "").trim();
-        cleanId = cleanId.replace(/Đối tượng\s*#?(\d+)\s*\((ID\s*#?\1)\)/i, "$2");
-        return `<strong>${escapeHtml(cleanId)}</strong>: ${escapeHtml(ent.action || 'Bình thường')}`;
+    const segSevKey = isDanger ? 'danger' : (isWarn ? 'warning' : 'safe');
+    const validEnts = (seg.entities || []).filter(ent => ent && String(ent.id || "") !== "KHÔNG GIAN" && ent.raw_id !== "ALL");
+    let actorsList = validEnts.map((ent, idx) => {
+        const effEntSev = segSevKey === 'safe' ? 'safe' : (ent.severity || segSevKey);
+        const resolved = resolveActorRoleAndAnchor(ent, effEntSev, segSevKey, idx, validEnts.length);
+        const label = resolved.anchorText ? `${resolved.roleText} · ${resolved.anchorText}` : resolved.roleText;
+        return `<strong>${escapeHtml(label)}</strong>: ${escapeHtml(stripMachineTokens(ent.action || 'Hoạt động bình thường'))}`;
     }).join('<br>');
-    if (!actorsList) actorsList = 'Không có đối tượng vi sai';
+    if (!actorsList) actorsList = 'Không có chuyển động bất thường';
 
     tooltip.innerHTML = `
         <div style="font-weight: 700; font-size: 11.5px; margin-bottom: 4px; color: var(--text-primary);">
             ${escapeHtml(seg.segment_id || '')} &bull; ${escapeHtml(timeStr)}
         </div>
         <div style="font-size: 12px; color: var(--accent-blue-text); font-weight: 700; margin-bottom: 6px;">
-            Mốc sự kiện: ${escapeHtml(milestone)}
+            Mốc sự kiện: ${escapeHtml(stripMachineTokens(milestone))}
         </div>
         <div style="font-size: 11px; margin-bottom: 6px; color: var(--text-secondary); line-height: 1.4;">
-            ${escapeHtml(seg.scene_summary || seg.context_description || 'Phân đoạn ghi nhận tương tác.')}
+            ${escapeHtml(stripMachineTokens(seg.scene_summary || seg.context_description || 'Phân đoạn ghi nhận tương tác.'))}
         </div>
         <div style="font-size: 11px; margin-bottom: 6px; color: var(--text-muted);">
-            Cấp độ rủi ro: <strong style="color: ${isDanger ? 'var(--accent-crimson-text)' : (isWarn ? 'var(--accent-amber-text)' : 'var(--accent-emerald-text)')};">${sevLabel} (${score}/10)</strong>
+            Cấp độ rủi ro: <strong style="color: ${isDanger ? 'var(--accent-crimson-text)' : (isWarn ? 'var(--accent-amber-text)' : 'var(--accent-emerald-text)')};">${sevLabel} &middot; ${score}/10</strong>
         </div>
         <div style="font-size: 10.5px; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); padding-top: 5px;">
             ${actorsList}
@@ -3678,7 +3872,7 @@ function updateQuotaDrawerUI(quotaMatrix, telemetryData) {
     safeSetText("drawer-fps", `${fpsVal} FPS`);
     const dQueueSize = telemetryData.queue_size !== undefined ? telemetryData.queue_size : (telemetryData.bounded_queue_size || 0);
     const dQueueMax = telemetryData.queue_max !== undefined ? telemetryData.queue_max : (telemetryData.bounded_queue_capacity || 16);
-    safeSetText("drawer-queue", `${dQueueSize} / ${dQueueMax} khung`);
+    safeSetText("drawer-queue", `${dQueueSize} / ${dQueueMax} frames`);
     safeSetText("drawer-cpu", `${telemetryData.cpu_percent || 0}%`);
     safeSetText("drawer-ram", `${telemetryData.ram_percent || 0}%`);
     const hwLabel = telemetryData.gpu_name || "CPU Hệ thống";
@@ -3893,20 +4087,21 @@ function syncAllOSLabControls(capVal, delayVal, policyVal) {
 
     const ramMb = ((capVal * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     const cpuSharePct = delayVal <= 0 ? 100 : Math.max(5, Math.round((100 * 25) / (25 + delayVal)));
-    const cpuDelayLabel = delayVal <= 0 ? "100% CPU (0 ms)" : `${cpuSharePct}% CPU (+${delayVal} ms)`;
+    const cpuDelayLabel = delayVal <= 0 ? "100% CPU · 0 ms" : `${cpuSharePct}% CPU · +${delayVal} ms`;
     const polHint = policyVal === "drop_oldest"
-        ? "Bám sát hiện tại · Nhảy cóc nếu trễ"
-        : "Xếp hàng tuần tự · Trễ pha quá khứ";
+        ? "Drop-Oldest · Bám sát hiện tại"
+        : "FIFO · Xếp hàng tuần tự";
+    const frameUnit = capVal === 1 ? "frame" : "frames";
 
-    safeSetText("os-lab-cap-display", `${capVal} khung · ${ramMb} MB`);
+    safeSetText("os-lab-cap-display", `${capVal} ${frameUnit} · ${ramMb} MB`);
     safeSetText("os-lab-delay-display", cpuDelayLabel);
     safeSetText("os-lab-policy-display", polHint);
 
-    safeSetText("vid-z-cap-val", `${capVal} khung · ${ramMb} MB`);
+    safeSetText("vid-z-cap-val", `${capVal} ${frameUnit} · ${ramMb} MB`);
     safeSetText("vid-z-delay-val", cpuDelayLabel);
     safeSetText("vid-z-policy-hint", polHint);
 
-    safeSetText("pf-z-cap-val", `${capVal} khung · ${ramMb} MB`);
+    safeSetText("pf-z-cap-val", `${capVal} ${frameUnit} · ${ramMb} MB`);
     safeSetText("pf-z-delay-val", cpuDelayLabel);
     safeSetText("pf-z-policy-hint", polHint);
 }
@@ -4073,22 +4268,22 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
     // Xác định Kịch bản Hệ điều hành trực quan (4 Case kinh điển) để giải thích rõ cho người dùng
     let caseTitle = "CASE 1 · CHUẨN LÝ TƯỞNG";
     let caseBadgeClass = "badge badge-safe mono";
-    let caseDesc = "Cân bằng Producer–Consumer (N=16, 100% CPU, Drop-Oldest): Video đạt 30 FPS mượt liên tục, không rơi khung, AI nhận diện trọn vẹn mọi nhịp cử chỉ.";
+    let caseDesc = "Cân bằng Producer–Consumer · N=16, 100% CPU, Drop-Oldest: Video đạt 30 FPS mượt liên tục, 0% drop frame, AI nhận diện trọn vẹn mọi nhịp cử chỉ.";
 
     if (severityTier === 0) {
         // Case 1
     } else if (pol === "block_fifo") {
-        caseTitle = "CASE 3 · PHÌNH ĐỆM & TRỄ PHA QUÁ KHỨ (FIFO)";
+        caseTitle = "CASE 3 · BUFFERBLOAT & TRỄ FIFO";
         caseBadgeClass = severityTier >= 3 ? "badge badge-danger mono" : "badge badge-warning mono";
-        caseDesc = `Hàng đợi FIFO giữ toàn bộ ${capVal} khung cũ trong RAM (${ramZ} MB) chờ xử lý tuần tự: Hình ảnh và câu phân tích AI bên phải bị TRỄ LÙI VỀ QUÁ KHỨ ~${(zLatencyMs / 1000).toFixed(1)} giây so với thực tế bên trái.`;
+        caseDesc = `Hàng đợi FIFO giữ toàn bộ ${capVal} frames cũ trong RAM · ${ramZ} MB chờ xử lý tuần tự: Hình ảnh và câu phân tích AI bên phải bị TRỄ LÙI VỀ QUÁ KHỨ ~${(zLatencyMs / 1000).toFixed(1)} giây so với thực tế bên trái.`;
     } else if (capVal >= 48 && delayVal < 80) {
-        caseTitle = "CASE 4 · LÃNG PHÍ RAM ĐỆM & NGHẼN KHÓA ĐỒNG BỘ";
+        caseTitle = "CASE 4 · THỪA RAM BUFFER & TRANH CHẤP MUTEX";
         caseBadgeClass = "badge badge-warning mono";
-        caseDesc = `Cấp phát quá thừa ${capVal} khung (${ramZ} MB RAM) với Drop-Oldest: Khung cũ không bao giờ được dùng nhưng gây CPU Cache Miss & tranh chấp khóa Mutex, làm tụt xuống ${zFps} FPS và khựng nhịp bộ nhớ định kỳ.`;
+        caseDesc = `Cấp phát quá thừa ${capVal} frames · ${ramZ} MB RAM với Drop-Oldest: Frame cũ không bao giờ được dùng nhưng gây CPU Cache Miss và tranh chấp khóa Mutex, làm tụt xuống ${zFps} FPS.`;
     } else {
-        caseTitle = "CASE 2 · TRÀN ĐỆM & NHẢY CÓC KHUNG HÌNH (DROP-OLDEST)";
+        caseTitle = "CASE 2 · TRÀN BUFFER & DROP FRAME · DROP-OLDEST";
         caseBadgeClass = severityTier >= 3 ? "badge badge-danger mono" : "badge badge-warning mono";
-        caseDesc = `Thiếu CPU (+${delayVal}ms) hoặc đệm hẹp (${capVal} khung) với Drop-Oldest: Luồng bên phải xóa bỏ ${zDropPct}% khung trung gian để bám sát hiện tại, khiến video bị NHẢY CÓC (${zFps} FPS) và AI lỡ mất đỉnh cử chỉ (chỉ thấy đầu & cuối).`;
+        caseDesc = `Nghẽn CPU +${delayVal} ms hoặc Buffer hẹp ${capVal} frames với Drop-Oldest: Luồng bên phải drop ${zDropPct}% frame trung gian để bám sát hiện tại, khiến video bị NHẢY CÓC · ${zFps} FPS và AI lỡ mất đỉnh cử chỉ.`;
     }
 
     ["live-os-case-badge", "vid-os-case-badge"].forEach(id => {
@@ -4137,12 +4332,12 @@ function updateDualModeEvaluation(capVal = 16, delayVal = 0, policyVal = null) {
         // Optimal
     } else if (pol === "drop_oldest") {
         sweetVerdict = severityTier === 3
-            ? `Chính sách Ưu tiên khung mới ở mức cực hạn (~${zFps} FPS): Video nhảy cóc và vỡ nét nặng; AI mất toàn bộ cử động trung gian nên đoán mò sai lệch hoàn toàn tư thế của chủ thể.`
-            : `Chính sách Ưu tiên khung mới (~${zFps} FPS): Luồng bên phải luôn bám sát thời điểm hiện tại nhưng nhảy cóc qua các khung hình chuyển tiếp, khiến AI đoán nhầm hành động đang diễn ra.`;
+            ? `Chính sách Drop-Oldest ở mức cực hạn ~${zFps} FPS: Video nhảy cóc nặng; AI mất toàn bộ frame chuyển động trung gian nên nhận diện sai lệch tư thế chủ thể.`
+            : `Chính sách Drop-Oldest ~${zFps} FPS: Luồng bên phải bám sát thời điểm hiện tại nhưng drop nhiều frame chuyển tiếp, khiến AI bỏ sót nhịp hành động ngắn.`;
     } else {
         sweetVerdict = severityTier === 3
-            ? `Chính sách Giữ tuần tự FIFO ở mức cực hạn (trễ ~${(zLatencyMs / 1000).toFixed(1)}s): Hàng đợi bị ứ đọng nghiêm trọng; video bên phải bị đóng băng ở quá khứ và AI vẫn đánh giá dựa trên tư thế cũ từ nhiều giây trước.`
-            : `Chính sách Giữ tuần tự FIFO (trễ ~${(zLatencyMs / 1000).toFixed(1)}s): Luồng bên phải xếp hàng xử lý lần lượt các khung ảnh cũ, khiến hình ảnh và kết quả nhận diện của AI luôn đi chậm hơn thực tế bên trái.`;
+            ? `Chính sách FIFO Blocking ở mức cực hạn · trễ ~${(zLatencyMs / 1000).toFixed(1)}s: Buffer bị ứ đọng nghiêm trọng; video bên phải trễ sâu về quá khứ và AI vẫn đánh giá dựa trên frame cũ từ nhiều giây trước.`
+            : `Chính sách FIFO Blocking · trễ ~${(zLatencyMs / 1000).toFixed(1)}s: Luồng bên phải xếp hàng xử lý tuần tự các frame cũ, khiến hình ảnh và kết quả nhận diện của AI luôn đi chậm hơn thực tế bên trái.`;
     }
     safeSetText("os-sweet-spot-verdict", sweetVerdict);
 
@@ -4194,7 +4389,7 @@ function resetToHardwareOptimal() {
 
     updateDualModeEvaluation(16, 0, "drop_oldest");
     commitOSLabConfig(false);
-    showToast("Đã khôi phục cấu hình chuẩn khuyến nghị (N=16, Độ trễ=0ms, Ưu tiên khung mới).", "info");
+    showToast("Đã khôi phục cấu hình chuẩn khuyến nghị · N=16, Độ trễ 0 ms, Drop-Oldest.", "info");
 }
 
 async function runOSLiveBenchmark() {
@@ -4526,11 +4721,13 @@ function renderStroboscopicStackCanvas(deck, headIdx) {
         ctx.fillStyle = "rgba(9, 13, 22, 0.88)";
         ctx.strokeStyle = "rgba(16, 185, 129, 0.65)";
         ctx.lineWidth = 1.5;
-        ctx.fillRect(14, 14, 460, 32);
-        ctx.strokeRect(14, 14, 460, 32);
+        ctx.font = "700 12.5px 'Be Vietnam Pro', sans-serif";
+        const overlayLabel = `CHỒNG KHÍT TỌA ĐỘ 1:1 · ${readySlices.length} FRAMES: ${frameLabels}`;
+        const overlayBoxW = Math.max(360, ctx.measureText(overlayLabel).width + 24);
+        ctx.fillRect(14, 14, overlayBoxW, 32);
+        ctx.strokeRect(14, 14, overlayBoxW, 32);
         ctx.fillStyle = "#6ee7b7";
-        ctx.font = "700 13px 'JetBrains Mono', monospace";
-        ctx.fillText(`CHỒNG KHÍT TỌA ĐỘ 1:1 (${readySlices.length} KHUNG): ${frameLabels}`, 24, 35);
+        ctx.fillText(overlayLabel, 24, 35);
         ctx.restore();
         return;
     }
@@ -4570,8 +4767,8 @@ function renderStroboscopicStackCanvas(deck, headIdx) {
         ctx.strokeRect(geo.x, geo.y, geo.w, geo.h);
 
         // Nhãn ở góc trên-trái của mỗi lớp (không bao giờ bị lớp sau đè khuất)
-        const labelText = `${relTag} · #${sl.entry.frame_idx} (${sl.entry.time_str || "00:00"})`;
-        ctx.font = "700 12px 'JetBrains Mono', monospace";
+        const labelText = `${relTag} · #${sl.entry.frame_idx} · ${sl.entry.time_str || "00:00"}`;
+        ctx.font = "700 12px 'Be Vietnam Pro', sans-serif";
         const textW = ctx.measureText(labelText).width + 16;
         ctx.fillStyle = geo.badgeBg;
         ctx.fillRect(geo.x + 6, geo.y + 6, textW, 22);
@@ -4639,11 +4836,13 @@ function renderStroboscopicStackCanvas(deck, headIdx) {
     ctx.fillStyle = "rgba(9, 13, 22, 0.92)";
     ctx.strokeStyle = "rgba(56, 189, 248, 0.55)";
     ctx.lineWidth = 1.25;
-    ctx.fillRect(14, H - 44, 340, 30);
-    ctx.strokeRect(14, H - 44, 340, 30);
+    ctx.font = "700 11.5px 'Be Vietnam Pro', sans-serif";
+    const trajText = `ĐƯỜNG DI CHUYỂN QUA ${readySlices.length} LỚP · ${deltaFrames} FRAMES`;
+    const trajBoxW = Math.max(300, ctx.measureText(trajText).width + 24);
+    ctx.fillRect(14, H - 44, trajBoxW, 30);
+    ctx.strokeRect(14, H - 44, trajBoxW, 30);
     ctx.fillStyle = "#38bdf8";
-    ctx.font = "700 11.5px 'JetBrains Mono', monospace";
-    ctx.fillText(`ĐƯỜNG DI CHUYỂN QUA ${readySlices.length} LỚP (${deltaFrames} khung)`, 24, H - 25);
+    ctx.fillText(trajText, 24, H - 25);
     ctx.restore();
 }
 
@@ -4809,7 +5008,7 @@ function renderLivePipelineModalDOM(st) {
     }
 
     safeSetText("os-modal-fps", `${st.current_fps || 0} FPS`);
-    safeSetText("os-modal-ms", `${st.ms_per_frame || '--'} ms/khung`);
+    safeSetText("os-modal-ms", `${st.ms_per_frame || '--'} ms/frame`);
     safeSetText("os-modal-mutex", `${Number(st.mutex_locks || 0).toLocaleString()} lượt`);
     safeSetText("os-modal-cond", `${Number(st.cond_signals || 0).toLocaleString()} / ${Number(st.cond_waits || 0).toLocaleString()}`);
 
@@ -4920,11 +5119,11 @@ function updateLeftSingleFrameInspector(f, st) {
     }
 
     const totalF = (st && st.total_frames) || f.total_frames || 0;
-    safeSetText("os-modal-frame-counter", `Khung #${f.frame_idx || 0} / ${totalF}`);
+    safeSetText("os-modal-frame-counter", `Frame #${f.frame_idx || 0} / ${totalF}`);
     safeSetText("os-modal-time-readout", f.time_str || "00:00");
     const idsList = formatActiveIdsText(f.active_ids, f.persons);
     safeSetText("os-modal-hud-ids", `Chủ thể: ${idsList}`);
-    safeSetText("os-modal-hud-latency", `Chu kỳ suy luận: ${f.latency_ms || (st && st.ms_per_frame) || '--'} ms/khung`);
+    safeSetText("os-modal-hud-latency", `Thời gian xử lý: ${f.latency_ms || (st && st.ms_per_frame) || '--'} ms/frame`);
 }
 
 function previewConveyorFrame(deckIdx) {
@@ -5929,11 +6128,11 @@ function updateLiveParallelReportsAndLogs() {
     const st = osBranchZState;
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     const cpuSharePct = st.delay <= 0 ? 100 : Math.max(5, Math.round((100 * 25) / (25 + st.delay)));
-    const polText = st.policy === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)";
+    const polText = st.policy === "drop_oldest" ? "Drop-Oldest" : "FIFO Blocking";
     const sev = st.severityTier || 0;
     const isOptimal = (sev === 0);
 
-    safeSetText("live-split-z-config-text", `N = ${st.cap} · ${ramMb} MB · CPU ${cpuSharePct}% (+${st.delay}ms) · ${polText}`);
+    safeSetText("live-split-z-config-text", `${st.cap} frames · ${ramMb} MB · CPU ${cpuSharePct}% · +${st.delay} ms · ${polText}`);
     safeSetText("live-split-z-fps", `${st.zFps} FPS`);
     safeSetText("live-split-z-lat", `~${st.zLatencyMs} ms`);
     safeSetText("live-split-z-drop", `${st.zDropPct}%`);
@@ -5974,8 +6173,11 @@ function updateLiveParallelReportsAndLogs() {
         else if (item.severity === "warning") yWarn += 1;
         else ySafe += 1;
     });
-    const baseErgoText = document.getElementById("session-ergo-score") ? document.getElementById("session-ergo-score").textContent : "100 / 100";
-    const baseErgoNum = parseInt(baseErgoText, 10) || 100;
+    const ergoNode = document.getElementById("session-ergo-score");
+    const rawErgoText = ergoNode ? ergoNode.textContent.trim() : "—";
+    const parsedErgo = parseInt(rawErgoText, 10);
+    const hasErgo = !Number.isNaN(parsedErgo);
+    const baseErgoText = hasErgo ? rawErgoText : "—";
 
     safeSetText("live-y-safe-count", String(ySafe));
     safeSetText("live-y-warn-count", String(yWarn));
@@ -5988,7 +6190,7 @@ function updateLiveParallelReportsAndLogs() {
                 <td colspan="7" class="empty-cell">
                     <div class="empty-state-box">
                         <p class="empty-title">Chưa có bản ghi nhận diện tư thế</p>
-                        <span class="empty-sub">Bật camera hoặc chụp Snapshot để đối chiếu trực tiếp kết quả phân tích của AI giữa hai luồng.</span>
+                        <span class="empty-sub">Bật camera để hệ thống tự động thu nhận khung hình và đối chiếu kết quả phân tích của AI giữa hai luồng.</span>
                     </div>
                 </td>
             </tr>
@@ -5999,11 +6201,11 @@ function updateLiveParallelReportsAndLogs() {
             if (zList) zList.innerHTML = emptyHtml;
         }
 
-        if (isOptimal) {
+        if (!hasErgo || isOptimal) {
             safeSetText("live-z-rep-ergo", baseErgoText);
         } else {
             const penalty = sev === 3 ? 48 : (sev === 2 ? 26 : 8);
-            safeSetText("live-z-rep-ergo", `${Math.max(25, baseErgoNum - penalty)} / 100`);
+            safeSetText("live-z-rep-ergo", `${Math.max(25, parsedErgo - penalty)} / 100`);
         }
         return;
     }
@@ -6031,7 +6233,7 @@ function updateLiveParallelReportsAndLogs() {
 
             return `
                 <tr class="${rowClass}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
-                    <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
+                    <td>${formatEventCodeBadge(item, idx)}</td>
                     <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                     <td>${getModelTierBadge(item.model_tier)}</td>
                     <td><span class="badge ${badgeClass}">${escapeHtml(item.action)}</span></td>
@@ -6067,7 +6269,7 @@ function updateLiveParallelReportsAndLogs() {
 
             return `
                 <tr class="${isDanger ? "row-danger" : ""}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
-                    <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
+                    <td>${formatEventCodeBadge(item, idx)}</td>
                     <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                     <td>${getModelTierBadge(item.model_tier)}</td>
                     <td><span class="badge ${badgeClass}">${escapeHtml(item.action)}</span></td>
@@ -6105,7 +6307,7 @@ function updateLiveParallelReportsAndLogs() {
 
         return `
             <tr class="${narr.sev === "danger" ? "row-danger" : ""}" data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}">
-                <td><span class="log-code-badge">${escapeHtml(item.code || item.id)}</span></td>
+                <td>${formatEventCodeBadge(item, idx)}</td>
                 <td class="mono">${escapeHtml(item.timestamp || "--:--:--")}</td>
                 <td>${getModelTierBadge(item.model_tier)}</td>
                 <td><span class="badge ${badgeClass}">${escapeHtml(narr.action)}</span></td>
@@ -6129,11 +6331,11 @@ function updateLiveParallelReportsAndLogs() {
     safeSetText("live-z-warn-count", String(zWarn));
     safeSetText("live-z-danger-count", String(zDanger));
 
-    if (isOptimal) {
+    if (!hasErgo || isOptimal) {
         safeSetText("live-z-rep-ergo", baseErgoText);
     } else {
         const penalty = sev === 3 ? 48 : (sev === 2 ? 26 : 8);
-        safeSetText("live-z-rep-ergo", `${Math.max(25, baseErgoNum - penalty)} / 100`);
+        safeSetText("live-z-rep-ergo", `${Math.max(25, parsedErgo - penalty)} / 100`);
     }
 }
 
@@ -6239,7 +6441,7 @@ function calibrateSegmentVerdictFromGeminiText(narrativeText, baseScore, isDange
         .replace(/(?:chưa|không|hoàn toàn không)\s+(?:có|ghi nhận|xảy ra|phát hiện|thấy|xuất hiện)[^.,;!\n]*/g, " ")
         .replace(/không có (?:va chạm|xô xát|xung đột|hành vi bạo lực)/g, " ");
 
-    const hasHeavyCombat = /(?:va chạm mạnh|va chạm thể xác|va chạm tay chân|xô đẩy mạnh|ẩu đả|đánh nhau|tấn công|vung tay đánh|vung đòn|đấm|đá|vật lộn|giằng co trực tiếp|giằng co trực diện|giằng co mạnh|xô xát trực tiếp|xảy ra xô xát|ghi nhận hành vi xô xát|hành hung|hung khí|vung gậy|ngã xuống sàn|ngã xuống mặt sàn)/.test(cleaned);
+    const hasHeavyCombat = /(?:va chạm mạnh|va chạm thể xác|va chạm tay chân|xô đẩy mạnh|ẩu đả|đánh nhau|tấn công|vung tay|vung đòn|vung nấm đấm|ra đòn|tung đòn|tung cú đấm|tung cú đá|né đòn|lách né|tránh đòn|lao vào đánh|xông vào đánh|đấm|đá|vật lộn|giằng co trực tiếp|giằng co trực diện|giằng co mạnh|xô xát trực tiếp|xảy ra xô xát|ghi nhận hành vi xô xát|hành hung|hung khí|vung gậy|ngã xuống sàn|ngã xuống mặt sàn|ngã xuống đất)/.test(cleaned);
     const hasTensionOrPush = /(?:xô đẩy|xô xát|giằng co|đối đầu|căng thẳng|sẵn sàng đối đầu|áp sát|thủ thế|tranh cãi|chỉ tay|lời qua tiếng lại|phòng thủ|phòng vệ|che chắn|đứng đối diện)/.test(cleaned);
 
     if (hasHeavyCombat) {
@@ -6292,11 +6494,11 @@ function populateVideoParallelSplitView() {
     const st = osBranchZState;
     const ramMb = ((st.cap * 1280 * 720 * 3) / (1024 * 1024)).toFixed(2);
     const cpuSharePct = st.delay <= 0 ? 100 : Math.max(5, Math.round((100 * 25) / (25 + st.delay)));
-    const polText = st.policy === "drop_oldest" ? "Ưu tiên khung mới" : "Giữ tuần tự (FIFO)";
+    const polText = st.policy === "drop_oldest" ? "Drop-Oldest" : "FIFO Blocking";
     const sev = st.severityTier || 0;
     const isOptimal = (sev === 0);
 
-    safeSetText("split-vid-z-config-text", `N = ${st.cap} · ${ramMb} MB · CPU ${cpuSharePct}% (+${st.delay}ms) · ${polText}`);
+    safeSetText("split-vid-z-config-text", `${st.cap} frames · ${ramMb} MB · CPU ${cpuSharePct}% · +${st.delay} ms · ${polText}`);
     safeSetText("split-vid-z-fps", `${st.zFps} FPS`);
     safeSetText("split-vid-z-drop", `${st.zDropPct}%`);
     safeSetText("split-vid-z-ram", `${ramMb} MB`);
@@ -6401,7 +6603,7 @@ function populateVideoParallelSplitView() {
                 <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                        <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
+                        <div class="seg-id-sub mono">${escapeHtml(formatSegmentLabel(s.segment_id, idx))}</div>
                     </td>
                     <td>
                         <div class="seg-summary-line">${escapeHtml(summaryText)}</div>
@@ -6461,7 +6663,7 @@ function populateVideoParallelSplitView() {
                 <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                     <td>
                         <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                        <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
+                        <div class="seg-id-sub mono">${escapeHtml(formatSegmentLabel(s.segment_id, idx))}</div>
                     </td>
                     <td><div class="seg-summary-line">${escapeHtml(summaryText)}</div></td>
                     <td>
@@ -6568,7 +6770,7 @@ function populateVideoParallelSplitView() {
             <tr data-row-key="${escapeHtml(rowKey)}" data-row-idx="${idx}" data-start-sec="${startSec}" style="cursor: pointer;">
                 <td>
                     <div class="seg-range-badge mono">${escapeHtml(s.time_range || "")}</div>
-                    <div class="seg-id-sub mono">${escapeHtml(s.segment_id || "")}</div>
+                    <div class="seg-id-sub mono">${escapeHtml(formatSegmentLabel(s.segment_id, idx))}</div>
                 </td>
                 <td>
                     <div class="seg-summary-line">${escapeHtml(zNarrative)}</div>

@@ -484,10 +484,23 @@ class AutonomousHeuristicArbiter:
         if changed and prev_act and prev_act not in desc:
             desc = f"Sau nhịp {prev_act}, {desc[0].lower() + desc[1:]}"
         pred = preds[v]
+
+        out_action = posture_text
+        if ("vung tay mạnh" in p_low or "cử chỉ bất thường" in p_low):
+            if "cúi" in desc.lower() or "mặt bàn" in desc.lower():
+                out_action = "Cúi người xem nội dung"
+            else:
+                out_action = "Đưa tay tương tác trước ống kính"
+            is_danger = False
+
+        real_danger_terms = ("té ngã", "ngã quỵ", "bất tỉnh", "đột quỵ", "bạo lực", "đấm", "đánh nhau", "hành hung", "tai nạn")
+        if is_danger and not any(t in (out_action + " " + desc).lower() for t in real_danger_terms):
+            is_danger = False
+
         severity = "danger" if is_danger else ("warning" if is_warning else "safe")
 
         return {
-            "action": posture_text,
+            "action": out_action,
             "description": desc,
             "prediction_next_4s": pred,
             "degraded_light": deg_light,
@@ -574,11 +587,11 @@ class HierarchicalModelOrchestrator:
                 self.client = genai.Client(
                     api_key=self.api_key,
                     http_options=types.HttpOptions(
-                        timeout=14000,
+                        timeout=10500,
                         retry_options=types.HttpRetryOptions(attempts=1)
                     )
                 )
-                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công (timeout=14s, attempts=1).")
+                logger.info("HierarchicalModelOrchestrator: Khởi tạo genai.Client thành công (timeout=10.5s, attempts=1).")
             except Exception as e:
                 logger.warning(f"Chưa khởi tạo được genai.Client: {e}")
                 self.client = None
@@ -623,15 +636,12 @@ class HierarchicalModelOrchestrator:
             if self.active_tier == ModelTier.TIER_1_PRIMARY:
                 self.active_tier = ModelTier.TIER_2_FALLBACK
 
-        # Chỉ tự động quay về Mô hình 1 khi Mô hình 1 vừa thoát khỏi trạng thái khóa hạn mức (cooldown)
-        was_t1_cooldown = self.cooldown_tracker.tier1_cooldown_start is not None
+        # Tự động quay về Mô hình 1 ngay khi Mô hình 1 không còn bị khóa hạn mức (cooldown / daily lock)
         t1_ready_now = self.cooldown_tracker.is_tier1_ready()
-        last_inf_ts = getattr(self, "last_inference_ts", 0.0) or 0.0
-        last_inf_elapsed = (time.time() - last_inf_ts) if last_inf_ts > 0.0 else 0.0
         if (
             self.active_tier != ModelTier.TIER_1_PRIMARY
             and t1_ready_now
-            and (was_t1_cooldown or last_inf_elapsed > 8.0)
+            and self.client is not None
             and quota_stats.get("tier1_rpm_used", 0) < self.quota_tracker.rpm_limit
             and quota_stats.get("tier1_rpd_used", 0) < self.quota_tracker.rpd_limit
         ):
@@ -699,20 +709,20 @@ class HierarchicalModelOrchestrator:
         return data
 
     def _safe_generate_content(self, model: str, contents: Any, config: Any = None, tier_key: str = "tier_1"):
-        """Gọi đúng model của từng tầng (Tầng 1: gemini-3.1-flash-lite, Tầng 2: gemini-3-flash-preview) với MINIMAL thinking, tự động thử lại nếu máy chủ Google bận tạm thời."""
+        """Gọi đúng model tốc độ cao của từng tầng (Tầng 1: gemini-3.1-flash-lite-preview), tự động thử lại ngay trên Tầng 1 nếu máy chủ Google bận tạm thời."""
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         if is_mock:
             candidates = [model]
         elif tier_key == "tier_2":
-            candidates = ["gemini-3-flash-preview", "gemini-2.5-flash"]
+            candidates = ["gemini-3.5-flash", "gemini-3.6-flash"]
         else:
-            candidates = ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"]
+            candidates = ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite"]
 
         last_err = None
         for idx_c, m in enumerate(candidates):
             try:
                 eff_config = config
-                if not is_mock and ("gemini-3-" in m or "gemini-3.1-" in m):
+                if not is_mock and "gemini-3-flash" in m and "flash-lite" not in m:
                     try:
                         from google.genai import types
                         if isinstance(config, types.GenerateContentConfig) and getattr(config, "thinking_config", None) is None:
@@ -732,7 +742,7 @@ class HierarchicalModelOrchestrator:
                 err_msg = str(e).upper()
                 if any(k in err_msg for k in ["404", "NOT_FOUND", "NO LONGER AVAILABLE", "503", "UNAVAILABLE", "504", "DEADLINE_EXCEEDED", "TIMEOUT", "500", "INTERNAL"]):
                     if not is_mock and idx_c < len(candidates) - 1:
-                        time.sleep(0.35)
+                        time.sleep(0.25)
                     continue
                 raise e
         if last_err:
@@ -743,22 +753,36 @@ class HierarchicalModelOrchestrator:
         is_mock = type(self.client).__module__.startswith("unittest.mock")
         contents = [prompt]
         if isinstance(frame_img, Image.Image):
-            if not is_mock and (frame_img.width > 640 or frame_img.height > 360):
-                frame_img = frame_img.resize((640, 360))
-            contents.append(frame_img)
+            if not is_mock:
+                if frame_img.width > 640 or frame_img.height > 360:
+                    frame_img = frame_img.resize((640, 360))
+                import io
+                buf = io.BytesIO()
+                frame_img.convert("RGB").save(buf, format="JPEG", quality=82)
+                contents.append(types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg"))
+            else:
+                contents.append(frame_img)
         elif isinstance(frame_img, np.ndarray):
             import cv2
             proc_frame = frame_img
             if not is_mock and frame_img.ndim >= 2 and (frame_img.shape[1] > 640 or frame_img.shape[0] > 360):
                 proc_frame = cv2.resize(frame_img, (640, 360), interpolation=cv2.INTER_AREA)
-            rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
-            contents.append(Image.fromarray(rgb))
+            if not is_mock:
+                ok_jpg, enc_jpg = cv2.imencode(".jpg", proc_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+                if ok_jpg:
+                    contents.append(types.Part.from_bytes(data=enc_jpg.tobytes(), mime_type="image/jpeg"))
+                else:
+                    rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
+                    contents.append(Image.fromarray(rgb))
+            else:
+                rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
+                contents.append(Image.fromarray(rgb))
         elif frame_img is not None:
             contents.append(frame_img)
 
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
-            temperature=0.2
+            temperature=0.2,
         )
         response = self._safe_generate_content(
             model=model,
@@ -790,6 +814,33 @@ class HierarchicalModelOrchestrator:
             s = s[0].upper() + s[1:]
         return s
 
+    @staticmethod
+    def _reconcile_severity(action_text: Any, desc_text: Any, raw_severity: Any) -> str:
+        """
+        Đối chiếu ngữ nghĩa giữa nội dung mô tả và mức cảnh báo:
+        Không bao giờ cho phép gắn 'danger' nếu câu mô tả và tên hành vi chỉ diễn tả sinh hoạt bình thường.
+        """
+        sev = str(raw_severity or "safe").strip().lower()
+        if sev not in ("safe", "warning", "danger"):
+            sev = "safe"
+        if sev != "danger":
+            return sev
+        combined = f"{action_text or ''} {desc_text or ''}".lower()
+        danger_keywords = (
+            "té ngã", "ngã quỵ", "ngã gục", "gục ngã", "ngã xuống", "bất tỉnh", "đột quỵ", "ngất",
+            "bạo lực", "đánh nhau", "ẩu đả", "vung đấm", "đấm đá", "tấn công", "hành hung", "xô xát",
+            "tai nạn", "khẩn cấp", "cấp cứu", "chấn thương", "nguy kịch", "co giật"
+        )
+        if any(k in combined for k in danger_keywords):
+            return "danger"
+        warning_keywords = (
+            "vắng mặt", "rời khỏi", "khung hình trống", "căng thẳng", "mệt mỏi",
+            "ôm đầu", "gục xuống bàn", "lệch trục", "sai tư thế"
+        )
+        if any(k in combined for k in warning_keywords):
+            return "warning"
+        return "safe"
+
     def _sanitize_analysis_payload(self, data: dict) -> dict:
         if not isinstance(data, dict):
             return data
@@ -802,6 +853,15 @@ class HierarchicalModelOrchestrator:
                 for k in ("action", "description", "prediction_next_4s"):
                     if k in sub and sub[k]:
                         sub[k] = self._clean_human_text(sub[k])
+        data["severity"] = self._reconcile_severity(
+            data.get("action", ""),
+            data.get("description", ""),
+            data.get("severity", "safe")
+        )
+        act_low = str(data.get("action", "")).lower()
+        if data["severity"] != "danger" and ("cử chỉ bất thường" in act_low or "vung tay mạnh" in act_low):
+            desc_low = str(data.get("description", "")).lower()
+            data["action"] = "Cúi người xem nội dung" if "cúi" in desc_low else "Đưa tay tương tác trước ống kính"
         return data
 
     def _record_success(self, res: dict, bio: dict, tier: ModelTier):
@@ -840,6 +900,7 @@ class HierarchicalModelOrchestrator:
         # 1. Tự động quay về Mô hình 1 ngay khi hạn mức phút (sau 60s) hoặc ngày (sau 00:00) hồi phục
         if (
             self.active_tier != ModelTier.TIER_1_PRIMARY
+            and self.client is not None
             and self.cooldown_tracker.is_tier1_ready()
             and q_stats.get("tier1_rpm_used", 0) < self.quota_tracker.rpm_limit
             and q_stats.get("tier1_rpd_used", 0) < self.quota_tracker.rpd_limit
@@ -870,6 +931,10 @@ QUY TẮC BẮT BUỘC:
 - CẤM TUYỆT ĐỐI giải thích lý do kỹ thuật (không viết "do mất khung hình", "do thiếu CPU", "do tràn bộ đệm").
 - CẤM TUYỆT ĐỐI nhận xét kiểu khám sức khỏe hay công thái học (không viết "không mỏi cơ", "không căng thẳng", "không có gì bất thường").
 - KHÔNG dùng dấu nháy đơn trong câu văn.
+- QUY TẮC PHÂN LOẠI MỨC ĐỘ ("severity"):
+  + "safe": Mọi cử chỉ và sinh hoạt đời thường trước ống kính (ngồi làm việc, gõ phím, cầm điện thoại, uống nước, chống cằm, xoa mũi, chạm mặt, chỉnh kính/tóc, vẫy tay chào, giơ ngón tay ra hiệu, vươn vai, ngả lưng, nằm nghỉ thư giãn...).
+  + "warning": Chỉ dùng khi chủ thể ngồi sai lệch tư thế nặng kéo dài, cúi gục sát mặt bàn lâu, ôm đầu mệt mỏi rõ rệt hoặc rời khỏi vị trí quan sát.
+  + "danger": CHỈ DÙNG KHI VÀ CHỈ KHI xảy ra sự cố nguy hiểm thật sự (té ngã bất tỉnh, đột quỵ, co giật, đánh nhau, đấm đá bạo lực, hành hung hoặc tai nạn khẩn cấp). TUYỆT ĐỐI KHÔNG gắn "danger" cho các cử động tay thông thường!
 
 Trả về đúng định dạng JSON thuần:
 {{
@@ -904,23 +969,15 @@ Trả về đúng định dạng JSON thuần:
                     daily_exhausted = is_daily_quota_error(e1) or (self.quota_tracker.get_stats().get("tier1_rpd_used", 0) >= self.quota_tracker.rpd_limit)
                     self.cooldown_tracker.mark_rate_limited(ModelTier.TIER_1_PRIMARY, is_daily_exhausted=daily_exhausted)
                     self.active_tier = ModelTier.TIER_2_FALLBACK
-                elif not is_mock and self.cooldown_tracker.is_tier2_ready():
-                    # Nếu Mô hình 1 gặp lỗi mạng/bận tức thời (503/504), chuyển lượt hiện tại sang Mô hình 2 (gemini-3-flash-preview)
-                    # và gắn nhãn trung thực là Mô hình 2 (Dự phòng), đồng thời ghi nhận quota vào tier_2!
-                    try:
-                        data2 = self._call_gemini_vision(self.tier2_model, prompt, frame_img, tier_key="tier_2")
-                        data2["model_tier"] = ModelTier.TIER_2_FALLBACK.value
-                        self._record_success(data2, bio, ModelTier.TIER_2_FALLBACK)
-                        return data2
-                    except Exception:
-                        pass
                 else:
                     res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
                     res["model_tier"] = ModelTier.TIER_3_HEURISTIC.value
                     self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
+                    if self.client is not None and self.cooldown_tracker.is_tier1_ready():
+                        self.active_tier = ModelTier.TIER_1_PRIMARY
                     return res
 
-        # 3. Thực thi trên Mô hình 2 (Dự phòng - gemini-3-flash-preview) khi Mô hình 1 đã hết hạn mức
+        # 3. Thực thi trên Mô hình 2 (Dự phòng) khi Mô hình 1 đã thực sự chạm trần hạn mức (429 / 15 RPM / 1500 RPD)
         if self.client and self.active_tier == ModelTier.TIER_2_FALLBACK and self.cooldown_tracker.is_tier2_ready():
             try:
                 data = self._call_gemini_vision(self.tier2_model, prompt, frame_img, tier_key="tier_2")
@@ -936,13 +993,17 @@ Trả về đúng định dạng JSON thuần:
                     res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
                     res["model_tier"] = ModelTier.TIER_3_HEURISTIC.value
                     self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
+                    self.active_tier = ModelTier.TIER_2_FALLBACK
                     return res
 
         # 4. Fallback sang Tier 3 (Xử lý nội bộ) khi cả Mô hình 1 và Mô hình 2 đều không thể phản hồi
-        self.active_tier = ModelTier.TIER_3_HEURISTIC
         res = self.heuristic_arbiter.synthesize_with_memory(posture_text, bio, self.context_memory)
         res["model_tier"] = ModelTier.TIER_3_HEURISTIC.value
         self._record_success(res, bio, ModelTier.TIER_3_HEURISTIC)
+        if self.client is not None and self.cooldown_tracker.is_tier1_ready():
+            self.active_tier = ModelTier.TIER_1_PRIMARY
+        else:
+            self.active_tier = ModelTier.TIER_3_HEURISTIC
         return res
 
     def execute_multimodal_failover(
@@ -999,9 +1060,9 @@ Trả về đúng định dạng JSON thuần:
             cloud_candidates = [
                 "gemini-3.1-flash-lite-preview",
                 "gemini-3.1-flash-lite",
+                "gemini-3.5-flash",
+                "gemini-3.6-flash",
                 "gemini-3-flash-preview",
-                self.tier2_model,
-                "gemini-2.5-flash",
             ]
         dedup_candidates = []
         for m_c in cloud_candidates:
@@ -1014,7 +1075,7 @@ Trả về đúng định dạng JSON thuần:
         for idx_m, m_cand in enumerate(dedup_candidates):
             try:
                 eff_config = config
-                if not is_mock and ("gemini-3-" in m_cand or "gemini-3.1-" in m_cand):
+                if not is_mock and "gemini-3-flash" in m_cand and "flash-lite" not in m_cand:
                     try:
                         from google.genai import types
                         if isinstance(config, types.GenerateContentConfig) and getattr(config, "thinking_config", None) is None:
@@ -1089,9 +1150,9 @@ Trả về đúng định dạng JSON thuần:
             self.active_tier = ModelTier.TIER_3_HEURISTIC
             self.last_inference_ts = time.time()
             return {
-                "answer": "[Tier-3 Hội Chẩn Tự Hành] Hệ thống đang hoạt động ở chế độ ngoại tuyến cục bộ. Dữ liệu sự kiện được bảo toàn đầy đủ.",
+                "answer": "[Tier-3 Local Fallback] Hệ thống đang hoạt động ở chế độ dự phòng cục bộ. Dữ liệu sự kiện được lưu trữ đầy đủ.",
                 "model_tier": "tier_3",
-                "active_tier_name": "Autonomous Heuristic"
+                "active_tier_name": "Local Fallback"
             }
 
         # 1. Preemptive Reversion
@@ -1101,9 +1162,11 @@ Trả về đúng định dạng JSON thuần:
         # 2. Thử Tier 1
         if self.cooldown_tracker.is_tier1_ready():
             try:
-                resp = self.client.models.generate_content(
+                resp = self._safe_generate_content(
                     model=self.tier1_model,
-                    contents=[prompt]
+                    contents=[prompt],
+                    config=None,
+                    tier_key="tier_1"
                 )
                 self.active_tier = ModelTier.TIER_1_PRIMARY
                 self.last_inference_ts = time.time()
@@ -1123,9 +1186,11 @@ Trả về đúng định dạng JSON thuần:
         # 3. Thử Tier 2
         if self.cooldown_tracker.is_tier2_ready():
             try:
-                resp = self.client.models.generate_content(
+                resp = self._safe_generate_content(
                     model=self.tier2_model,
-                    contents=[prompt]
+                    contents=[prompt],
+                    config=None,
+                    tier_key="tier_2"
                 )
                 self.active_tier = ModelTier.TIER_2_FALLBACK
                 self.last_inference_ts = time.time()
@@ -1146,9 +1211,9 @@ Trả về đúng định dạng JSON thuần:
         self.active_tier = ModelTier.TIER_3_HEURISTIC
         self.last_inference_ts = time.time()
         return {
-            "answer": "[Tier-3 Hội Chẩn Tự Hành] Hệ thống kích hoạt cơ chế tự hành cục bộ do hạn mức API Cloud chạm trần. Hoạt động giám sát duy trì an toàn và liên tục.",
+            "answer": "[Tier-3 Local Fallback] Hệ thống chuyển sang xử lý dự phòng cục bộ do hạn mức API Cloud chạm trần. Hoạt động giám sát vẫn duy trì liên tục.",
             "model_tier": "tier_3",
-            "active_tier_name": "Autonomous Heuristic"
+            "active_tier_name": "Local Fallback"
         }
 
 
